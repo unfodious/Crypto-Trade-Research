@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.python-version
+.venv/
+venv/
+
+# Local config and secrets
+.env
+.env.*
+!.env.example
+
+# Research artifacts
+data/
+datasets/
+artifacts/
+models/
+reports/
+mlruns/
+notebooks/.ipynb_checkpoints/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
