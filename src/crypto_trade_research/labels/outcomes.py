@@ -17,6 +17,7 @@ class LabelConfig:
     target_pct: float
     cost_pct: float
     flat_threshold_pct: float
+    target_stop_tie_breaker: str = "stop_first"
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,7 +118,11 @@ def _build_label_row(
         stop_price,
         target_price,
     )
-    target_before_stop = _target_before_stop(time_to_target, time_to_stop)
+    target_before_stop = _target_before_stop(
+        time_to_target,
+        time_to_stop,
+        config.target_stop_tie_breaker,
+    )
     mfe_r = _mfe_r(future_rows, config.side, entry_price, risk_per_unit)
     mae_r = _mae_r(future_rows, config.side, entry_price, risk_per_unit)
     realized_r = _realized_r_after_costs(
@@ -175,6 +180,8 @@ def _validate_config(config: LabelConfig) -> None:
         raise ValueError("cost_pct must be non-negative")
     if config.flat_threshold_pct < 0:
         raise ValueError("flat_threshold_pct must be non-negative")
+    if config.target_stop_tie_breaker not in {"stop_first", "target_first"}:
+        raise ValueError("target_stop_tie_breaker must be stop_first or target_first")
 
 
 def _stop_and_target(entry_price: float, config: LabelConfig) -> tuple[float, float]:
@@ -207,14 +214,20 @@ def _target_stop_times(
     return time_to_target, time_to_stop
 
 
-def _target_before_stop(time_to_target: int | None, time_to_stop: int | None) -> bool | None:
+def _target_before_stop(
+    time_to_target: int | None,
+    time_to_stop: int | None,
+    tie_breaker: str,
+) -> bool | None:
     if time_to_target is None and time_to_stop is None:
         return None
     if time_to_target is None:
         return False
     if time_to_stop is None:
         return True
-    return time_to_target <= time_to_stop
+    if time_to_target == time_to_stop:
+        return tie_breaker == "target_first"
+    return time_to_target < time_to_stop
 
 
 def _mfe_r(

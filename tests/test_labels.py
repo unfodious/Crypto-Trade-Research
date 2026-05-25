@@ -98,6 +98,55 @@ def test_short_trade_labels_stop_before_target() -> None:
     assert first["directional_class"] == "down"
 
 
+def test_same_bar_target_stop_ambiguity_defaults_to_stop_first_for_long() -> None:
+    frame = generate_trade_labels(
+        [
+            _bar(1, 100, 101, 99, 100),
+            _bar(2, 100, 105, 97, 101),
+        ],
+        LabelConfig(
+            label_set_version="unit.labels.v1",
+            horizon_bars=1,
+            side="long",
+            stop_loss_pct=0.02,
+            target_pct=0.04,
+            cost_pct=0.001,
+            flat_threshold_pct=0.001,
+        ),
+    )
+
+    first = frame.rows[0]
+    assert first["time_to_target_bars"] == 1
+    assert first["time_to_stop_bars"] == 1
+    assert first["target_before_stop"] is False
+    assert first["realized_r_after_costs"] == pytest.approx(-1.05)
+
+
+def test_same_bar_target_stop_ambiguity_can_be_marked_target_first_for_sensitivity() -> None:
+    frame = generate_trade_labels(
+        [
+            _bar(1, 100, 101, 99, 100),
+            _bar(2, 100, 103, 97, 99),
+        ],
+        LabelConfig(
+            label_set_version="unit.labels.v1",
+            horizon_bars=1,
+            side="short",
+            stop_loss_pct=0.02,
+            target_pct=0.03,
+            cost_pct=0.001,
+            flat_threshold_pct=0.001,
+            target_stop_tie_breaker="target_first",
+        ),
+    )
+
+    first = frame.rows[0]
+    assert first["time_to_target_bars"] == 1
+    assert first["time_to_stop_bars"] == 1
+    assert first["target_before_stop"] is True
+    assert first["realized_r_after_costs"] == pytest.approx(1.45)
+
+
 def test_label_rows_join_features_without_leaking_label_fields() -> None:
     bars = [
         _bar(1, 100, 101, 99, 100),

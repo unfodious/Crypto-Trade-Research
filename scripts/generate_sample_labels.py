@@ -25,6 +25,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-pct", type=float, required=True)
     parser.add_argument("--cost-pct", type=float, required=True)
     parser.add_argument("--flat-threshold-pct", type=float, required=True)
+    parser.add_argument(
+        "--target-stop-tie-breaker",
+        choices=["stop_first", "target_first"],
+        default="stop_first",
+    )
     return parser.parse_args()
 
 
@@ -53,6 +58,7 @@ def main() -> None:
             target_pct=args.target_pct,
             cost_pct=args.cost_pct,
             flat_threshold_pct=args.flat_threshold_pct,
+            target_stop_tie_breaker=args.target_stop_tie_breaker,
         ),
     )
 

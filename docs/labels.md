@@ -24,8 +24,13 @@ Every label run must define:
 - `target_pct`
 - `cost_pct`
 - `flat_threshold_pct`
+- `target_stop_tie_breaker`
 
 This makes the 1R definition explicit: entry is the decision candle close, stop and target are percentage models, and cost is converted to R by dividing by stop distance.
+
+OHLC bars do not reveal the intrabar path. If target and stop are both touched in the same candle,
+`target_stop_tie_breaker` defaults to `stop_first` so promotion evidence is pessimistic. Use
+`target_first` only for sensitivity analysis, never as the default promotion assumption.
 
 ## Separation Rule
 
