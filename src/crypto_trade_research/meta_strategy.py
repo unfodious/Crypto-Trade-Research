@@ -20,6 +20,7 @@ class CandidateSetup:
     side: str
     deterministic_score: float
     rule_only_gross_r: float
+    exit_time: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,15 +136,16 @@ def evaluate_meta_strategy(
     )
     accepted_signals: list[SignalRow] = []
     rejected: list[RejectedTrade] = []
-    current_symbol_exposure: dict[str, float] = {}
+    active_symbol_exposure: dict[str, list[tuple[datetime | None, float]]] = {}
     for candidate in sorted(candidates, key=lambda item: item.decision_time):
+        _release_expired_exposure(active_symbol_exposure, candidate.decision_time)
         estimate = estimates.get(candidate_key(candidate))
-        reason = _rejection_reason(candidate, estimate, config, current_symbol_exposure)
+        reason = _rejection_reason(candidate, estimate, config, active_symbol_exposure)
         if reason is not None:
             rejected.append(_rejected_trade(candidate, estimate, reason))
             continue
-        current_symbol_exposure[candidate.symbol] = (
-            current_symbol_exposure.get(candidate.symbol, 0.0) + config.risk_per_trade_pct
+        active_symbol_exposure.setdefault(candidate.symbol, []).append(
+            (candidate.exit_time, config.risk_per_trade_pct)
         )
         accepted_signals.append(_candidate_to_signal(candidate))
 
@@ -195,7 +197,7 @@ def _rejection_reason(
     candidate: CandidateSetup,
     estimate: ModelEstimate | None,
     config: MetaStrategyConfig,
-    symbol_exposure: dict[str, float],
+    symbol_exposure: dict[str, list[tuple[datetime | None, float]]],
 ) -> str | None:
     if estimate is None:
         return "missing_model_estimate"
@@ -205,7 +207,8 @@ def _rejection_reason(
         return "expected_r_below_threshold"
     if estimate.stopout_risk > config.max_stopout_risk:
         return "stopout_risk_above_limit"
-    next_symbol_exposure = symbol_exposure.get(candidate.symbol, 0.0) + config.risk_per_trade_pct
+    current_symbol_exposure = sum(risk for _, risk in symbol_exposure.get(candidate.symbol, []))
+    next_symbol_exposure = current_symbol_exposure + config.risk_per_trade_pct
     if next_symbol_exposure > config.max_symbol_exposure:
         return "symbol_exposure_cap"
     return None
@@ -238,7 +241,24 @@ def _candidate_to_signal(candidate: CandidateSetup) -> SignalRow:
         timeframe=candidate.timeframe,
         side=candidate.side,
         gross_r=candidate.rule_only_gross_r,
+        exit_time=candidate.exit_time,
     )
+
+
+def _release_expired_exposure(
+    active_symbol_exposure: dict[str, list[tuple[datetime | None, float]]],
+    decision_time: datetime,
+) -> None:
+    for symbol, exposures in list(active_symbol_exposure.items()):
+        active = [
+            (exit_time, risk)
+            for exit_time, risk in exposures
+            if exit_time is None or exit_time > decision_time
+        ]
+        if active:
+            active_symbol_exposure[symbol] = active
+        else:
+            del active_symbol_exposure[symbol]
 
 
 def candidate_key(candidate: CandidateSetup) -> CandidateKey:

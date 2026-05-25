@@ -14,9 +14,16 @@ def _ts(day: int) -> datetime:
     return datetime(2026, 1, day, tzinfo=UTC)
 
 
-def _signal(day: int, side: str, gross_r: float, confidence: float = 1.0) -> SignalRow:
+def _signal(
+    day: int,
+    side: str,
+    gross_r: float,
+    confidence: float = 1.0,
+    exit_day: int | None = None,
+) -> SignalRow:
     return SignalRow(
         decision_time=_ts(day),
+        exit_time=_ts(exit_day) if exit_day else None,
         symbol="BTCUSDT",
         timeframe="1d",
         side=side,
@@ -68,6 +75,23 @@ def test_costs_can_turn_gross_profitable_strategy_net_unprofitable() -> None:
 
     assert low_cost.metrics.average_r > 0
     assert high_cost.metrics.average_r < 0
+
+
+def test_backtest_tracks_duration_aware_concurrent_exposure() -> None:
+    report = evaluate_signal_strategy(
+        "overlap",
+        [
+            _signal(1, "long", 1.0, exit_day=3),
+            _signal(2, "long", 1.0, exit_day=4),
+            _signal(4, "long", 1.0, exit_day=5),
+        ],
+        BacktestConfig(initial_equity=10_000, risk_per_trade_pct=0.01),
+    )
+
+    assert [trade.exit_time for trade in report.trades] == [_ts(3), _ts(4), _ts(5)]
+    assert report.metrics.max_concurrent_positions == 2
+    assert report.metrics.max_concurrent_risk_pct == pytest.approx(0.02)
+    assert report.to_report_dict()["metrics"]["max_concurrent_positions"] == 2
 
 
 def test_walk_forward_splits_are_time_ordered_and_compare_strategies() -> None:

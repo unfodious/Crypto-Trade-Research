@@ -204,3 +204,47 @@ def test_estimates_are_keyed_by_full_candidate_identity() -> None:
 
     assert report.ml_filtered.metrics.trade_count == 1
     assert report.rejected_trades[0].symbol == "ETHUSDT"
+
+
+def test_symbol_exposure_cap_releases_after_candidate_exit_time() -> None:
+    candidates = [
+        CandidateSetup(
+            decision_time=_ts(1),
+            symbol="BTCUSDT",
+            timeframe="1d",
+            setup_type="trend_pullback_continuation",
+            side="long",
+            deterministic_score=0.8,
+            rule_only_gross_r=1.0,
+            exit_time=_ts(2),
+        ),
+        CandidateSetup(
+            decision_time=_ts(2),
+            symbol="BTCUSDT",
+            timeframe="1d",
+            setup_type="trend_pullback_continuation",
+            side="long",
+            deterministic_score=0.8,
+            rule_only_gross_r=1.0,
+            exit_time=_ts(3),
+        ),
+    ]
+    estimates = {
+        candidate_key(candidates[0]): ModelEstimate(0.8, 0.6, 0.2),
+        candidate_key(candidates[1]): ModelEstimate(0.8, 0.6, 0.2),
+    }
+
+    report = evaluate_meta_strategy(
+        candidates,
+        estimates,
+        MetaStrategyConfig(
+            probability_threshold=0.6,
+            expected_r_threshold=0.1,
+            max_stopout_risk=0.5,
+            max_symbol_exposure=0.01,
+            risk_per_trade_pct=0.01,
+        ),
+    )
+
+    assert report.ml_filtered.metrics.trade_count == 2
+    assert report.rejected_trades == []

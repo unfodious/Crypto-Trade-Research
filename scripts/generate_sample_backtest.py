@@ -69,6 +69,8 @@ def _markdown_report(payload: dict[str, object]) -> str:
             f"- Win rate: {metrics['win_rate']:.4%}",
             f"- Profit factor: {metrics['profit_factor']:.4f}",
             f"- Max drawdown: {metrics['max_drawdown_pct']:.4%}",
+            f"- Max concurrent positions: {metrics['max_concurrent_positions']}",
+            f"- Max concurrent risk: {metrics['max_concurrent_risk_pct']:.4%}",
             "",
         ]
     )

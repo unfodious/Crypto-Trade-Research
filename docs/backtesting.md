@@ -9,8 +9,11 @@ The first backtest layer evaluates precomputed research signals and model outcom
 - R-multiple cost model with fees, spread, slippage, and funding.
 - Compounded fixed-risk sizing based on current equity.
 - Trade event log with gross R, cost components, net R, size, PnL, and exit reason.
+- Optional signal `exit_time` for holding-window diagnostics.
 - Equity curve with drawdown.
-- Metrics: total return, average R, expectancy, win rate, average win/loss, profit factor, max drawdown, drawdown duration, exposure, turnover, worst trade.
+- Metrics: total return, average R, expectancy, win rate, average win/loss, profit factor, max drawdown, drawdown duration, exposure, turnover, worst trade, max concurrent positions, and max concurrent risk percentage.
+
+If `exit_time` is omitted, a signal is treated as an immediate realized R event for backward-compatible fixture tests. Use explicit `exit_time` before relying on concurrent exposure metrics.
 
 ## Reports
 

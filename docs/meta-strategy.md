@@ -25,6 +25,10 @@ The first deterministic setup is `trend_pullback_continuation`:
 - stopout risk must be below the configured cap
 - symbol exposure must remain below the cap
 
+When candidate setups include `exit_time`, symbol exposure is duration-aware: risk is released once
+the candidate exit time is at or before the next decision time. Candidates without `exit_time` remain
+active for the whole evaluation window.
+
 ## Sample Run
 
 ```sh

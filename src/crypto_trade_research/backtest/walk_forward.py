@@ -22,6 +22,7 @@ class SignalRow:
     side: str
     gross_r: float
     confidence: float = 1.0
+    exit_time: datetime | None = None
 
     @classmethod
     def from_iso(
@@ -32,6 +33,7 @@ class SignalRow:
         side: str,
         gross_r: float,
         confidence: float = 1.0,
+        exit_time: str | None = None,
     ) -> "SignalRow":
         return cls(
             decision_time=datetime.fromisoformat(decision_time.replace("Z", "+00:00")),
@@ -40,6 +42,9 @@ class SignalRow:
             side=side,
             gross_r=gross_r,
             confidence=confidence,
+            exit_time=datetime.fromisoformat(exit_time.replace("Z", "+00:00"))
+            if exit_time
+            else None,
         )
 
 
@@ -47,10 +52,12 @@ class SignalRow:
 class TradeEvent:
     strategy_name: str
     decision_time: datetime
+    exit_time: datetime
     symbol: str
     timeframe: str
     side: str
     size: float
+    risk_pct: float
     gross_r: float
     fees_r: float
     spread_r: float
@@ -83,6 +90,8 @@ class BacktestMetrics:
     exposure: float
     turnover: float
     worst_trade_r: float | None
+    max_concurrent_positions: int
+    max_concurrent_risk_pct: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,8 +140,12 @@ def evaluate_signal_strategy(
             continue
         if signal.side not in {"long", "short"}:
             raise ValueError("signal side must be long, short, or flat")
+        exit_time = signal.exit_time or signal.decision_time
+        if exit_time < signal.decision_time:
+            raise ValueError("signal exit_time must be at or after decision_time")
 
-        risk_amount = equity * config.risk_per_trade_pct * signal.confidence
+        signal_risk_pct = config.risk_per_trade_pct * signal.confidence
+        risk_amount = equity * signal_risk_pct
         net_r = signal.gross_r - _total_cost_r(config)
         pnl = risk_amount * net_r
         equity += pnl
@@ -141,10 +154,12 @@ def evaluate_signal_strategy(
         trade = TradeEvent(
             strategy_name=strategy_name,
             decision_time=signal.decision_time,
+            exit_time=exit_time,
             symbol=signal.symbol,
             timeframe=signal.timeframe,
             side=signal.side,
             size=risk_amount,
+            risk_pct=signal_risk_pct,
             gross_r=signal.gross_r,
             fees_r=-config.fee_r,
             spread_r=-config.spread_r,
@@ -221,6 +236,7 @@ def _metrics(
     gross_profit = sum(wins)
     gross_loss = abs(sum(losses))
     final_equity = equity_curve[-1].equity if equity_curve else initial_equity
+    max_concurrent_positions, max_concurrent_risk_pct = _max_concurrent_exposure(trades)
     return BacktestMetrics(
         trade_count=len(trades),
         total_return_pct=(final_equity / initial_equity) - 1,
@@ -235,6 +251,8 @@ def _metrics(
         exposure=1.0 if trades else 0.0,
         turnover=sum(trade.size for trade in trades) / initial_equity if initial_equity else 0.0,
         worst_trade_r=min(net_rs) if net_rs else None,
+        max_concurrent_positions=max_concurrent_positions,
+        max_concurrent_risk_pct=max_concurrent_risk_pct,
     )
 
 
@@ -252,6 +270,25 @@ def _max_drawdown_duration(equity_curve: list[EquityPoint]) -> int:
 
 def _total_cost_r(config: BacktestConfig) -> float:
     return config.fee_r + config.spread_r + config.slippage_r + config.funding_r
+
+
+def _max_concurrent_exposure(trades: list[TradeEvent]) -> tuple[int, float]:
+    events: list[tuple[datetime, int, float, int]] = []
+    for trade in trades:
+        events.append((trade.decision_time, 1, trade.risk_pct, 1))
+        exit_order = 2 if trade.exit_time == trade.decision_time else 0
+        events.append((trade.exit_time, exit_order, -trade.risk_pct, -1))
+
+    current_positions = 0
+    current_risk_pct = 0.0
+    max_positions = 0
+    max_risk_pct = 0.0
+    for _, _, risk_delta, position_delta in sorted(events):
+        current_risk_pct += risk_delta
+        current_positions += position_delta
+        max_positions = max(max_positions, current_positions)
+        max_risk_pct = max(max_risk_pct, current_risk_pct)
+    return max_positions, max_risk_pct
 
 
 def _mean(values: list[float]) -> float:
