@@ -1,0 +1,21 @@
+{
+  "contract_version": "ml-inference.v1",
+  "request_id": "sample-request-001",
+  "model_id": "linear_probability_threshold",
+  "model_version": "2026-01-07T000000Z",
+  "symbol": "BTCUSDT",
+  "timeframe": "1d",
+  "signal_timestamp": "2026-01-08T00:00:00Z",
+  "features_timestamp": "2026-01-08T00:00:00Z",
+  "features_fresh_until": "2026-01-08T00:05:00Z",
+  "feature_set_version": "features.core.v1",
+  "feature_values": {
+    "setup_score": 0.82,
+    "range_position_20": 0.41,
+    "volatility_expansion_20": 1.08
+  },
+  "runtime_context": {
+    "market_type": "um_futures",
+    "venue": "binance"
+  }
+}

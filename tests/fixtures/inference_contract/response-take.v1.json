@@ -1,0 +1,30 @@
+{
+  "contract_version": "ml-inference.v1",
+  "request_id": "sample-request-001",
+  "model_id": "linear_probability_threshold",
+  "model_version": "2026-01-07T000000Z",
+  "symbol": "BTCUSDT",
+  "timeframe": "1d",
+  "signal_timestamp": "2026-01-08T00:00:00Z",
+  "features_timestamp": "2026-01-08T00:00:00Z",
+  "data_freshness_seconds": 0,
+  "regime": {
+    "label": "trend",
+    "probabilities": {
+      "trend": 0.74,
+      "range": 0.18,
+      "stress": 0.08
+    }
+  },
+  "expected_r": 0.48,
+  "target_before_stop_probability": 0.71,
+  "confidence": 0.66,
+  "recommended_action": "take",
+  "reason_codes": [
+    "probability_above_threshold",
+    "expected_r_positive",
+    "risk_blocks_clear"
+  ],
+  "hard_risk_blocks": [],
+  "generated_at": "2026-01-08T00:00:01Z"
+}

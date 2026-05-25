@@ -61,6 +61,7 @@ docker run --rm -v "$PWD":/app -w /app python:3.12-slim \
 - `src/crypto_trade_research/backtest/`: walk-forward and research backtest loops.
 - `src/crypto_trade_research/models/`: supervised baselines and later experimental model families.
 - `src/crypto_trade_research/tracking/`: JSON experiment registry and promotion gates.
+- `src/crypto_trade_research/inference_contract.py`: research-to-runtime inference contract validation.
 - `src/crypto_trade_research/evaluation/`: expectancy, drawdown, turnover, exposure, and sensitivity metrics.
 - `src/crypto_trade_research/reporting/`: reproducible reports for promotion review.
 - `tests/fixtures/`: fake committed datasets for schema and smoke tests.
@@ -187,6 +188,16 @@ uv run crypto-trade-experiments list \
 ```
 
 The command writes ignored local outputs under `data/generated/experiment_registry/`. Each `record.json` captures model version, git commit, dataset manifest, feature and label metadata, train/validation/test windows, cost assumptions, metrics, walk-forward report path, and an explicit promotion or rejection decision.
+
+## Inference Contract
+
+Validate example research-to-runtime inference fixtures:
+
+```sh
+uv run pytest tests/test_inference_contract.py
+```
+
+The `ml-inference.v1` contract supports model estimates and `take`/`skip` recommendations only. It explicitly forbids ML-owned leverage, order size, quantity, or notional fields; runtime risk gates remain outside this repository.
 
 ## Safety Boundary
 
