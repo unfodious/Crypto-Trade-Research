@@ -60,6 +60,7 @@ docker run --rm -v "$PWD":/app -w /app python:3.12-slim \
 - `src/crypto_trade_research/labels/`: target-before-stop, R multiple, MFE/MAE, forward-return, and no-trade labels.
 - `src/crypto_trade_research/backtest/`: walk-forward and research backtest loops.
 - `src/crypto_trade_research/models/`: supervised baselines and later experimental model families.
+- `src/crypto_trade_research/tracking/`: JSON experiment registry and promotion gates.
 - `src/crypto_trade_research/evaluation/`: expectancy, drawdown, turnover, exposure, and sensitivity metrics.
 - `src/crypto_trade_research/reporting/`: reproducible reports for promotion review.
 - `tests/fixtures/`: fake committed datasets for schema and smoke tests.
@@ -169,6 +170,23 @@ The command writes ignored local outputs under `data/generated/sample_meta_strat
 - `meta_strategy_report.md`
 
 The meta-strategy layer keeps candidate generation and risk sizing deterministic. ML estimates can filter setups, but they do not directly set leverage.
+
+## Model Registry
+
+Generate deterministic sample experiment records:
+
+```sh
+make sample-experiment-registry
+```
+
+List experiment records and promoted/rejected status:
+
+```sh
+uv run crypto-trade-experiments list \
+  --registry-dir data/generated/experiment_registry
+```
+
+The command writes ignored local outputs under `data/generated/experiment_registry/`. Each `record.json` captures model version, git commit, dataset manifest, feature and label metadata, train/validation/test windows, cost assumptions, metrics, walk-forward report path, and an explicit promotion or rejection decision.
 
 ## Safety Boundary
 
