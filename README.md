@@ -108,6 +108,21 @@ The command writes ignored local outputs under `data/generated/sample_features/`
 
 The first feature slice is deterministic and point-in-time. Warmup rows use `None` where a lookback is not yet available, and higher-timeframe joins must satisfy `source_available_at <= decision_time`.
 
+## Label Generation
+
+Generate sample after-the-fact trade labels from the fake fixture:
+
+```sh
+make sample-labels
+```
+
+The command writes ignored local outputs under `data/generated/sample_labels/`:
+
+- `labels.parquet`
+- `label_manifest.json`
+
+Labels intentionally use future windows and must stay separate from feature generation. Join labels to features only by stable keys such as venue, market type, symbol, timeframe, and decision time.
+
 ## Safety Boundary
 
 All model outputs are research signals until a separate promotion issue defines the integration contract, paper-trading evidence, rollback plan, and runtime safety gates. The live `crypto-trade` runtime remains the source of truth for account state, order placement, leverage, stops, take profit, liquidation handling, and exchange reconciliation.

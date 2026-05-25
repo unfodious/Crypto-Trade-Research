@@ -1,4 +1,4 @@
-.PHONY: install test lint format check sample-dataset sample-features
+.PHONY: install test lint format check sample-dataset sample-features sample-labels
 
 install:
 	uv sync --extra dev --extra research
@@ -28,3 +28,15 @@ sample-features:
 		--output-dir data/generated/sample_features \
 		--feature-set-version features.sample.v1 \
 		--rolling-window 2
+
+sample-labels:
+	uv run python scripts/generate_sample_labels.py \
+		--source-csv tests/fixtures/ingestion_source/market_candles.csv \
+		--output-dir data/generated/sample_labels \
+		--label-set-version labels.sample.v1 \
+		--horizon-bars 2 \
+		--side long \
+		--stop-loss-pct 0.02 \
+		--target-pct 0.04 \
+		--cost-pct 0.001 \
+		--flat-threshold-pct 0.001
