@@ -1,0 +1,2 @@
+schema_version,label_set_version,venue,market_type,symbol,timeframe,decision_time,forward_return_1,forward_return_3,forward_return_12,max_favorable_excursion_r,max_adverse_excursion_r,target_before_stop,expected_r_after_costs,no_trade_reason
+research.dataset.v1,labels.fake.v1,binance,um_futures,BTCUSDT,1m,2026-01-01T00:02:00Z,0.0005,0.0012,,1.40,-0.35,true,0.82,

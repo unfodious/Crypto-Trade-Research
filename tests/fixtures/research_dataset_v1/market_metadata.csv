@@ -1,0 +1,2 @@
+schema_version,venue,market_type,symbol,base_asset,quote_asset,symbol_status,launch_time,delist_time,contract_type,margin_asset
+research.dataset.v1,binance,um_futures,BTCUSDT,BTC,USDT,TRADING,2019-09-09T00:00:00Z,,PERPETUAL,USDT

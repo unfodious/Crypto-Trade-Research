@@ -1,0 +1,2 @@
+schema_version,backtest_id,strategy_version,feature_set_version,label_set_version,execution_assumption_version,venue,market_type,symbol,timeframe,decision_time,side,entry_price,stop_price,target_price,size,gross_r,fees_r,slippage_r,funding_r,net_r,exit_time,exit_reason
+research.dataset.v1,backtest.fake.001,strategy.fake.v1,features.fake.v1,labels.fake.v1,execution.fake.v1,binance,um_futures,BTCUSDT,1m,2026-01-01T00:02:00Z,long,42090.0000000000,41900.0000000000,42470.0000000000,0.0100000000,1.00,-0.08,-0.05,0.00,0.87,2026-01-01T00:10:00Z,target
