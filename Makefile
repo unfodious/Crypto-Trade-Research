@@ -1,4 +1,4 @@
-.PHONY: install test lint format check sample-dataset sample-features sample-labels
+.PHONY: install test lint format check sample-dataset sample-features sample-labels sample-backtest
 
 install:
 	uv sync --extra dev --extra research
@@ -40,3 +40,7 @@ sample-labels:
 		--target-pct 0.04 \
 		--cost-pct 0.001 \
 		--flat-threshold-pct 0.001
+
+sample-backtest:
+	uv run python scripts/generate_sample_backtest.py \
+		--output-dir data/generated/sample_backtest

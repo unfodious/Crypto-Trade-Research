@@ -123,6 +123,23 @@ The command writes ignored local outputs under `data/generated/sample_labels/`:
 
 Labels intentionally use future windows and must stay separate from feature generation. Join labels to features only by stable keys such as venue, market type, symbol, timeframe, and decision time.
 
+## Backtest Evaluation
+
+Generate a deterministic sample research backtest:
+
+```sh
+make sample-backtest
+```
+
+The command writes ignored local outputs under `data/generated/sample_backtest/`:
+
+- `report.json`
+- `trades.parquet`
+- `equity_curve.parquet`
+- `report.md`
+
+Backtests are rejection evidence and research diagnostics, not proof of live profitability.
+
 ## Safety Boundary
 
 All model outputs are research signals until a separate promotion issue defines the integration contract, paper-trading evidence, rollback plan, and runtime safety gates. The live `crypto-trade` runtime remains the source of truth for account state, order placement, leverage, stops, take profit, liquidation handling, and exchange reconciliation.
