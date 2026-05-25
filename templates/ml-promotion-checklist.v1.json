@@ -1,0 +1,136 @@
+{
+  "checklist_version": "ml-promotion-checklist.v1",
+  "strategy_id": "trend_pullback_continuation",
+  "model_id": "linear_probability_threshold",
+  "model_version": "2026-01-07T000000Z",
+  "stages": [
+    {
+      "name": "research_only",
+      "live_order_authority": false,
+      "required_evidence": [
+        "complete_experiment_record",
+        "baseline_comparison_report",
+        "walk_forward_report",
+        "leakage_check",
+        "stability_check"
+      ],
+      "exit_criteria": [
+        "model_beats_rule_only_and_naive_baselines_after_costs",
+        "drawdown_depth_and_duration_within_research_limits",
+        "promotion_decision_is_reviewed"
+      ]
+    },
+    {
+      "name": "fake_executor_replay",
+      "live_order_authority": false,
+      "required_evidence": [
+        "deterministic_replay_using_ml_inference_v1",
+        "same_reason_codes_as_research_when_inputs_match",
+        "no_live_credentials_used"
+      ],
+      "exit_criteria": [
+        "replay_metrics_match_research_within_tolerance",
+        "all_risk_blocks_are_exercised"
+      ]
+    },
+    {
+      "name": "paper_trading_dry_run",
+      "live_order_authority": false,
+      "required_evidence": [
+        "live_data_no_real_orders",
+        "paper_fills_and_fees_recorded",
+        "daily_operator_review"
+      ],
+      "exit_criteria": [
+        "paper_metrics_mirror_research_metrics",
+        "no_secret_leaks_in_logs",
+        "no_unexplained_state_drift"
+      ]
+    },
+    {
+      "name": "shadow_mode",
+      "live_order_authority": false,
+      "required_evidence": [
+        "model_recommendations_logged_separately",
+        "current_strategy_decisions_logged_separately",
+        "disagreement_report"
+      ],
+      "exit_criteria": [
+        "operator_accepts_disagreement_profile",
+        "kill_switch_and_rollback_are_rehearsed"
+      ]
+    },
+    {
+      "name": "tiny_size_pilot",
+      "live_order_authority": false,
+      "required_evidence": [
+        "explicit_human_approval",
+        "separate_safety_review_issue",
+        "runtime_implementation_tests"
+      ],
+      "exit_criteria": [
+        "approval_is_recorded_before_any_real_order_authority"
+      ]
+    }
+  ],
+  "risk_controls": {
+    "max_daily_loss_r": 2.0,
+    "max_weekly_loss_r": 4.0,
+    "max_monthly_loss_r": 6.0,
+    "max_open_positions": 1,
+    "symbol_exposure_cap_pct": 0.02,
+    "btc_eth_beta_exposure_cap_pct": 0.05,
+    "leverage_cap": "runtime_owned_independent_of_model_confidence",
+    "kill_switch_required": true,
+    "blocks": [
+      "stale_data",
+      "stale_model",
+      "missing_feature",
+      "exchange_api_error",
+      "state_reconciliation_drift",
+      "max_loss_limit_reached",
+      "operator_pause"
+    ]
+  },
+  "paper_metrics": [
+    "average_r",
+    "profit_factor",
+    "trade_count",
+    "max_drawdown_pct",
+    "drawdown_duration_bars",
+    "win_loss_asymmetry",
+    "turnover",
+    "rejection_reason_distribution"
+  ],
+  "log_fields": [
+    "model_id",
+    "model_version",
+    "signal_timestamp",
+    "features_timestamp",
+    "recommended_action",
+    "expected_r",
+    "target_before_stop_probability",
+    "confidence",
+    "reason_codes",
+    "hard_risk_blocks",
+    "runtime_decision",
+    "paper_fill_id"
+  ],
+  "secret_free_logging": true,
+  "rollback": {
+    "trigger_conditions": [
+      "daily_or_weekly_loss_limit_hit",
+      "stale_data_or_model_block_repeats",
+      "state_reconciliation_drift",
+      "unexpected_live_order_authority_detected",
+      "operator_confidence_lost"
+    ],
+    "actions": [
+      "disable_ml_influence",
+      "keep_read_only_reconciliation_running",
+      "preserve_logs_and_signal_files",
+      "open_incident_or_follow_up_issue",
+      "require_operator_approval_before_resuming"
+    ]
+  }
+}

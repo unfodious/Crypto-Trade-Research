@@ -199,6 +199,16 @@ uv run pytest tests/test_inference_contract.py
 
 The `ml-inference.v1` contract supports model estimates and `take`/`skip` recommendations only. It explicitly forbids ML-owned leverage, order size, quantity, or notional fields; runtime risk gates remain outside this repository.
 
+## Paper-Trading Safety Plan
+
+Validate the ML promotion checklist template:
+
+```sh
+uv run pytest tests/test_promotion_checklist.py
+```
+
+The checklist defines the required rollout path: research-only, fake executor replay, paper-trading dry-run, shadow mode, and only then a separately approved tiny-size pilot.
+
 ## Safety Boundary
 
 All model outputs are research signals until a separate promotion issue defines the integration contract, paper-trading evidence, rollback plan, and runtime safety gates. The live `crypto-trade` runtime remains the source of truth for account state, order placement, leverage, stops, take profit, liquidation handling, and exchange reconciliation.
