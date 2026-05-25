@@ -66,6 +66,33 @@ docker run --rm -v "$PWD":/app -w /app python:3.12-slim \
 - `docs/`: architecture, data contracts, and experiment guidelines.
 - `notebooks/`: exploratory notebooks only; durable logic should move into `src/`.
 
+## Dataset Generation
+
+Generate the tiny deterministic sample dataset from committed fake fixtures:
+
+```sh
+make sample-dataset
+```
+
+The command writes ignored local outputs under `data/generated/sample_market_dataset/`:
+
+- `raw/market_candles.parquet`
+- `clean/market_candles.parquet`
+- `manifest.json`
+
+Equivalent direct command:
+
+```sh
+uv run crypto-trade-ingest-market-dataset \
+  --source-csv tests/fixtures/ingestion_source/market_candles.csv \
+  --output-dir data/generated \
+  --dataset-name sample_market_dataset \
+  --generator-version local.sample.v1 \
+  --generated-at 2026-05-25T00:00:00Z
+```
+
+Only tiny fake fixtures belong in git. Large raw exports, cleaned Parquet datasets, private production extracts, and generated reports stay under ignored local paths such as `data/`, `datasets/`, `artifacts/`, and `reports/`.
+
 ## Safety Boundary
 
 All model outputs are research signals until a separate promotion issue defines the integration contract, paper-trading evidence, rollback plan, and runtime safety gates. The live `crypto-trade` runtime remains the source of truth for account state, order placement, leverage, stops, take profit, liquidation handling, and exchange reconciliation.

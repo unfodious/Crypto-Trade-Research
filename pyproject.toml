@@ -10,7 +10,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 authors = [{ name = "Crypto Trade Team" }]
-dependencies = []
+dependencies = [
+  "pyarrow>=16.0",
+]
+
+[project.scripts]
+crypto-trade-ingest-market-dataset = "crypto_trade_research.data.ingestion:main"
 
 [project.optional-dependencies]
 dev = [
@@ -21,7 +26,6 @@ research = [
   "numpy>=2.0",
   "pandas>=2.2",
   "polars>=1.0",
-  "pyarrow>=16.0",
   "scikit-learn>=1.5",
   "scipy>=1.14",
 ]

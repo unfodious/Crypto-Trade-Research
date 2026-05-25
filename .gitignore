@@ -14,18 +14,19 @@ venv/
 !.env.example
 
 # Research artifacts and private data
-data/
-datasets/
-artifacts/
-models/
-reports/
-mlruns/
+/data/
+/datasets/
+/artifacts/
+/models/
+/reports/
+/mlruns/
 notebooks/.ipynb_checkpoints/
 *.parquet
 *.feather
 *.duckdb
 *.sqlite
 *.csv
+!tests/fixtures/**/*.csv
 
 # OS/editor
 .DS_Store
