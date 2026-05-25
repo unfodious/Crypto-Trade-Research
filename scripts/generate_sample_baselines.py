@@ -56,10 +56,35 @@ def _markdown_report(payload: dict[str, object]) -> str:
         "",
         f"Decision: {payload['decision']}",
         "",
+        "## Out-of-Sample",
+        "",
         "| Strategy | Trades | Average R | Total Return |",
         "| --- | ---: | ---: | ---: |",
     ]
     for name, report in strategies.items():
+        if report["sample_scope"] != "validation_test":
+            continue
+        metrics = report["metrics"]
+        lines.append(
+            f"| {name} | {metrics['trade_count']} | "
+            f"{metrics['average_r']:.4f} | {metrics['total_return_pct']:.4%} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Combined",
+            "",
+        ]
+    )
+    lines.extend(
+        [
+            "| Strategy | Trades | Average R | Total Return |",
+            "| --- | ---: | ---: | ---: |",
+        ]
+    )
+    for name, report in strategies.items():
+        if report["sample_scope"] != "train_validation_test":
+            continue
         metrics = report["metrics"]
         lines.append(
             f"| {name} | {metrics['trade_count']} | "

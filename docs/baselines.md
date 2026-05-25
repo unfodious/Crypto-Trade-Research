@@ -10,6 +10,11 @@ Start with simple baselines. If a simple model cannot beat no-trade and rule-onl
 
 The first implementation is intentionally lightweight and dependency-free. It records the feature list, training/validation/test windows, out-of-sample average R, and feature importance for sanity checks.
 
+Generated reports expose both scopes:
+
+- `*_oos`: validation + test only; use these for promotion or rejection evidence.
+- non-`*_oos`: train + validation + test combined; use these only as diagnostics.
+
 ## Time-Series Rule
 
 Do not use shuffled cross-validation for performance claims. Split by time:

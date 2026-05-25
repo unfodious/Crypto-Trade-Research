@@ -78,7 +78,8 @@ class BaselineComparisonReport:
             "decision": self.decision,
             "rejection_reason": self.rejection_reason,
             "strategies": {
-                name: report.to_report_dict() for name, report in self.strategy_reports.items()
+                name: _strategy_report_dict(name, report)
+                for name, report in self.strategy_reports.items()
             },
         }
 
@@ -121,6 +122,7 @@ def train_and_evaluate_baselines(
         initial_equity=config.initial_equity,
         risk_per_trade_pct=config.risk_per_trade_pct,
     )
+    validation_test_samples = validation_samples + test_samples
     strategy_reports = {
         "no_trade": evaluate_signal_strategy("no_trade", [], backtest_config),
         "rule_only": evaluate_signal_strategy(
@@ -137,17 +139,23 @@ def train_and_evaluate_baselines(
             ],
             backtest_config,
         ),
+        "no_trade_oos": evaluate_signal_strategy("no_trade_oos", [], backtest_config),
+        "rule_only_oos": evaluate_signal_strategy(
+            "rule_only_oos",
+            [_sample_to_signal(sample) for sample in validation_test_samples],
+            backtest_config,
+        ),
+        "linear_probability_oos": evaluate_signal_strategy(
+            "linear_probability_oos",
+            [
+                _sample_to_signal(sample)
+                for sample in validation_test_samples
+                if model.probability(sample) >= config.probability_threshold
+            ],
+            backtest_config,
+        ),
     }
-    validation_test_samples = validation_samples + test_samples
-    validation_test_model_report = evaluate_signal_strategy(
-        "linear_probability_oos",
-        [
-            _sample_to_signal(sample)
-            for sample in validation_test_samples
-            if model.probability(sample) >= config.probability_threshold
-        ],
-        backtest_config,
-    )
+    validation_test_model_report = strategy_reports["linear_probability_oos"]
     decision = "research_further"
     rejection_reason = None
     if validation_test_model_report.metrics.average_r <= 0:
@@ -264,6 +272,14 @@ def _serialize_dataclass(value: object) -> dict[str, object]:
     for key, item in payload.items():
         if isinstance(item, datetime):
             payload[key] = _format_timestamp(item)
+    return payload
+
+
+def _strategy_report_dict(name: str, report: BacktestReport) -> dict[str, object]:
+    payload = report.to_report_dict()
+    payload["sample_scope"] = (
+        "validation_test" if name.endswith("_oos") else "train_validation_test"
+    )
     return payload
 
 
