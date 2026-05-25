@@ -213,6 +213,10 @@ The checklist defines the required rollout path: research-only, fake executor re
 
 The current recommendation is documented in `docs/framework-feasibility.md`: keep the local pipeline as primary, evaluate vectorbt/forecasting tools only as adapters or benchmarks, and defer RL frameworks until the fake/paper environment is realistic.
 
+## End-to-End Runbook
+
+Future agents should start from `docs/end-to-end-ml-research-runbook.md`. It covers setup, sample artifact generation, report interpretation, rejection/promotion rules, troubleshooting, and the CT-34 task map.
+
 ## Safety Boundary
 
 All model outputs are research signals until a separate promotion issue defines the integration contract, paper-trading evidence, rollback plan, and runtime safety gates. The live `crypto-trade` runtime remains the source of truth for account state, order placement, leverage, stops, take profit, liquidation handling, and exchange reconciliation.
