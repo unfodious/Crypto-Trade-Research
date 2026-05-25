@@ -1,4 +1,4 @@
-.PHONY: install test lint format check sample-dataset sample-features sample-labels sample-backtest sample-baselines
+.PHONY: install test lint format check sample-dataset sample-features sample-labels sample-backtest sample-baselines sample-meta-strategy
 
 install:
 	uv sync --extra dev --extra research
@@ -48,3 +48,7 @@ sample-backtest:
 sample-baselines:
 	uv run python scripts/generate_sample_baselines.py \
 		--output-dir data/generated/sample_baselines
+
+sample-meta-strategy:
+	uv run python scripts/generate_sample_meta_strategy.py \
+		--output-dir data/generated/sample_meta_strategy

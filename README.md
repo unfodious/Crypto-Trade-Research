@@ -155,6 +155,21 @@ The command writes ignored local outputs under `data/generated/sample_baselines/
 
 The baseline layer compares no-trade, rule-only, and simple linear-probability filtering before any sequence/deep model is considered.
 
+## Meta-Strategy
+
+Generate a deterministic candidate setup → take/skip/size report:
+
+```sh
+make sample-meta-strategy
+```
+
+The command writes ignored local outputs under `data/generated/sample_meta_strategy/`:
+
+- `meta_strategy_report.json`
+- `meta_strategy_report.md`
+
+The meta-strategy layer keeps candidate generation and risk sizing deterministic. ML estimates can filter setups, but they do not directly set leverage.
+
 ## Safety Boundary
 
 All model outputs are research signals until a separate promotion issue defines the integration contract, paper-trading evidence, rollback plan, and runtime safety gates. The live `crypto-trade` runtime remains the source of truth for account state, order placement, leverage, stops, take profit, liquidation handling, and exchange reconciliation.
