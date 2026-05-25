@@ -140,6 +140,21 @@ The command writes ignored local outputs under `data/generated/sample_backtest/`
 
 Backtests are rejection evidence and research diagnostics, not proof of live profitability.
 
+## Baseline Models
+
+Generate a deterministic baseline comparison:
+
+```sh
+make sample-baselines
+```
+
+The command writes ignored local outputs under `data/generated/sample_baselines/`:
+
+- `baseline_report.json`
+- `baseline_report.md`
+
+The baseline layer compares no-trade, rule-only, and simple linear-probability filtering before any sequence/deep model is considered.
+
 ## Safety Boundary
 
 All model outputs are research signals until a separate promotion issue defines the integration contract, paper-trading evidence, rollback plan, and runtime safety gates. The live `crypto-trade` runtime remains the source of truth for account state, order placement, leverage, stops, take profit, liquidation handling, and exchange reconciliation.
