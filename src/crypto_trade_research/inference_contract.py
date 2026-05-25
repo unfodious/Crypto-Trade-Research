@@ -75,7 +75,10 @@ def validate_inference_request(payload: dict[str, Any]) -> None:
         raise ValueError("feature_values must be a non-empty object")
 
 
-def validate_inference_response(payload: dict[str, Any]) -> None:
+def validate_inference_response(
+    payload: dict[str, Any],
+    max_freshness_seconds: int | None = None,
+) -> None:
     _reject_forbidden_authority_fields(payload)
     _require_fields(payload, _REQUIRED_RESPONSE_FIELDS)
     _require_contract_version(payload)
@@ -89,16 +92,20 @@ def validate_inference_response(payload: dict[str, Any]) -> None:
             "timeframe",
         ),
     )
-    _parse_timestamp(payload["signal_timestamp"], "signal_timestamp")
-    _parse_timestamp(payload["features_timestamp"], "features_timestamp")
+    signal_timestamp = _parse_timestamp(payload["signal_timestamp"], "signal_timestamp")
+    features_timestamp = _parse_timestamp(payload["features_timestamp"], "features_timestamp")
     _parse_timestamp(payload["generated_at"], "generated_at")
     _require_probability(
         payload["target_before_stop_probability"],
         "target_before_stop_probability",
     )
     _require_probability(payload["confidence"], "confidence")
-    if float(payload["data_freshness_seconds"]) < 0:
+    data_freshness_seconds = float(payload["data_freshness_seconds"])
+    if data_freshness_seconds < 0:
         raise ValueError("data_freshness_seconds must be non-negative")
+    expected_freshness_seconds = (signal_timestamp - features_timestamp).total_seconds()
+    if data_freshness_seconds != expected_freshness_seconds:
+        raise ValueError("data_freshness_seconds must equal signal_timestamp - features_timestamp")
     if payload["recommended_action"] not in {"take", "skip"}:
         raise ValueError("recommended_action must be take or skip")
     if not isinstance(payload["reason_codes"], list) or not payload["reason_codes"]:
@@ -107,6 +114,16 @@ def validate_inference_response(payload: dict[str, Any]) -> None:
         raise ValueError("hard_risk_blocks must be a list")
     if payload["hard_risk_blocks"] and payload["recommended_action"] != "skip":
         raise ValueError("hard_risk_blocks require recommended_action=skip")
+    if (
+        max_freshness_seconds is not None
+        and data_freshness_seconds > max_freshness_seconds
+        and (
+            payload["recommended_action"] != "skip"
+            or "stale_data" not in payload["reason_codes"]
+            or "stale_data" not in payload["hard_risk_blocks"]
+        )
+    ):
+        raise ValueError("stale responses must skip with stale_data reason and hard risk block")
     _validate_regime(payload["regime"])
 
 

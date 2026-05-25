@@ -74,6 +74,11 @@ The runtime must treat these as `skip` or no-signal conditions:
 
 If `hard_risk_blocks` is non-empty, `recommended_action` must be `skip`.
 
+`data_freshness_seconds` must equal `signal_timestamp - features_timestamp`. If a runtime
+freshness threshold is configured and the response is stale, the response must set
+`recommended_action` to `skip` and include `stale_data` in both `reason_codes` and
+`hard_risk_blocks`.
+
 ## Export Options
 
 Supported future implementation paths:
