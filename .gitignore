@@ -1,0 +1,24 @@
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.DS_Store
+
+# Research outputs and private data stay local unless explicitly published.
+data/
+artifacts/
+models/
+reports/
+notebooks/.ipynb_checkpoints/
+*.parquet
+*.feather
+*.duckdb
+*.sqlite
+*.csv
+
+# Secrets and machine-local configuration.
+.env
+.env.*
+!.env.example
