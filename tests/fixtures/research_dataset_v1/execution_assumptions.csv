@@ -1,0 +1,2 @@
+schema_version,execution_assumption_version,venue,market_type,symbol,maker_fee_rate,taker_fee_rate,spread_bps,slippage_bps,slippage_model,min_notional,quantity_precision,price_precision,effective_from,effective_to
+research.dataset.v1,execution.fake.v1,binance,um_futures,BTCUSDT,0.0002,0.0004,1.5,2.5,fixed_bps_v1,5.00,3,2,2026-01-01T00:00:00Z,

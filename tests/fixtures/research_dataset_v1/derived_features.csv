@@ -1,0 +1,3 @@
+schema_version,feature_set_version,venue,market_type,symbol,timeframe,decision_time,source_window_start,source_window_end,source_available_at,feature_name,feature_value
+research.dataset.v1,features.fake.v1,binance,um_futures,BTCUSDT,1m,2026-01-01T00:02:00Z,2026-01-01T00:00:00Z,2026-01-01T00:02:00Z,2026-01-01T00:02:00Z,return_1m,0.0016658734
+research.dataset.v1,features.fake.v1,binance,um_futures,BTCUSDT,1m,2026-01-01T00:02:00Z,2026-01-01T00:00:00Z,2026-01-01T00:02:00Z,2026-01-01T00:02:00Z,range_bps_2m,30.935268

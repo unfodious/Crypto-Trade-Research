@@ -2,7 +2,17 @@
 
 Research-only Python workspace for the Crypto Trade ML and meta-strategy pipeline.
 
-This repository is intentionally separate from `crypto-trade`, the Go runtime that owns exchange integration, account state, fake/live executors, and production risk gates. Research code here may produce datasets, feature definitions, labels, model artifacts, evaluation reports, and integration contracts, but it must not place, cancel, or modify live orders.
+This repository is intentionally separate from `crypto-trade-infrastructure` and the Go `crypto-trade` backend. Research code here may produce datasets, feature definitions, labels, model artifacts, evaluation reports, and integration contracts, but it must not place, cancel, or modify live orders. The Go backend remains responsible for runtime execution, exchange integration, account state, risk gates, and live trading safety.
+
+See YouTrack epic `CT-34` for the implementation roadmap.
+
+## Initial Direction
+
+- Build reproducible market datasets.
+- Engineer market-regime, price-action, indicator, volatility, participation, and multi-timeframe features.
+- Create leakage-safe labels such as target-before-stop, expected R, MFE/MAE, and no-trade outcomes.
+- Evaluate simple non-neural baselines before deep learning.
+- Promote models only after out-of-sample, walk-forward, paper-trading, rollback, and safety-gate evidence.
 
 ## Current Scope
 
@@ -16,7 +26,8 @@ This repository is intentionally separate from `crypto-trade`, the Go runtime th
 - No live trading integration.
 - No production order/executor changes.
 - No direct neural-network trading decisions.
-- No model promotion without explicit out-of-sample, walk-forward, paper-trading, and safety-gate evidence.
+- No secrets, API keys, raw credentials, or private production exports committed here.
+- No direct model authority over leverage, order size, or order submission.
 
 ## Setup
 
@@ -43,6 +54,7 @@ docker run --rm -v "$PWD":/app -w /app python:3.12-slim \
 
 ## Repository Map
 
+- `schemas/`: canonical dataset schema helpers and fixture validation.
 - `src/crypto_trade_research/data/`: dataset ingestion and versioning code.
 - `src/crypto_trade_research/features/`: regime, indicator, price-action, volatility, participation, and multi-timeframe features.
 - `src/crypto_trade_research/labels/`: target-before-stop, R multiple, MFE/MAE, forward-return, and no-trade labels.
@@ -50,6 +62,7 @@ docker run --rm -v "$PWD":/app -w /app python:3.12-slim \
 - `src/crypto_trade_research/models/`: supervised baselines and later experimental model families.
 - `src/crypto_trade_research/evaluation/`: expectancy, drawdown, turnover, exposure, and sensitivity metrics.
 - `src/crypto_trade_research/reporting/`: reproducible reports for promotion review.
+- `tests/fixtures/`: fake committed datasets for schema and smoke tests.
 - `docs/`: architecture, data contracts, and experiment guidelines.
 - `notebooks/`: exploratory notebooks only; durable logic should move into `src/`.
 

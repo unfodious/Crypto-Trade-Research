@@ -1,16 +1,25 @@
-.venv/
-.pytest_cache/
-.ruff_cache/
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
-.DS_Store
+.python-version
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
 
-# Research outputs and private data stay local unless explicitly published.
+# Local config and secrets
+.env
+.env.*
+!.env.example
+
+# Research artifacts and private data
 data/
+datasets/
 artifacts/
 models/
 reports/
+mlruns/
 notebooks/.ipynb_checkpoints/
 *.parquet
 *.feather
@@ -18,7 +27,7 @@ notebooks/.ipynb_checkpoints/
 *.sqlite
 *.csv
 
-# Secrets and machine-local configuration.
-.env
-.env.*
-!.env.example
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
