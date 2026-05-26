@@ -1,0 +1,62 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct102-long-reversal-expanded-base.json"
+    },
+    {
+      "config": "configs/ct102-long-reversal-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct102_long_reversal_low_h24",
+        "label": {
+          "label_set_version": "labels.ct102.long-24bar-2r.v1",
+          "horizon_bars": 24
+        },
+        "output_dir": "data/generated/ct102_long_reversal_low_h24"
+      }
+    },
+    {
+      "config": "configs/ct102-volume-continuation-expanded-base.json"
+    },
+    {
+      "config": "configs/ct102-volume-continuation-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct102_volume_long_continuation_h24",
+        "label": {
+          "label_set_version": "labels.ct102.long-24bar-2r.v1",
+          "horizon_bars": 24
+        },
+        "output_dir": "data/generated/ct102_volume_long_continuation_h24"
+      }
+    },
+    {
+      "config": "configs/ct102-volatility-breakout-expanded-base.json"
+    },
+    {
+      "config": "configs/ct102-volatility-breakout-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct102_volatility_breakout_long_h24",
+        "label": {
+          "label_set_version": "labels.ct102.long-24bar-2r.v1",
+          "horizon_bars": 24
+        },
+        "output_dir": "data/generated/ct102_volatility_breakout_long_h24"
+      }
+    },
+    {
+      "config": "configs/ct102-volatility-fade-expanded-base.json"
+    },
+    {
+      "config": "configs/ct102-volatility-fade-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct102_volatility_fade_short_h24",
+        "label": {
+          "label_set_version": "labels.ct102.short-24bar-2r.v1",
+          "horizon_bars": 24
+        },
+        "output_dir": "data/generated/ct102_volatility_fade_short_h24"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct102_complementary_expanded_matrix/leaderboard.json",
+  "markdown_path": "data/generated/ct102_complementary_expanded_matrix/leaderboard.md"
+}
