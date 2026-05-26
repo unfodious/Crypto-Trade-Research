@@ -163,6 +163,66 @@ def test_runner_refuses_shuffled_splits_for_performance_claims(tmp_path: Path) -
         run_baseline_experiment(config)
 
 
+def test_runner_applies_deterministic_candidate_setup_filters(tmp_path: Path) -> None:
+    source_csv = tmp_path / "market_candles.csv"
+    _write_market_csv(source_csv)
+    output_dir = tmp_path / "experiment"
+
+    result = run_baseline_experiment(
+        BaselineExperimentConfig.from_dict(
+            {
+                "experiment_name": "unit_pullback_setup",
+                "source_csv": str(source_csv),
+                "dataset_name": "unit_real_dataset",
+                "generator_version": "unit.runner.v1",
+                "generated_at": "2026-05-26T06:00:00Z",
+                "feature": {
+                    "feature_set_version": "features.unit.v1",
+                    "rolling_window": 2,
+                    "decision_feature": "return_1",
+                },
+                "label": {
+                    "label_set_version": "labels.unit.v1",
+                    "horizon_bars": 1,
+                    "side": "long",
+                    "stop_loss_pct": 0.01,
+                    "target_pct": 0.02,
+                    "cost_pct": 0.001,
+                    "flat_threshold_pct": 0.0,
+                },
+                "candidate_setup": {
+                    "name": "negative_one_bar_pullback",
+                    "filters": [
+                        {
+                            "feature": "return_1",
+                            "operator": "<=",
+                            "value": 0.0,
+                        }
+                    ],
+                },
+                "splits": {
+                    "strategy": "chronological",
+                    "train_end": "2026-01-01T00:04:00Z",
+                    "validation_end": "2026-01-01T00:06:00Z",
+                    "test_end": "2026-01-01T00:07:00Z",
+                },
+                "output_dir": str(output_dir),
+                "registry_dir": str(tmp_path / "registry"),
+                "research_git_commit": "unitcommit",
+            }
+        )
+    )
+
+    report = json.loads(result.baseline_report_path.read_text(encoding="utf-8"))
+    assert report["metadata"]["candidate_setup"]["name"] == "negative_one_bar_pullback"
+    assert report["metadata"]["sample_count"] == 3
+    assert report["splits"][0]["row_count"] == 1
+
+    record = json.loads(result.registry_record_path.read_text(encoding="utf-8"))
+    assert record["metrics"]["candidate_setup_name"] == "negative_one_bar_pullback"
+    assert record["metrics"]["candidate_sample_count"] == 3
+
+
 def _write_market_csv(path: Path) -> None:
     header = [
         "schema_version",

@@ -1,0 +1,67 @@
+{
+  "experiment_name": "ct93_pullback_long_range_low",
+  "dataset_manifest_path": "data/generated/ct88_real_market_dataset/manifest.json",
+  "dataset_name": "ct88_real_market_dataset",
+  "generator_version": "ct93.hypothesis.v1",
+  "generated_at": "2026-05-26T08:30:00Z",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "timeframes": [
+    "1m"
+  ],
+  "feature": {
+    "feature_set_version": "features.ct93.range-pullback.v1",
+    "rolling_window": 20,
+    "decision_feature": "lower_wick_ratio"
+  },
+  "label": {
+    "label_set_version": "labels.ct93.long-12bar-2r.v1",
+    "horizon_bars": 12,
+    "side": "long",
+    "stop_loss_pct": 0.004,
+    "target_pct": 0.008,
+    "cost_pct": 0.0007,
+    "flat_threshold_pct": 0.0002,
+    "target_stop_tie_breaker": "stop_first"
+  },
+  "candidate_setup": {
+    "name": "range_low_long_pullback",
+    "filters": [
+      {
+        "feature": "range_position_20",
+        "operator": "<=",
+        "value": 0.25
+      }
+    ]
+  },
+  "splits": {
+    "strategy": "chronological",
+    "train_end": "2025-07-01T12:00:00Z",
+    "validation_end": "2025-07-01T18:00:00Z",
+    "test_end": "2025-07-02T00:00:00Z"
+  },
+  "baseline": {
+    "probability_threshold": 0.55,
+    "initial_equity": 10000,
+    "risk_per_trade_pct": 0.01
+  },
+  "cost_assumptions": {
+    "fee_bps": 4.0,
+    "slippage_bps": 2.0,
+    "funding_bps": 0.0,
+    "notes": "CT-93 H1: low rolling-range pullback long setup on the CT-88 one-day futures dataset."
+  },
+  "promotion_gates": {
+    "min_walk_forward_average_r": 0.0,
+    "min_oos_trade_count": 10,
+    "max_drawdown_pct": 0.08,
+    "max_drawdown_duration_bars": 240,
+    "require_leakage_checks": true,
+    "require_stability_checks": true,
+    "require_paper_trading_plan": true
+  },
+  "output_dir": "data/generated/ct93_pullback_long_range_low",
+  "registry_dir": "data/generated/experiment_registry"
+}

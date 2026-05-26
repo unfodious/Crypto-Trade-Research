@@ -69,6 +69,7 @@ class BaselineExperimentConfig:
     risk_per_trade_pct: float = 0.01
     research_git_commit: str = "unknown"
     promotion_gate_thresholds: PromotionGateThresholds = PromotionGateThresholds()
+    candidate_setup: CandidateSetup | None = None
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> BaselineExperimentConfig:
@@ -137,7 +138,21 @@ class BaselineExperimentConfig:
                     promotion_gates.get("require_paper_trading_plan", True)
                 ),
             ),
+            candidate_setup=_candidate_setup_from_payload(payload.get("candidate_setup")),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateSetupFilter:
+    feature: str
+    operator: str
+    value: float
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateSetup:
+    name: str
+    filters: tuple[CandidateSetupFilter, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +187,7 @@ def run_baseline_experiment(config: BaselineExperimentConfig) -> BaselineExperim
     )
     labels = generate_trade_labels(source_rows, config.label_config)
     samples = _build_samples(features.rows, labels.rows, config)
+    samples = _apply_candidate_setup(samples, config.candidate_setup)
     if not samples:
         raise ValueError("no trainable samples after warmup and label filtering")
 
@@ -221,6 +237,7 @@ def run_baseline_experiment(config: BaselineExperimentConfig) -> BaselineExperim
         "model_artifact_path": str(model_artifact_path),
         "model_artifact_hash": model_artifact_hash,
         "promotion_checklist_path": str(promotion_checklist_path),
+        "candidate_setup": _candidate_setup_payload(config.candidate_setup),
         "sample_count": len(samples),
         "split_strategy": config.split_strategy,
         "research_git_commit": config.research_git_commit,
@@ -259,6 +276,34 @@ def _validate_config(config: BaselineExperimentConfig) -> None:
         raise ValueError("source_csv or dataset_manifest_path is required")
     if config.source_csv is not None and config.dataset_manifest_path is not None:
         raise ValueError("source_csv and dataset_manifest_path are mutually exclusive")
+    if config.candidate_setup is not None and not config.candidate_setup.filters:
+        raise ValueError("candidate_setup filters must not be empty")
+
+
+def _candidate_setup_from_payload(payload: object) -> CandidateSetup | None:
+    if not payload:
+        return None
+    setup = dict(payload)
+    return CandidateSetup(
+        name=str(setup["name"]),
+        filters=tuple(
+            CandidateSetupFilter(
+                feature=str(item["feature"]),
+                operator=str(item["operator"]),
+                value=float(item["value"]),
+            )
+            for item in setup.get("filters", ())
+        ),
+    )
+
+
+def _candidate_setup_payload(setup: CandidateSetup | None) -> dict[str, object]:
+    if setup is None:
+        return {
+            "name": "all_samples",
+            "filters": [],
+        }
+    return asdict(setup)
 
 
 def _dataset_manifest_path(config: BaselineExperimentConfig) -> Path:
@@ -331,6 +376,44 @@ def _build_samples(
             )
         )
     return samples
+
+
+def _apply_candidate_setup(
+    samples: list[ModelSample],
+    setup: CandidateSetup | None,
+) -> list[ModelSample]:
+    if setup is None:
+        return samples
+    filtered = [
+        sample
+        for sample in samples
+        if all(_matches_filter(sample.features, condition) for condition in setup.filters)
+    ]
+    if not filtered:
+        raise ValueError("candidate_setup filters produced no trainable samples")
+    return filtered
+
+
+def _matches_filter(
+    features: dict[str, float],
+    condition: CandidateSetupFilter,
+) -> bool:
+    value = features.get(condition.feature)
+    if value is None:
+        return False
+    if condition.operator == "<":
+        return value < condition.value
+    if condition.operator == "<=":
+        return value <= condition.value
+    if condition.operator == ">":
+        return value > condition.value
+    if condition.operator == ">=":
+        return value >= condition.value
+    if condition.operator == "==":
+        return value == condition.value
+    if condition.operator == "!=":
+        return value != condition.value
+    raise ValueError(f"unsupported candidate_setup operator: {condition.operator}")
 
 
 def _sample_key(row: dict[str, object]) -> tuple[object, ...]:
@@ -488,6 +571,8 @@ def _experiment_record(
             "trade_count": int(model_metrics["trade_count"]),
             "artifact_hash": str(baseline_payload["metadata"]["model_artifact_hash"]),
             "promotion_checklist_path": str(promotion_checklist_path),
+            "candidate_setup_name": str(baseline_payload["metadata"]["candidate_setup"]["name"]),
+            "candidate_sample_count": int(baseline_payload["metadata"]["sample_count"]),
         },
         walk_forward_report_path=str(Path(config.output_dir) / "baseline_report.json"),
         decision=evaluate_promotion_gates(gate_inputs),
