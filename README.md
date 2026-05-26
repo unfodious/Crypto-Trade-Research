@@ -203,6 +203,14 @@ uv run crypto-trade-experiments list \
 
 The command writes ignored local outputs under `data/generated/experiment_registry/`. Each `record.json` captures model version, git commit, dataset manifest, feature and label metadata, train/validation/test windows, cost assumptions, metrics, walk-forward report path, and an explicit promotion or rejection decision.
 
+## Model Artifacts
+
+The initial trained-model artifact format is `crypto-trade.model-artifact.v1`, implemented in
+`crypto_trade_research.models.artifacts`. It writes hashed JSON artifacts for simple
+`linear_probability_threshold` candidates, validates feature schema compatibility on load, rejects
+credential-like or direct order-authority fields, and exposes prediction output only as `take` or
+`skip`.
+
 ## Inference Contract
 
 Validate example research-to-runtime inference fixtures:
