@@ -73,6 +73,16 @@ class BaselineExperimentConfig:
     max_trades_per_symbol: int | None = None
     max_trades_per_decision_time: int | None = None
     loss_cooldown_signals: int = 0
+    probability_threshold_candidates: tuple[float, ...] = (
+        0.40,
+        0.45,
+        0.50,
+        0.55,
+        0.60,
+        0.65,
+        0.70,
+    )
+    ranking_top_n_values: tuple[int, ...] = ()
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> BaselineExperimentConfig:
@@ -118,6 +128,16 @@ class BaselineExperimentConfig:
             probability_threshold=float(baseline.get("probability_threshold", 0.5)),
             initial_equity=float(baseline.get("initial_equity", 10_000)),
             risk_per_trade_pct=float(baseline.get("risk_per_trade_pct", 0.01)),
+            probability_threshold_candidates=tuple(
+                float(value)
+                for value in baseline.get(
+                    "probability_threshold_candidates",
+                    (0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70),
+                )
+            ),
+            ranking_top_n_values=tuple(
+                int(value) for value in baseline.get("ranking_top_n_values", ())
+            ),
             cost_assumptions=CostAssumptions(
                 fee_bps=float(costs.get("fee_bps", 0.0)),
                 slippage_bps=float(costs.get("slippage_bps", 0.0)),
@@ -277,6 +297,8 @@ def run_baseline_experiment(
             max_trades_per_symbol=config.max_trades_per_symbol,
             max_trades_per_decision_time=config.max_trades_per_decision_time,
             loss_cooldown_signals=config.loss_cooldown_signals,
+            probability_threshold_candidates=config.probability_threshold_candidates,
+            ranking_top_n_values=config.ranking_top_n_values,
         ),
     )
     _log_progress(config, "writing artifacts")
@@ -356,6 +378,12 @@ def _validate_config(config: BaselineExperimentConfig) -> None:
         raise ValueError("source_csv and dataset_manifest_path are mutually exclusive")
     if config.candidate_setup is not None and not config.candidate_setup.filters:
         raise ValueError("candidate_setup filters must not be empty")
+    if not config.probability_threshold_candidates:
+        raise ValueError("probability_threshold_candidates must not be empty")
+    if any(threshold < 0 or threshold > 1 for threshold in config.probability_threshold_candidates):
+        raise ValueError("probability_threshold_candidates must be between 0 and 1")
+    if any(top_n <= 0 for top_n in config.ranking_top_n_values):
+        raise ValueError("ranking_top_n_values must be positive")
 
 
 def _log_progress(config: BaselineExperimentConfig, message: str) -> None:
@@ -585,6 +613,8 @@ def _multifeature_ridge_artifact(
             max_trades_per_symbol=config.max_trades_per_symbol,
             max_trades_per_decision_time=config.max_trades_per_decision_time,
             loss_cooldown_signals=config.loss_cooldown_signals,
+            probability_threshold_candidates=config.probability_threshold_candidates,
+            ranking_top_n_values=config.ranking_top_n_values,
         ),
     )
     return MultifeatureRidgeArtifact(
@@ -679,6 +709,10 @@ def _experiment_record(
             "promotion_checklist_path": str(promotion_checklist_path),
             "candidate_setup_name": str(baseline_payload["metadata"]["candidate_setup"]["name"]),
             "candidate_sample_count": int(baseline_payload["metadata"]["sample_count"]),
+            "primary_strategy": primary_strategy,
+            "multifeature_probability_threshold": float(
+                baseline_payload["model_metadata"]["multifeature_probability_threshold"]
+            ),
         },
         walk_forward_report_path=str(Path(config.output_dir) / "baseline_report.json"),
         decision=evaluate_promotion_gates(gate_inputs),
@@ -709,6 +743,42 @@ def _markdown_report(payload: dict[str, Any]) -> str:
         lines.append(
             f"| {name} | {metrics['trade_count']} | "
             f"{metrics['average_r']:.4f} | {metrics['total_return_pct']:.4%} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Validation Threshold Sweep",
+            "",
+            "| Threshold | Selected | Validation Trades | Validation Avg R | "
+            "Max DD | Profit Factor |",
+            "| ---: | --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for row in payload["model_metadata"].get("validation_threshold_sweep", ()):
+        lines.append(
+            f"| {row['threshold']:.2f} | "
+            f"{'yes' if row['selected'] else 'no'} | "
+            f"{row['validation_trade_count']} | "
+            f"{row['validation_average_r']:.4f} | "
+            f"{row['validation_max_drawdown_pct']:.4%} | "
+            f"{row['validation_profit_factor']:.4f} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Top-N Ranking",
+            "",
+            "| Strategy | Trades | Average R | Max DD | Profit Factor |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for row in payload["model_metadata"].get("ranking_comparison", ()):
+        lines.append(
+            f"| {row['strategy']} | "
+            f"{row['trade_count']} | "
+            f"{row['average_r']:.4f} | "
+            f"{row['max_drawdown_pct']:.4%} | "
+            f"{row['profit_factor']:.4f} |"
         )
     lines.extend(
         [

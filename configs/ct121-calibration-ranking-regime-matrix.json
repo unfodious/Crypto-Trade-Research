@@ -1,0 +1,57 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct121-h12-calibration-ranking-base.json"
+    },
+    {
+      "config": "configs/ct121-h12-calibration-ranking-base.json",
+      "overrides": {
+        "experiment_name": "ct121_h12_strict_calibrated_top1",
+        "risk_controls": {
+          "max_trades_per_symbol": 300,
+          "max_trades_per_decision_time": 1,
+          "loss_cooldown_signals": 2
+        },
+        "output_dir": "data/generated/ct121_h12_strict_calibrated_top1"
+      }
+    },
+    {
+      "config": "configs/ct121-h12-calibration-ranking-base.json",
+      "overrides": {
+        "experiment_name": "ct121_h12_strict_calibrated_top2",
+        "risk_controls": {
+          "max_trades_per_symbol": 300,
+          "max_trades_per_decision_time": 2,
+          "loss_cooldown_signals": 2
+        },
+        "output_dir": "data/generated/ct121_h12_strict_calibrated_top2"
+      }
+    },
+    {
+      "config": "configs/ct121-h12-calibration-ranking-base.json",
+      "overrides": {
+        "experiment_name": "ct121_h12_strict_calibrated_top3",
+        "risk_controls": {
+          "max_trades_per_symbol": 300,
+          "max_trades_per_decision_time": 3,
+          "loss_cooldown_signals": 2
+        },
+        "output_dir": "data/generated/ct121_h12_strict_calibrated_top3"
+      }
+    },
+    {
+      "config": "configs/ct121-h12-calibration-ranking-base.json",
+      "overrides": {
+        "experiment_name": "ct121_h12_strict_calibrated_top5",
+        "risk_controls": {
+          "max_trades_per_symbol": 300,
+          "max_trades_per_decision_time": 5,
+          "loss_cooldown_signals": 2
+        },
+        "output_dir": "data/generated/ct121_h12_strict_calibrated_top5"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct121_calibration_ranking_regime_matrix/leaderboard.json",
+  "markdown_path": "data/generated/ct121_calibration_ranking_regime_matrix/leaderboard.md"
+}

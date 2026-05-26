@@ -199,6 +199,10 @@ def leaderboard_row_from_record(
         "oos_rule_only_average_r": _optional_float(metrics.get("rule_only_average_r")),
         "trade_count": _optional_int(metrics.get("trade_count")),
         "max_drawdown_pct": _optional_float(metrics.get("max_drawdown_pct")),
+        "selected_probability_threshold": _optional_float(
+            metrics.get("multifeature_probability_threshold")
+        ),
+        "primary_strategy": str(metrics.get("primary_strategy", "")),
         "symbol_coverage": _symbol_coverage(config),
         "artifact_hash": str(metrics.get("artifact_hash", "")),
         "registry_path": str(registry_record_path),
@@ -249,6 +253,8 @@ def _failure_row(
         "oos_rule_only_average_r": None,
         "trade_count": None,
         "max_drawdown_pct": None,
+        "selected_probability_threshold": None,
+        "primary_strategy": "",
         "symbol_coverage": _symbol_coverage(config),
         "artifact_hash": "",
         "registry_path": "",
@@ -306,8 +312,8 @@ def _markdown_leaderboard(rows: list[dict[str, object]]) -> str:
         "# Batch Experiment Leaderboard",
         "",
         "| Experiment | Run | Decision | Failed gates | Model avg R | Rule avg R | "
-        "Trades | Max DD | Symbols | Registry |",
-        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- |",
+        "Trades | Max DD | Selected p | Primary | Symbols | Registry |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
     ]
     for row in rows:
         lines.append(
@@ -320,6 +326,8 @@ def _markdown_leaderboard(rows: list[dict[str, object]]) -> str:
             f"{_fmt_metric(row['oos_rule_only_average_r'])} | "
             f"{row['trade_count'] if row['trade_count'] is not None else '-'} | "
             f"{_fmt_metric(row['max_drawdown_pct'])} | "
+            f"{_fmt_metric(row['selected_probability_threshold'])} | "
+            f"{row['primary_strategy'] or '-'} | "
             f"{row['symbol_coverage']} | "
             f"{row['registry_path'] or row['error']} |"
         )

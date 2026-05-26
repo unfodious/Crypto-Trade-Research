@@ -14,6 +14,8 @@ Start with simple baselines. If a simple model cannot beat no-trade and rule-onl
 - `multifeature_ridge_risk_controlled`: the same multifeature model evaluated with configured
   research risk controls such as top-N same-timestamp ranking, per-symbol trade caps, and cooldown
   after accepted losses.
+- `multifeature_ridge_topN_oos`: diagnostic validation+test reports that force explicit
+  same-timestamp confidence ranking for configured N values, for example top 1, 2, 3, and 5.
 
 The implementation is intentionally lightweight and dependency-free. It records the feature list,
 training/validation/test windows, out-of-sample average R, and feature importance for sanity checks.
@@ -42,7 +44,13 @@ Guardrails:
 
 - train statistics come from the train split only,
 - validation chooses the probability threshold,
+- `baseline.probability_threshold_candidates` may declare the validation-only sweep candidates;
+  reports must show the selected threshold and every validation row tested,
+- `baseline.ranking_top_n_values` may declare explicit top-N diagnostics; use these to test signal
+  ranking instead of loosening the candidate setup,
 - test data is never used for fitting or calibration,
+- regime stratification is diagnostic evidence on selected OOS signals, not a separate trained
+  regime model,
 - feature importance is diagnostic, not proof of causality,
 - missing feature values fail soft inside research by using train means; runtime artifacts still
   fail closed until a promoted model contract explicitly supports imputation.

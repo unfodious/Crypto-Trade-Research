@@ -1,6 +1,7 @@
 """Simple non-neural baselines for supervised trading research."""
 
 import math
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 
@@ -55,6 +56,16 @@ class BaselineConfig:
     max_trades_per_symbol: int | None = None
     max_trades_per_decision_time: int | None = None
     loss_cooldown_signals: int = 0
+    probability_threshold_candidates: tuple[float, ...] = (
+        0.40,
+        0.45,
+        0.50,
+        0.55,
+        0.60,
+        0.65,
+        0.70,
+    )
+    ranking_top_n_values: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,12 +168,14 @@ def train_and_evaluate_baselines(
         loss_cooldown_signals=config.loss_cooldown_signals,
     )
     validation_test_samples = validation_samples + test_samples
-    ridge_probability_threshold = _calibrate_probability_threshold(
+    threshold_calibration = _calibrate_probability_threshold(
         ridge_model,
         validation_samples,
         risk_backtest_config,
         fallback=config.probability_threshold,
+        candidates=config.probability_threshold_candidates,
     )
+    ridge_probability_threshold = threshold_calibration["selected_threshold"]
     primary_strategy_name = (
         "multifeature_ridge_risk_controlled_oos"
         if _has_risk_controls(config)
@@ -236,6 +249,14 @@ def train_and_evaluate_baselines(
             risk_backtest_config,
         ),
     }
+    strategy_reports.update(
+        _ranking_strategy_reports(
+            ridge_model,
+            validation_test_samples,
+            ridge_probability_threshold,
+            config,
+        )
+    )
     validation_test_model_report = strategy_reports[primary_strategy_name]
     decision = "research_further"
     rejection_reason = None
@@ -253,8 +274,17 @@ def train_and_evaluate_baselines(
             "decision_feature": config.decision_feature,
             "probability_threshold": config.probability_threshold,
             "multifeature_probability_threshold": ridge_probability_threshold,
+            "multifeature_probability_threshold_source": threshold_calibration["selected_source"],
+            "validation_threshold_sweep": threshold_calibration["sweep"],
             "multifeature_feature_count": len(ridge_model.feature_names),
             "primary_strategy": primary_strategy_name,
+            "ranking_top_n_values": list(config.ranking_top_n_values),
+            "ranking_comparison": _ranking_comparison(strategy_reports),
+            "regime_stratification": _regime_stratification(
+                ridge_model,
+                validation_test_samples,
+                ridge_probability_threshold,
+            ),
             "risk_controls": _risk_controls_payload(config),
             "train_window": [
                 _format_timestamp(train_samples[0].decision_time),
@@ -367,29 +397,217 @@ def _calibrate_probability_threshold(
     backtest_config: BacktestConfig,
     *,
     fallback: float,
-) -> float:
+    candidates: tuple[float, ...],
+) -> dict[str, object]:
+    if not candidates:
+        raise ValueError("probability_threshold_candidates must not be empty")
     if not validation_samples:
-        return fallback
-    candidates = (0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70)
+        return {
+            "selected_threshold": fallback,
+            "selected_source": "fallback_no_validation_samples",
+            "sweep": [],
+        }
     scored: list[tuple[float, int, float]] = []
+    sweep: list[dict[str, float | int | bool]] = []
     for threshold in candidates:
         report = evaluate_signal_strategy(
             "validation_threshold",
             [
-                _sample_to_signal(sample)
+                _sample_to_signal(sample, confidence=model.probability(sample))
                 for sample in validation_samples
                 if model.probability(sample) >= threshold
             ],
             backtest_config,
         )
         scored.append((report.metrics.average_r, report.metrics.trade_count, threshold))
+        sweep.append(
+            {
+                "threshold": threshold,
+                "validation_trade_count": report.metrics.trade_count,
+                "validation_average_r": report.metrics.average_r,
+                "validation_max_drawdown_pct": report.metrics.max_drawdown_pct,
+                "validation_profit_factor": report.metrics.profit_factor,
+                "selected": False,
+            }
+        )
     best_average_r, best_trade_count, best_threshold = max(
         scored,
         key=lambda item: (item[0], item[1], item[2]),
     )
     if best_trade_count == 0 or math.isnan(best_average_r):
-        return fallback
-    return best_threshold
+        return {
+            "selected_threshold": fallback,
+            "selected_source": "fallback_no_validation_trades",
+            "sweep": sweep,
+        }
+    for row in sweep:
+        row["selected"] = row["threshold"] == best_threshold
+    return {
+        "selected_threshold": best_threshold,
+        "selected_source": "validation",
+        "sweep": sweep,
+    }
+
+
+def _ranking_strategy_reports(
+    model: RidgeProbabilityModel,
+    samples: list[ModelSample],
+    threshold: float,
+    config: BaselineConfig,
+) -> dict[str, BacktestReport]:
+    reports: dict[str, BacktestReport] = {}
+    for top_n in config.ranking_top_n_values:
+        top_n_config = BacktestConfig(
+            initial_equity=config.initial_equity,
+            risk_per_trade_pct=config.risk_per_trade_pct,
+            max_trades_per_symbol=config.max_trades_per_symbol,
+            max_trades_per_decision_time=top_n,
+            loss_cooldown_signals=config.loss_cooldown_signals,
+        )
+        strategy_name = f"multifeature_ridge_top{top_n}_oos"
+        reports[strategy_name] = evaluate_signal_strategy(
+            strategy_name,
+            [
+                _sample_to_signal(sample, confidence=model.probability(sample))
+                for sample in samples
+                if model.probability(sample) >= threshold
+            ],
+            top_n_config,
+        )
+    return reports
+
+
+def _ranking_comparison(
+    strategy_reports: dict[str, BacktestReport],
+) -> list[dict[str, float | int | str]]:
+    rows: list[dict[str, float | int | str]] = []
+    for name, report in sorted(strategy_reports.items()):
+        if not (name.startswith("multifeature_ridge_top") and name.endswith("_oos")):
+            continue
+        rows.append(
+            {
+                "strategy": name,
+                "trade_count": report.metrics.trade_count,
+                "average_r": report.metrics.average_r,
+                "max_drawdown_pct": report.metrics.max_drawdown_pct,
+                "profit_factor": report.metrics.profit_factor,
+            }
+        )
+    return rows
+
+
+def _regime_stratification(
+    model: RidgeProbabilityModel,
+    samples: list[ModelSample],
+    threshold: float,
+) -> dict[str, list[dict[str, float | int | str]]]:
+    selected = [sample for sample in samples if model.probability(sample) >= threshold]
+    return {
+        "btc_return_1_shock_band": _bucket_metrics(
+            selected,
+            lambda sample: _shock_band(sample.features.get("btc_return_1")),
+        ),
+        "eth_return_1_shock_band": _bucket_metrics(
+            selected,
+            lambda sample: _shock_band(sample.features.get("eth_return_1")),
+        ),
+        "market_breadth_band": _bucket_metrics(
+            selected,
+            lambda sample: _fraction_band(sample.features.get("market_positive_return_fraction")),
+        ),
+        "risk_on_score_band": _bucket_metrics(
+            selected,
+            lambda sample: _fraction_band(_rolling_feature(sample, "risk_on_score")),
+        ),
+        "volatility_bucket": _bucket_metrics(
+            selected,
+            lambda sample: _volatility_bucket_label(_rolling_feature(sample, "volatility_bucket")),
+        ),
+        "btc_eth_trend_regime": _bucket_metrics(selected, _btc_eth_trend_regime),
+    }
+
+
+def _bucket_metrics(
+    samples: list[ModelSample],
+    bucket_fn: Callable[[ModelSample], str],
+) -> list[dict[str, float | int | str]]:
+    buckets: dict[str, list[float]] = {}
+    for sample in samples:
+        buckets.setdefault(bucket_fn(sample), []).append(sample.realized_r_after_costs)
+    rows = []
+    for bucket, values in sorted(buckets.items()):
+        wins = [value for value in values if value > 0]
+        losses = [value for value in values if value < 0]
+        gross_loss = abs(sum(losses))
+        rows.append(
+            {
+                "bucket": bucket,
+                "trade_count": len(values),
+                "average_r": _mean(values),
+                "win_rate": len(wins) / len(values) if values else 0.0,
+                "profit_factor": sum(wins) / gross_loss if gross_loss else float("inf"),
+            }
+        )
+    return rows
+
+
+def _shock_band(value: float | None) -> str:
+    if value is None:
+        return "missing"
+    if value <= -0.0015:
+        return "shock_down"
+    if value <= -0.0003:
+        return "down"
+    if value < 0.0003:
+        return "flat"
+    if value < 0.0015:
+        return "up"
+    return "shock_up"
+
+
+def _fraction_band(value: float | None) -> str:
+    if value is None:
+        return "missing"
+    if value < 0.35:
+        return "risk_off"
+    if value <= 0.65:
+        return "mixed"
+    return "risk_on"
+
+
+def _rolling_feature(sample: ModelSample, prefix: str) -> float | None:
+    matches = [
+        (name, value)
+        for name, value in sample.features.items()
+        if name == prefix or name.startswith(f"{prefix}_")
+    ]
+    if not matches:
+        return None
+    return float(sorted(matches)[-1][1])
+
+
+def _volatility_bucket_label(value: float | None) -> str:
+    if value is None:
+        return "missing"
+    labels = {
+        0.0: "compressed",
+        1.0: "normal",
+        2.0: "expanded",
+        3.0: "disorderly",
+    }
+    return labels.get(float(value), f"bucket_{value:g}")
+
+
+def _btc_eth_trend_regime(sample: ModelSample) -> str:
+    btc = _rolling_feature(sample, "btc_trend_above_ma")
+    eth = _rolling_feature(sample, "eth_trend_above_ma")
+    if btc is None or eth is None:
+        return "missing"
+    if btc >= 1 and eth >= 1:
+        return "both_above_ma"
+    if btc <= 0 and eth <= 0:
+        return "both_below_ma"
+    return "mixed"
 
 
 def _has_risk_controls(config: BaselineConfig) -> bool:
@@ -543,6 +761,12 @@ def _validate_config(config: BaselineConfig) -> None:
         raise ValueError("max_trades_per_decision_time must be positive when set")
     if config.loss_cooldown_signals < 0:
         raise ValueError("loss_cooldown_signals must be non-negative")
+    if not config.probability_threshold_candidates:
+        raise ValueError("probability_threshold_candidates must not be empty")
+    if any(threshold < 0 or threshold > 1 for threshold in config.probability_threshold_candidates):
+        raise ValueError("probability_threshold_candidates must be between 0 and 1")
+    if any(top_n <= 0 for top_n in config.ranking_top_n_values):
+        raise ValueError("ranking_top_n_values must be positive")
 
 
 def _serialize_dataclass(value: object) -> dict[str, object]:

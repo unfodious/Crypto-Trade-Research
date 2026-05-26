@@ -30,13 +30,24 @@ def _multi_sample(
     setup_score: float,
     context_score: float,
     outcome_r: float,
+    symbol: str = "BTCUSDT",
 ) -> ModelSample:
     return ModelSample(
         decision_time=_ts(day),
-        symbol="BTCUSDT",
+        symbol=symbol,
         timeframe="1d",
         side="long",
-        features={"setup_score": setup_score, "context_score": context_score},
+        features={
+            "setup_score": setup_score,
+            "context_score": context_score,
+            "btc_return_1": 0.0,
+            "eth_return_1": 0.0,
+            "market_positive_return_fraction": 0.5,
+            "risk_on_score_20": 0.5,
+            "volatility_bucket_20": 1.0,
+            "btc_trend_above_ma_20": 1.0,
+            "eth_trend_above_ma_20": 0.0,
+        },
         target_before_stop=outcome_r > 0,
         realized_r_after_costs=outcome_r,
     )
@@ -111,6 +122,8 @@ def test_multifeature_ridge_uses_context_feature_and_validation_threshold() -> N
     assert report.strategy_reports["multifeature_ridge_oos"].metrics.trade_count == 1
     assert report.strategy_reports["multifeature_ridge_oos"].metrics.average_r == 1.0
     assert report.model_metadata["multifeature_probability_threshold"] >= 0.4
+    assert report.model_metadata["validation_threshold_sweep"]
+    assert any(row["selected"] for row in report.model_metadata["validation_threshold_sweep"])
     assert any(
         item["feature"] == "context_score" and item["model"] == "multifeature_ridge"
         for item in report.feature_importance
@@ -165,6 +178,89 @@ def test_multifeature_ridge_reports_risk_controlled_primary_strategy() -> None:
         "loss_cooldown_signals": 1,
     }
     assert "multifeature_ridge_risk_controlled_oos" in report.strategy_reports
+
+
+def test_multifeature_ridge_reports_top_n_ranking_and_regime_slices() -> None:
+    samples = [
+        ModelSample(
+            decision_time=_ts(1),
+            symbol="BTCUSDT",
+            timeframe="1d",
+            side="long",
+            features={
+                "setup_score": 0.1,
+                "context_score": 1.0,
+                "btc_return_1": -0.002,
+                "eth_return_1": -0.001,
+                "market_positive_return_fraction": 0.2,
+                "risk_on_score_20": 0.25,
+                "volatility_bucket_20": 2.0,
+                "btc_trend_above_ma_20": 0.0,
+                "eth_trend_above_ma_20": 0.0,
+            },
+            target_before_stop=True,
+            realized_r_after_costs=1.0,
+        ),
+        ModelSample(
+            decision_time=_ts(1),
+            symbol="ETHUSDT",
+            timeframe="1d",
+            side="long",
+            features={
+                "setup_score": 0.2,
+                "context_score": 0.9,
+                "btc_return_1": 0.002,
+                "eth_return_1": 0.001,
+                "market_positive_return_fraction": 0.8,
+                "risk_on_score_20": 0.75,
+                "volatility_bucket_20": 1.0,
+                "btc_trend_above_ma_20": 1.0,
+                "eth_trend_above_ma_20": 1.0,
+            },
+            target_before_stop=True,
+            realized_r_after_costs=1.0,
+        ),
+        _multi_sample(2, setup_score=0.8, context_score=0.0, outcome_r=-1.0),
+        _multi_sample(3, setup_score=0.2, context_score=1.0, outcome_r=1.0),
+        _multi_sample(4, setup_score=0.8, context_score=0.0, outcome_r=-1.0),
+        _multi_sample(5, setup_score=0.7, context_score=1.0, outcome_r=1.0),
+        _multi_sample(6, setup_score=0.6, context_score=0.0, outcome_r=-1.0),
+    ]
+
+    report = train_and_evaluate_baselines(
+        samples,
+        BaselineConfig(
+            feature_names=(
+                "setup_score",
+                "context_score",
+                "btc_return_1",
+                "eth_return_1",
+                "market_positive_return_fraction",
+                "risk_on_score_20",
+                "volatility_bucket_20",
+                "btc_trend_above_ma_20",
+                "eth_trend_above_ma_20",
+            ),
+            decision_feature="setup_score",
+            train_end=_ts(4),
+            validation_end=_ts(5),
+            test_end=_ts(6),
+            probability_threshold_candidates=(0.4, 0.5, 0.6),
+            ranking_top_n_values=(1, 2),
+        ),
+    )
+
+    assert "multifeature_ridge_top1_oos" in report.strategy_reports
+    assert "multifeature_ridge_top2_oos" in report.strategy_reports
+    assert [row["strategy"] for row in report.model_metadata["ranking_comparison"]] == [
+        "multifeature_ridge_top1_oos",
+        "multifeature_ridge_top2_oos",
+    ]
+    regime = report.model_metadata["regime_stratification"]
+    assert "btc_return_1_shock_band" in regime
+    assert "risk_on_score_band" in regime
+    assert "volatility_bucket" in regime
+    assert any(row["bucket"] != "missing" for row in regime["btc_eth_trend_regime"])
 
 
 def test_baseline_report_rejects_in_sample_only_performance() -> None:

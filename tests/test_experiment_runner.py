@@ -50,6 +50,8 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
                 },
                 "baseline": {
                     "probability_threshold": 0.5,
+                    "probability_threshold_candidates": [0.4, 0.5, 0.6],
+                    "ranking_top_n_values": [1, 2],
                     "initial_equity": 10000,
                     "risk_per_trade_pct": 0.01,
                 },
@@ -96,6 +98,10 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     assert report["strategies"]["rule_only_oos"]["sample_scope"] == "validation_test"
     assert report["strategies"]["linear_probability_oos"]["sample_scope"] == "validation_test"
     assert report["model_metadata"]["primary_strategy"] == "multifeature_ridge_risk_controlled_oos"
+    assert report["model_metadata"]["validation_threshold_sweep"]
+    assert report["model_metadata"]["ranking_top_n_values"] == [1, 2]
+    assert "multifeature_ridge_top1_oos" in report["strategies"]
+    assert "regime_stratification" in report["model_metadata"]
     assert report["metadata"]["risk_controls"]["max_trades_per_decision_time"] == 1
 
     record = json.loads(result.registry_record_path.read_text(encoding="utf-8"))
