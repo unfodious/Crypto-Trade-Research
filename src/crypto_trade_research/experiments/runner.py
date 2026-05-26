@@ -70,6 +70,7 @@ class BaselineExperimentConfig:
     validation_end: datetime
     test_end: datetime
     cost_assumptions: CostAssumptions
+    higher_timeframes: tuple[str, ...] = ()
     source_csv: Path | None = None
     dataset_manifest_path: Path | None = None
     generated_at: datetime | None = None
@@ -136,6 +137,9 @@ class BaselineExperimentConfig:
             feature_set_version=str(feature["feature_set_version"]),
             rolling_window=int(feature.get("rolling_window", 20)),
             decision_feature=str(feature["decision_feature"]),
+            higher_timeframes=tuple(
+                str(timeframe).lower() for timeframe in feature.get("higher_timeframes", ())
+            ),
             label_config=LabelConfig(
                 label_set_version=str(label["label_set_version"]),
                 horizon_bars=int(label["horizon_bars"]),
@@ -273,6 +277,7 @@ def build_baseline_features(
         FeatureConfig(
             feature_set_version=config.feature_set_version,
             rolling_window=config.rolling_window,
+            higher_timeframes=config.higher_timeframes,
         ),
     )
     _log_progress(config, f"built {len(features.rows)} feature rows")

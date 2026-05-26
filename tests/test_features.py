@@ -269,3 +269,53 @@ def test_market_context_features_use_same_timestamp_reference_rows() -> None:
     assert ada_third_row["correlation_to_eth_2"] == pytest.approx(-1.0)
     assert ada_third_row["beta_to_btc_2"] is not None
     assert ada_third_row["beta_to_eth_2"] is not None
+
+
+def test_derived_multi_timeframe_features_use_only_closed_candles() -> None:
+    rows = []
+    for symbol, base in (("BTCUSDT", 100), ("ETHUSDT", 50), ("ADAUSDT", 10)):
+        rows.extend(
+            [
+                _bar(1, close=base, symbol=symbol),
+                _bar(2, close=base + 2, symbol=symbol),
+                _bar(3, close=base + 4, symbol=symbol),
+                _bar(4, close=base + 6, symbol=symbol),
+            ]
+        )
+
+    frame = generate_ohlcv_features(
+        rows,
+        FeatureConfig(
+            feature_set_version="unit.features.v1",
+            rolling_window=2,
+            higher_timeframes=("2m",),
+        ),
+    )
+
+    feature_names = {spec.name for spec in frame.manifest.features}
+    assert {
+        "mtf_2m_return_1",
+        "mtf_2m_trend_above_ma_2",
+        "mtf_2m_ma_slope_sign_2",
+        "mtf_2m_range_position_2",
+        "mtf_2m_volatility_bucket_2",
+        "mtf_2m_market_positive_return_fraction",
+        "mtf_2m_risk_on_score_2",
+        "mtf_2m_btc_return_1",
+        "mtf_2m_eth_return_1",
+    } <= feature_names
+
+    ada_rows = [row for row in frame.rows if row["symbol"] == "ADAUSDT"]
+    assert ada_rows[2]["decision_time"] == _ts(3)
+    assert ada_rows[2]["mtf_2m_return_1"] is None
+
+    last_row = ada_rows[3]
+    assert last_row["decision_time"] == _ts(4)
+    assert last_row["mtf_2m_return_1"] == pytest.approx(16 / 12 - 1)
+    assert last_row["mtf_2m_trend_above_ma_2"] == 1.0
+    assert last_row["mtf_2m_ma_slope_sign_2"] is None
+    assert last_row["mtf_2m_range_position_2"] == pytest.approx(0.8)
+    assert last_row["mtf_2m_volatility_bucket_2"] == 1.0
+    assert last_row["mtf_2m_market_positive_return_fraction"] == 1.0
+    assert last_row["mtf_2m_risk_on_score_2"] == 1.0
+    assert last_row["mtf_2m_btc_return_1"] == pytest.approx(106 / 102 - 1)

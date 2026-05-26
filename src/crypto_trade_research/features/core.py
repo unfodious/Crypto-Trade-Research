@@ -14,6 +14,7 @@ REFERENCE_SYMBOLS = ("BTCUSDT", "ETHUSDT")
 class FeatureConfig:
     feature_set_version: str
     rolling_window: int = 20
+    higher_timeframes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,12 +61,15 @@ def generate_ohlcv_features(
         group_higher_rows = [
             row for row in higher_rows if _higher_timeframe_group_key(row) == base_group_key
         ]
-        output_rows.extend(
+        group_output_rows = [
             _build_feature_row(group_rows, index, config, group_higher_rows)
             for index in range(len(group_rows))
-        )
+        ]
+        _add_derived_multi_timeframe_features(group_output_rows, group_rows, config)
+        output_rows.extend(group_output_rows)
 
     _add_market_context_features(output_rows, config.rolling_window)
+    _add_multi_timeframe_market_context_features(output_rows, config)
 
     return FeatureFrame(
         rows=output_rows,
@@ -74,7 +78,11 @@ def generate_ohlcv_features(
             feature_set_version=config.feature_set_version,
             generator_name=GENERATOR_NAME,
             row_count=len(output_rows),
-            features=_feature_specs(config.rolling_window, bool(higher_rows)),
+            features=_feature_specs(
+                config.rolling_window,
+                bool(higher_rows),
+                config.higher_timeframes,
+            ),
         ),
     )
 
@@ -223,7 +231,11 @@ def _build_feature_row(
     return feature_row
 
 
-def _feature_specs(rolling_window: int, has_higher_timeframe: bool) -> tuple[FeatureSpec, ...]:
+def _feature_specs(
+    rolling_window: int,
+    has_higher_timeframe: bool,
+    higher_timeframes: tuple[str, ...],
+) -> tuple[FeatureSpec, ...]:
     specs = [
         FeatureSpec("return_1", "indicator", 2, "post_close", "One-bar close-to-close return."),
         FeatureSpec("roc_2", "indicator", 3, "post_close", "Two-bar rate of change."),
@@ -466,6 +478,87 @@ def _feature_specs(rolling_window: int, has_higher_timeframe: bool) -> tuple[Fea
                 ),
             ]
         )
+    for timeframe in higher_timeframes:
+        prefix = _multi_timeframe_prefix(timeframe)
+        specs.extend(
+            [
+                FeatureSpec(
+                    f"{prefix}_return_1",
+                    "multi_timeframe",
+                    2,
+                    "post_close",
+                    f"{timeframe} close-to-close return from derived closed candles.",
+                ),
+                FeatureSpec(
+                    f"{prefix}_trend_above_ma_{rolling_window}",
+                    "multi_timeframe",
+                    rolling_window,
+                    "post_close",
+                    f"{timeframe} trend-above-MA flag from derived closed candles.",
+                ),
+                FeatureSpec(
+                    f"{prefix}_ma_slope_sign_{rolling_window}",
+                    "multi_timeframe",
+                    rolling_window + 1,
+                    "post_close",
+                    f"{timeframe} rolling-MA slope sign from derived closed candles.",
+                ),
+                FeatureSpec(
+                    f"{prefix}_range_position_{rolling_window}",
+                    "multi_timeframe",
+                    rolling_window,
+                    "post_close",
+                    f"{timeframe} close position inside rolling high-low range.",
+                ),
+                FeatureSpec(
+                    f"{prefix}_volatility_bucket_{rolling_window}",
+                    "multi_timeframe",
+                    rolling_window,
+                    "post_close",
+                    f"{timeframe} volatility bucket from derived closed candles.",
+                ),
+                FeatureSpec(
+                    f"{prefix}_market_positive_return_fraction",
+                    "multi_timeframe_context",
+                    2,
+                    "post_close",
+                    f"Fraction of symbols with positive {timeframe} return.",
+                ),
+                FeatureSpec(
+                    f"{prefix}_risk_on_score_{rolling_window}",
+                    "multi_timeframe_context",
+                    rolling_window,
+                    "post_close",
+                    f"{timeframe} risk-on score from breadth and BTC/ETH trend flags.",
+                ),
+            ]
+        )
+        for reference in ("btc", "eth"):
+            specs.extend(
+                [
+                    FeatureSpec(
+                        f"{prefix}_{reference}_return_1",
+                        "multi_timeframe_context",
+                        2,
+                        "post_close",
+                        f"{reference.upper()} {timeframe} return.",
+                    ),
+                    FeatureSpec(
+                        f"{prefix}_{reference}_trend_above_ma_{rolling_window}",
+                        "multi_timeframe_context",
+                        rolling_window,
+                        "post_close",
+                        f"{reference.upper()} {timeframe} trend-above-MA flag.",
+                    ),
+                    FeatureSpec(
+                        f"{prefix}_{reference}_volatility_bucket_{rolling_window}",
+                        "multi_timeframe_context",
+                        rolling_window,
+                        "post_close",
+                        f"{reference.upper()} {timeframe} volatility bucket.",
+                    ),
+                ]
+            )
     specs.extend(_market_context_specs(rolling_window))
     return tuple(specs)
 
@@ -664,6 +757,225 @@ def _add_market_context_features(rows: list[dict[str, object]], rolling_window: 
                     candidate_returns,
                     reference_returns,
                 )
+
+
+def _add_derived_multi_timeframe_features(
+    feature_rows: list[dict[str, object]],
+    source_rows: Sequence[dict[str, object]],
+    config: FeatureConfig,
+) -> None:
+    for timeframe in config.higher_timeframes:
+        frame_minutes = _timeframe_minutes(timeframe)
+        prefix = _multi_timeframe_prefix(timeframe)
+        names = _multi_timeframe_feature_names(prefix, config.rolling_window)
+        htf_rows = _aggregate_closed_timeframe_rows(source_rows, timeframe, frame_minutes)
+        htf_features = _multi_timeframe_feature_rows(htf_rows, config.rolling_window, prefix)
+        pointer = -1
+        for row in feature_rows:
+            decision_time = _as_datetime(row["decision_time"])
+            while (
+                pointer + 1 < len(htf_features)
+                and _as_datetime(htf_features[pointer + 1]["decision_time"]) <= decision_time
+            ):
+                pointer += 1
+            if pointer < 0:
+                for name in names:
+                    row[name] = None
+                continue
+            htf_feature = htf_features[pointer]
+            for name in names:
+                row[name] = htf_feature.get(name)
+
+
+def _aggregate_closed_timeframe_rows(
+    rows: Sequence[dict[str, object]],
+    timeframe: str,
+    frame_minutes: int,
+) -> list[dict[str, object]]:
+    aggregated: list[dict[str, object]] = []
+    current_rows: list[dict[str, object]] = []
+    for row in rows:
+        current_rows.append(row)
+        close_time = _as_datetime(row["close_time"])
+        if _total_minutes(close_time) % frame_minutes != 0:
+            continue
+        first = current_rows[0]
+        last = current_rows[-1]
+        aggregated.append(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "venue": first["venue"],
+                "market_type": first["market_type"],
+                "symbol": first["symbol"],
+                "base_asset": first.get("base_asset"),
+                "quote_asset": first.get("quote_asset"),
+                "timeframe": timeframe,
+                "open_time": first["open_time"],
+                "close_time": last["close_time"],
+                "source_available_at": last["source_available_at"],
+                "open": first["open"],
+                "high": max(_as_float(item["high"]) for item in current_rows),
+                "low": min(_as_float(item["low"]) for item in current_rows),
+                "close": last["close"],
+                "volume": sum(_as_float(item["volume"]) for item in current_rows),
+            }
+        )
+        current_rows = []
+    return aggregated
+
+
+def _multi_timeframe_feature_rows(
+    rows: Sequence[dict[str, object]],
+    rolling_window: int,
+    prefix: str,
+) -> list[dict[str, object]]:
+    output: list[dict[str, object]] = []
+    for index, row in enumerate(rows):
+        window_rows = _window(rows, index, rolling_window)
+        close = _as_float(row["close"])
+        previous_row = rows[index - 1] if index >= 1 else None
+        close_values = [_as_float(item["close"]) for item in window_rows]
+        rolling_high = max(_as_float(item["high"]) for item in window_rows)
+        rolling_low = min(_as_float(item["low"]) for item in window_rows)
+        rolling_range = rolling_high - rolling_low
+        current_ma = _mean(close_values) if len(window_rows) == rolling_window else None
+        previous_ma = _previous_ma(rows, index, rolling_window)
+        ma_slope = (
+            _return(current_ma, previous_ma)
+            if current_ma is not None and previous_ma is not None
+            else None
+        )
+        volatility_expansion = (
+            _volatility_expansion(window_rows) if len(window_rows) == rolling_window else None
+        )
+        output.append(
+            {
+                "decision_time": _as_datetime(row["close_time"]),
+                f"{prefix}_return_1": _return(close, _as_float(previous_row["close"]))
+                if previous_row
+                else None,
+                f"{prefix}_trend_above_ma_{rolling_window}": _flag(close >= current_ma)
+                if current_ma is not None
+                else None,
+                f"{prefix}_ma_slope_sign_{rolling_window}": _sign(ma_slope),
+                f"{prefix}_range_position_{rolling_window}": _ratio(
+                    close - rolling_low,
+                    rolling_range,
+                )
+                if len(window_rows) == rolling_window
+                else None,
+                f"{prefix}_volatility_bucket_{rolling_window}": _volatility_bucket(
+                    volatility_expansion
+                ),
+            }
+        )
+    return output
+
+
+def _add_multi_timeframe_market_context_features(
+    rows: list[dict[str, object]],
+    config: FeatureConfig,
+) -> None:
+    if not config.higher_timeframes:
+        return
+    by_context: dict[tuple[object, ...], list[dict[str, object]]] = {}
+    for row in rows:
+        context_key = (
+            row["venue"],
+            row["market_type"],
+            row["timeframe"],
+            row["decision_time"],
+        )
+        by_context.setdefault(context_key, []).append(row)
+
+    for timeframe in config.higher_timeframes:
+        prefix = _multi_timeframe_prefix(timeframe)
+        return_name = f"{prefix}_return_1"
+        trend_name = f"{prefix}_trend_above_ma_{config.rolling_window}"
+        volatility_bucket_name = f"{prefix}_volatility_bucket_{config.rolling_window}"
+        market_positive_name = f"{prefix}_market_positive_return_fraction"
+        risk_on_name = f"{prefix}_risk_on_score_{config.rolling_window}"
+
+        for context_rows in by_context.values():
+            reference_rows = {
+                str(row["symbol"]).upper(): row
+                for row in context_rows
+                if str(row["symbol"]).upper() in REFERENCE_SYMBOLS
+            }
+            returns = [_number(row.get(return_name)) for row in context_rows]
+            returns = [value for value in returns if value is not None]
+            trend_flags = [_number(row.get(trend_name)) for row in context_rows]
+            trend_flags = [value for value in trend_flags if value is not None]
+            market_positive_fraction = (
+                sum(1 for value in returns if value > 0) / len(returns) if returns else None
+            )
+            market_above_ma_fraction = _mean(trend_flags) if trend_flags else None
+            reference_trend_flags = [
+                _number(reference_rows[symbol].get(trend_name))
+                for symbol in REFERENCE_SYMBOLS
+                if symbol in reference_rows
+            ]
+            risk_inputs = [
+                value
+                for value in [
+                    market_positive_fraction,
+                    market_above_ma_fraction,
+                    *reference_trend_flags,
+                ]
+                if value is not None
+            ]
+            risk_on_score = _mean(risk_inputs) if risk_inputs else None
+
+            for row in context_rows:
+                row[market_positive_name] = market_positive_fraction
+                row[risk_on_name] = risk_on_score
+                for reference_symbol, reference_prefix in (("BTCUSDT", "btc"), ("ETHUSDT", "eth")):
+                    reference_row = reference_rows.get(reference_symbol)
+                    row[f"{prefix}_{reference_prefix}_return_1"] = _reference_number(
+                        reference_row,
+                        return_name,
+                    )
+                    row[f"{prefix}_{reference_prefix}_trend_above_ma_{config.rolling_window}"] = (
+                        _reference_number(reference_row, trend_name)
+                    )
+                    row[
+                        f"{prefix}_{reference_prefix}_volatility_bucket_{config.rolling_window}"
+                    ] = (
+                        _number(reference_row.get(volatility_bucket_name))
+                        if reference_row is not None
+                        else None
+                    )
+
+
+def _multi_timeframe_feature_names(prefix: str, rolling_window: int) -> tuple[str, ...]:
+    return (
+        f"{prefix}_return_1",
+        f"{prefix}_trend_above_ma_{rolling_window}",
+        f"{prefix}_ma_slope_sign_{rolling_window}",
+        f"{prefix}_range_position_{rolling_window}",
+        f"{prefix}_volatility_bucket_{rolling_window}",
+    )
+
+
+def _multi_timeframe_prefix(timeframe: str) -> str:
+    return f"mtf_{timeframe.lower()}"
+
+
+def _timeframe_minutes(timeframe: str) -> int:
+    if not timeframe.endswith("m"):
+        raise ValueError("derived higher timeframes must be minute-based")
+    minutes = int(timeframe[:-1])
+    if minutes <= 1:
+        raise ValueError("derived higher timeframes must be greater than 1m")
+    return minutes
+
+
+def _total_minutes(value: datetime) -> int:
+    return int(value.timestamp() // 60)
+
+
+def _reference_number(row: dict[str, object] | None, name: str) -> float | None:
+    return _number(row.get(name)) if row is not None else None
 
 
 def _aligned_return_windows(

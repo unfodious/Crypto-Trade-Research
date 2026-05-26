@@ -98,6 +98,7 @@ class _ExperimentInputCache:
             *source_key,
             config.feature_set_version,
             config.rolling_window,
+            config.higher_timeframes,
         )
         features = self._features.get(feature_key)
         if features is None:
