@@ -107,9 +107,15 @@ def _build_feature_row(
     high = _as_float(row["high"])
     low = _as_float(row["low"])
     volume_values = [_as_float(item["volume"]) for item in window_rows]
+    taker_flow_values = [_taker_flow_imbalance(item) for item in window_rows]
+    taker_buy_base_ratio_values = [_taker_buy_base_ratio(item) for item in window_rows]
+    trade_count_values = [_optional_float(item.get("number_of_trades")) for item in window_rows]
     close_values = [_as_float(item["close"]) for item in window_rows]
     range_value = high - low
     rolling_range = rolling_high - rolling_low
+    current_taker_flow = _taker_flow_imbalance(row)
+    current_taker_buy_base_ratio = _taker_buy_base_ratio(row)
+    current_trade_count = _optional_float(row.get("number_of_trades"))
 
     ma_name = f"ma_{config.rolling_window}"
     ma_slope_name = f"ma_slope_{config.rolling_window}"
@@ -118,6 +124,9 @@ def _build_feature_row(
     range_position_name = f"range_position_{config.rolling_window}"
     volume_zscore_name = f"volume_zscore_{config.rolling_window}"
     relative_volume_name = f"relative_volume_{config.rolling_window}"
+    taker_flow_zscore_name = f"taker_flow_imbalance_zscore_{config.rolling_window}"
+    taker_buy_base_ratio_mean_name = f"taker_buy_base_ratio_mean_{config.rolling_window}"
+    trade_count_zscore_name = f"trade_count_zscore_{config.rolling_window}"
     volatility_expansion_name = f"volatility_expansion_{config.rolling_window}"
     volatility_bucket_name = f"volatility_bucket_{config.rolling_window}"
     realized_volatility_name = f"realized_volatility_{config.rolling_window}"
@@ -183,6 +192,23 @@ def _build_feature_row(
         relative_volume_name: _ratio(volume_values[-1], _mean(volume_values))
         if len(window_rows) == config.rolling_window
         else None,
+        "taker_buy_base_ratio": current_taker_buy_base_ratio,
+        "taker_buy_quote_ratio": _taker_buy_quote_ratio(row),
+        "taker_flow_imbalance": current_taker_flow,
+        taker_flow_zscore_name: _zscore_optional(
+            current_taker_flow,
+            taker_flow_values,
+            config.rolling_window,
+        ),
+        taker_buy_base_ratio_mean_name: _mean_optional(
+            taker_buy_base_ratio_values,
+            config.rolling_window,
+        ),
+        trade_count_zscore_name: _zscore_optional(
+            current_trade_count,
+            trade_count_values,
+            config.rolling_window,
+        ),
         volatility_expansion_name: volatility_expansion,
         volatility_bucket_name: _volatility_bucket(volatility_expansion),
         realized_volatility_name: realized_volatility
@@ -287,6 +313,48 @@ def _feature_specs(
             rolling_window,
             "post_close",
             "Current volume divided by rolling average volume.",
+        ),
+        FeatureSpec(
+            "taker_buy_base_ratio",
+            "microstructure",
+            1,
+            "post_close",
+            "Taker buy base volume divided by total base volume.",
+        ),
+        FeatureSpec(
+            "taker_buy_quote_ratio",
+            "microstructure",
+            1,
+            "post_close",
+            "Taker buy quote volume divided by total quote volume.",
+        ),
+        FeatureSpec(
+            "taker_flow_imbalance",
+            "microstructure",
+            1,
+            "post_close",
+            "Aggressive taker buy minus sell base volume, normalized by total base volume.",
+        ),
+        FeatureSpec(
+            f"taker_flow_imbalance_zscore_{rolling_window}",
+            "microstructure",
+            rolling_window,
+            "post_close",
+            "Current taker-flow imbalance z-score inside the rolling window.",
+        ),
+        FeatureSpec(
+            f"taker_buy_base_ratio_mean_{rolling_window}",
+            "microstructure",
+            rolling_window,
+            "post_close",
+            "Rolling mean of taker buy base-volume share.",
+        ),
+        FeatureSpec(
+            f"trade_count_zscore_{rolling_window}",
+            "microstructure",
+            rolling_window,
+            "post_close",
+            "Current number-of-trades z-score inside the rolling window.",
         ),
         FeatureSpec(
             f"volatility_expansion_{rolling_window}",
@@ -593,6 +661,13 @@ def _market_context_specs(rolling_window: int) -> list[FeatureSpec]:
             "post_close",
             "Composite point-in-time risk-on score from breadth and BTC/ETH trend flags.",
         ),
+        FeatureSpec(
+            "market_taker_flow_imbalance",
+            "market_context",
+            1,
+            "post_close",
+            "Average same-market taker-flow imbalance across available symbols.",
+        ),
     ]
     for reference in ("btc", "eth"):
         specs.extend(
@@ -638,6 +713,20 @@ def _market_context_specs(rolling_window: int) -> list[FeatureSpec]:
                     rolling_window,
                     "post_close",
                     f"Rolling return beta to {reference.upper()}.",
+                ),
+                FeatureSpec(
+                    f"{reference}_taker_flow_imbalance",
+                    "market_context",
+                    1,
+                    "post_close",
+                    f"{reference.upper()} taker-flow imbalance at the decision timestamp.",
+                ),
+                FeatureSpec(
+                    f"relative_taker_flow_vs_{reference}",
+                    "market_context",
+                    1,
+                    "post_close",
+                    f"Symbol taker-flow imbalance minus {reference.upper()} taker-flow imbalance.",
                 ),
             ]
         )
@@ -690,6 +779,8 @@ def _add_market_context_features(rows: list[dict[str, object]], rolling_window: 
         numeric_returns = [value for value in numeric_returns if value is not None]
         trend_flags = [_number(row.get(trend_name)) for row in context_rows]
         trend_flags = [value for value in trend_flags if value is not None]
+        taker_flows = [_number(row.get("taker_flow_imbalance")) for row in context_rows]
+        taker_flows = [value for value in taker_flows if value is not None]
         market_positive_fraction = (
             sum(1 for value in numeric_returns if value > 0) / len(numeric_returns)
             if numeric_returns
@@ -697,6 +788,7 @@ def _add_market_context_features(rows: list[dict[str, object]], rolling_window: 
         )
         market_average_return = _mean(numeric_returns) if numeric_returns else None
         market_above_ma_fraction = _mean(trend_flags) if trend_flags else None
+        market_taker_flow_imbalance = _mean(taker_flows) if taker_flows else None
 
         reference_trend_flags = [
             _number(reference_rows[symbol].get(trend_name))
@@ -716,10 +808,16 @@ def _add_market_context_features(rows: list[dict[str, object]], rolling_window: 
             row["market_average_return_1"] = market_average_return
             row[market_above_ma_name] = market_above_ma_fraction
             row[risk_on_name] = risk_on_score
+            row["market_taker_flow_imbalance"] = market_taker_flow_imbalance
             for symbol, prefix in (("BTCUSDT", "btc"), ("ETHUSDT", "eth")):
                 reference_row = reference_rows.get(symbol)
                 reference_return = (
                     _number(reference_row.get("return_1")) if reference_row is not None else None
+                )
+                reference_taker_flow = (
+                    _number(reference_row.get("taker_flow_imbalance"))
+                    if reference_row is not None
+                    else None
                 )
                 row[f"{prefix}_return_1"] = reference_return
                 row[f"{prefix}_trend_above_ma_{rolling_window}"] = (
@@ -733,6 +831,11 @@ def _add_market_context_features(rows: list[dict[str, object]], rolling_window: 
                 row[f"relative_strength_vs_{prefix}_1"] = _difference(
                     _number(row.get("return_1")),
                     reference_return,
+                )
+                row[f"{prefix}_taker_flow_imbalance"] = reference_taker_flow
+                row[f"relative_taker_flow_vs_{prefix}"] = _difference(
+                    _number(row.get("taker_flow_imbalance")),
+                    reference_taker_flow,
                 )
 
     for series_key, series_rows in by_series.items():
@@ -1205,6 +1308,54 @@ def _volatility_bucket(value: float | None) -> float | None:
     return 3.0
 
 
+def _taker_buy_base_ratio(row: dict[str, object]) -> float | None:
+    taker_buy_base = _optional_float(row.get("taker_buy_base_volume"))
+    if taker_buy_base is None:
+        return None
+    return _ratio(taker_buy_base, _as_float(row["volume"]))
+
+
+def _taker_buy_quote_ratio(row: dict[str, object]) -> float | None:
+    taker_buy_quote = _optional_float(row.get("taker_buy_quote_volume"))
+    quote_volume = _optional_float(row.get("quote_volume"))
+    if taker_buy_quote is None or quote_volume is None:
+        return None
+    return _ratio(taker_buy_quote, quote_volume)
+
+
+def _taker_flow_imbalance(row: dict[str, object]) -> float | None:
+    ratio = _taker_buy_base_ratio(row)
+    if ratio is None:
+        return None
+    return ratio * 2 - 1
+
+
+def _mean_optional(values: Sequence[float | None], expected_count: int) -> float | None:
+    numeric = _complete_numeric_values(values, expected_count)
+    return _mean(numeric) if numeric is not None else None
+
+
+def _zscore_optional(
+    value: float | None,
+    values: Sequence[float | None],
+    expected_count: int,
+) -> float | None:
+    numeric = _complete_numeric_values(values, expected_count)
+    if value is None or numeric is None:
+        return None
+    return _zscore(value, numeric)
+
+
+def _complete_numeric_values(
+    values: Sequence[float | None],
+    expected_count: int,
+) -> list[float] | None:
+    if len(values) != expected_count:
+        return None
+    numeric = [value for value in values if value is not None]
+    return numeric if len(numeric) == expected_count else None
+
+
 def _flag(value: bool) -> float:
     return 1.0 if value else 0.0
 
@@ -1290,6 +1441,10 @@ def _number(value: object) -> float | None:
     if isinstance(value, int | float) and not isinstance(value, bool):
         return float(value)
     return None
+
+
+def _optional_float(value: object) -> float | None:
+    return _number(value)
 
 
 def _sort_key(row: dict[str, object]) -> tuple[object, ...]:

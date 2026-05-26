@@ -18,9 +18,12 @@ def _bar(
     high: float | None = None,
     low: float | None = None,
     volume: float = 100.0,
+    taker_buy_base_volume: float | None = None,
+    number_of_trades: int = 10,
     timeframe: str = "1m",
     symbol: str = "BTCUSDT",
 ) -> dict[str, object]:
+    taker_buy_base = volume / 2 if taker_buy_base_volume is None else taker_buy_base_volume
     return {
         "schema_version": "research.dataset.v1",
         "venue": "binance",
@@ -37,6 +40,10 @@ def _bar(
         "low": low if low is not None else close - 2,
         "close": close,
         "volume": volume,
+        "quote_volume": volume * close,
+        "number_of_trades": number_of_trades,
+        "taker_buy_base_volume": taker_buy_base,
+        "taker_buy_quote_volume": taker_buy_base * close,
     }
 
 
@@ -64,6 +71,12 @@ def test_generate_ohlcv_features_is_deterministic_and_documents_columns() -> Non
         "range_position_3",
         "volume_zscore_3",
         "relative_volume_3",
+        "taker_buy_base_ratio",
+        "taker_buy_quote_ratio",
+        "taker_flow_imbalance",
+        "taker_flow_imbalance_zscore_3",
+        "taker_buy_base_ratio_mean_3",
+        "trade_count_zscore_3",
         "volatility_bucket_3",
         "realized_volatility_3",
         "ema_3",
@@ -106,6 +119,10 @@ def test_generate_ohlcv_features_is_deterministic_and_documents_columns() -> Non
     assert last_row["range_position_3"] == pytest.approx(5 / 7)
     assert last_row["volume_zscore_3"] == pytest.approx(1.0690449676496976)
     assert last_row["relative_volume_3"] == pytest.approx(140 / (340 / 3))
+    assert last_row["taker_buy_base_ratio"] == pytest.approx(0.5)
+    assert last_row["taker_buy_quote_ratio"] == pytest.approx(0.5)
+    assert last_row["taker_flow_imbalance"] == pytest.approx(0.0)
+    assert last_row["taker_buy_base_ratio_mean_3"] == pytest.approx(0.5)
     assert last_row["volatility_bucket_3"] == 1.0
     assert last_row["ema_3"] == pytest.approx(102.75)
     assert last_row["rsi_3"] == pytest.approx(75.0)
@@ -222,18 +239,42 @@ def test_regime_features_bucket_volatility_and_trend_point_in_time() -> None:
     assert downtrend_row["ma_slope_sign_3"] == 0.0
 
 
+def test_taker_flow_features_use_current_and_rolling_closed_bars() -> None:
+    frame = generate_ohlcv_features(
+        [
+            _bar(1, close=100, volume=100, taker_buy_base_volume=20, number_of_trades=10),
+            _bar(2, close=101, volume=100, taker_buy_base_volume=50, number_of_trades=20),
+            _bar(3, close=102, volume=100, taker_buy_base_volume=80, number_of_trades=40),
+        ],
+        FeatureConfig(feature_set_version="unit.features.v1", rolling_window=3),
+    )
+
+    first_row = frame.rows[0]
+    assert first_row["taker_buy_base_ratio"] == pytest.approx(0.2)
+    assert first_row["taker_flow_imbalance"] == pytest.approx(-0.6)
+    assert first_row["taker_flow_imbalance_zscore_3"] is None
+
+    last_row = frame.rows[-1]
+    assert last_row["taker_buy_base_ratio"] == pytest.approx(0.8)
+    assert last_row["taker_buy_quote_ratio"] == pytest.approx(0.8)
+    assert last_row["taker_flow_imbalance"] == pytest.approx(0.6)
+    assert last_row["taker_buy_base_ratio_mean_3"] == pytest.approx(0.5)
+    assert last_row["taker_flow_imbalance_zscore_3"] == pytest.approx(1.224744871391589)
+    assert last_row["trade_count_zscore_3"] == pytest.approx(1.3363062095621219)
+
+
 def test_market_context_features_use_same_timestamp_reference_rows() -> None:
     frame = generate_ohlcv_features(
         [
-            _bar(1, close=100, symbol="BTCUSDT"),
-            _bar(2, close=102, symbol="BTCUSDT"),
-            _bar(3, close=101, symbol="BTCUSDT"),
-            _bar(1, close=50, symbol="ETHUSDT"),
-            _bar(2, close=49, symbol="ETHUSDT"),
-            _bar(3, close=51, symbol="ETHUSDT"),
-            _bar(1, close=10, symbol="ADAUSDT"),
-            _bar(2, close=11, symbol="ADAUSDT"),
-            _bar(3, close=12, symbol="ADAUSDT"),
+            _bar(1, close=100, symbol="BTCUSDT", taker_buy_base_volume=70),
+            _bar(2, close=102, symbol="BTCUSDT", taker_buy_base_volume=80),
+            _bar(3, close=101, symbol="BTCUSDT", taker_buy_base_volume=60),
+            _bar(1, close=50, symbol="ETHUSDT", taker_buy_base_volume=40),
+            _bar(2, close=49, symbol="ETHUSDT", taker_buy_base_volume=30),
+            _bar(3, close=51, symbol="ETHUSDT", taker_buy_base_volume=35),
+            _bar(1, close=10, symbol="ADAUSDT", taker_buy_base_volume=50),
+            _bar(2, close=11, symbol="ADAUSDT", taker_buy_base_volume=55),
+            _bar(3, close=12, symbol="ADAUSDT", taker_buy_base_volume=45),
         ],
         FeatureConfig(feature_set_version="unit.features.v1", rolling_window=2),
     )
@@ -250,6 +291,10 @@ def test_market_context_features_use_same_timestamp_reference_rows() -> None:
         "relative_strength_vs_eth_1",
         "correlation_to_btc_2",
         "beta_to_btc_2",
+        "market_taker_flow_imbalance",
+        "btc_taker_flow_imbalance",
+        "eth_taker_flow_imbalance",
+        "relative_taker_flow_vs_btc",
     } <= feature_names
 
     ada_rows = [row for row in frame.rows if row["symbol"] == "ADAUSDT"]
@@ -263,6 +308,12 @@ def test_market_context_features_use_same_timestamp_reference_rows() -> None:
     assert ada_second_row["eth_return_1"] == pytest.approx(-0.02)
     assert ada_second_row["relative_strength_vs_btc_1"] == pytest.approx(0.08)
     assert ada_second_row["relative_strength_vs_eth_1"] == pytest.approx(0.12)
+    assert ada_second_row["market_taker_flow_imbalance"] == pytest.approx(
+        ((0.8 * 2 - 1) + (0.3 * 2 - 1) + (0.55 * 2 - 1)) / 3
+    )
+    assert ada_second_row["btc_taker_flow_imbalance"] == pytest.approx(0.6)
+    assert ada_second_row["eth_taker_flow_imbalance"] == pytest.approx(-0.4)
+    assert ada_second_row["relative_taker_flow_vs_btc"] == pytest.approx(-0.5)
 
     ada_third_row = ada_rows[2]
     assert ada_third_row["correlation_to_btc_2"] == pytest.approx(1.0)

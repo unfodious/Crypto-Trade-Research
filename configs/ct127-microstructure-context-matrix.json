@@ -1,0 +1,254 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct127-microstructure-context-base.json",
+      "overrides": {
+        "experiment_name": "ct127_short_sell_pressure_probability_top3",
+        "baseline": {
+          "primary_strategy": "multifeature_ridge_risk_controlled_oos"
+        },
+        "output_dir": "data/generated/ct127_short_sell_pressure_probability_top3"
+      }
+    },
+    {
+      "config": "configs/ct127-microstructure-context-base.json"
+    },
+    {
+      "config": "configs/ct127-microstructure-context-base.json",
+      "overrides": {
+        "experiment_name": "ct127_short_sell_pressure_expected_r_top5",
+        "risk_controls": {
+          "max_trades_per_symbol": 600,
+          "max_trades_per_decision_time": 5,
+          "loss_cooldown_signals": 2
+        },
+        "output_dir": "data/generated/ct127_short_sell_pressure_expected_r_top5"
+      }
+    },
+    {
+      "config": "configs/ct127-microstructure-context-base.json",
+      "overrides": {
+        "experiment_name": "ct127_short_sell_pressure_riskoff_expected_r_top3",
+        "candidate_setup": {
+          "name": "h12_short_taker_sell_pressure_riskoff",
+          "filters": [
+            {
+              "feature": "volatility_expansion_20",
+              "operator": ">=",
+              "value": 1.1
+            },
+            {
+              "feature": "close_location",
+              "operator": "<=",
+              "value": 0.45
+            },
+            {
+              "feature": "taker_flow_imbalance",
+              "operator": "<=",
+              "value": -0.15
+            },
+            {
+              "feature": "taker_flow_imbalance_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": "<=",
+              "value": 0.5
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": "<=",
+              "value": 0.5
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct127_short_sell_pressure_riskoff_expected_r_top3"
+      }
+    },
+    {
+      "config": "configs/ct127-microstructure-context-base.json",
+      "overrides": {
+        "experiment_name": "ct127_short_btc_eth_sell_pressure_expected_r_top3",
+        "candidate_setup": {
+          "name": "h12_short_btc_eth_taker_sell_pressure",
+          "filters": [
+            {
+              "feature": "volatility_expansion_20",
+              "operator": ">=",
+              "value": 1.1
+            },
+            {
+              "feature": "close_location",
+              "operator": "<=",
+              "value": 0.45
+            },
+            {
+              "feature": "taker_flow_imbalance",
+              "operator": "<=",
+              "value": -0.15
+            },
+            {
+              "feature": "btc_taker_flow_imbalance",
+              "operator": "<=",
+              "value": 0.0
+            },
+            {
+              "feature": "eth_taker_flow_imbalance",
+              "operator": "<=",
+              "value": 0.0
+            },
+            {
+              "feature": "market_taker_flow_imbalance",
+              "operator": "<=",
+              "value": 0.0
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct127_short_btc_eth_sell_pressure_expected_r_top3"
+      }
+    },
+    {
+      "config": "configs/ct127-microstructure-context-base.json",
+      "overrides": {
+        "experiment_name": "ct127_long_buy_pressure_probability_top3",
+        "label": {
+          "label_set_version": "labels.ct127.long-12bar-2r.v1",
+          "horizon_bars": 12,
+          "side": "long",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.008,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first"
+        },
+        "candidate_setup": {
+          "name": "h12_long_taker_buy_pressure",
+          "filters": [
+            {
+              "feature": "volatility_expansion_20",
+              "operator": ">=",
+              "value": 1.1
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.55
+            },
+            {
+              "feature": "taker_flow_imbalance",
+              "operator": ">=",
+              "value": 0.15
+            },
+            {
+              "feature": "taker_flow_imbalance_zscore_20",
+              "operator": ">=",
+              "value": 0.25
+            }
+          ]
+        },
+        "baseline": {
+          "primary_strategy": "multifeature_ridge_risk_controlled_oos"
+        },
+        "output_dir": "data/generated/ct127_long_buy_pressure_probability_top3"
+      }
+    },
+    {
+      "config": "configs/ct127-microstructure-context-base.json",
+      "overrides": {
+        "experiment_name": "ct127_long_buy_pressure_expected_r_top3",
+        "label": {
+          "label_set_version": "labels.ct127.long-12bar-2r.v1",
+          "horizon_bars": 12,
+          "side": "long",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.008,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first"
+        },
+        "candidate_setup": {
+          "name": "h12_long_taker_buy_pressure",
+          "filters": [
+            {
+              "feature": "volatility_expansion_20",
+              "operator": ">=",
+              "value": 1.1
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.55
+            },
+            {
+              "feature": "taker_flow_imbalance",
+              "operator": ">=",
+              "value": 0.15
+            },
+            {
+              "feature": "taker_flow_imbalance_zscore_20",
+              "operator": ">=",
+              "value": 0.25
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct127_long_buy_pressure_expected_r_top3"
+      }
+    },
+    {
+      "config": "configs/ct127-microstructure-context-base.json",
+      "overrides": {
+        "experiment_name": "ct127_long_buy_pressure_riskon_expected_r_top3",
+        "label": {
+          "label_set_version": "labels.ct127.long-12bar-2r.v1",
+          "horizon_bars": 12,
+          "side": "long",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.008,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first"
+        },
+        "candidate_setup": {
+          "name": "h12_long_taker_buy_pressure_riskon",
+          "filters": [
+            {
+              "feature": "volatility_expansion_20",
+              "operator": ">=",
+              "value": 1.1
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.55
+            },
+            {
+              "feature": "taker_flow_imbalance",
+              "operator": ">=",
+              "value": 0.15
+            },
+            {
+              "feature": "taker_flow_imbalance_zscore_20",
+              "operator": ">=",
+              "value": 0.25
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.5
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct127_long_buy_pressure_riskon_expected_r_top3"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct127_microstructure_context_matrix/leaderboard.json",
+  "markdown_path": "data/generated/ct127_microstructure_context_matrix/leaderboard.md"
+}
