@@ -59,8 +59,11 @@ def test_generate_ohlcv_features_is_deterministic_and_documents_columns() -> Non
         "roc_2",
         "ma_3",
         "ma_slope_3",
+        "trend_above_ma_3",
+        "ma_slope_sign_3",
         "range_position_3",
         "volume_zscore_3",
+        "volatility_bucket_3",
         "candle_body_pct",
         "close_location",
     } <= feature_names
@@ -77,8 +80,11 @@ def test_generate_ohlcv_features_is_deterministic_and_documents_columns() -> Non
     assert last_row["return_1"] == pytest.approx(0.0297029702970297)
     assert last_row["roc_2"] == pytest.approx(0.0196078431372549)
     assert last_row["ma_3"] == pytest.approx(102.33333333333333)
+    assert last_row["trend_above_ma_3"] == 1.0
+    assert last_row["ma_slope_sign_3"] == 1.0
     assert last_row["range_position_3"] == pytest.approx(5 / 7)
     assert last_row["volume_zscore_3"] == pytest.approx(1.0690449676496976)
+    assert last_row["volatility_bucket_3"] == 1.0
 
 
 def test_feature_generation_sorts_rows_and_keeps_point_in_time_windows() -> None:
@@ -141,5 +147,37 @@ def test_feature_windows_do_not_cross_symbol_boundaries() -> None:
     assert by_symbol["ETHUSDT"][0]["return_1"] is None
     assert by_symbol["BTCUSDT"][1]["return_1"] == pytest.approx(0.02)
     assert by_symbol["ETHUSDT"][1]["return_1"] == pytest.approx(0.1)
+    assert by_symbol["BTCUSDT"][0]["trend_above_ma_2"] is None
+    assert by_symbol["ETHUSDT"][0]["trend_above_ma_2"] is None
+    assert by_symbol["BTCUSDT"][1]["trend_above_ma_2"] == 1.0
+    assert by_symbol["ETHUSDT"][1]["trend_above_ma_2"] == 1.0
     assert by_symbol["BTCUSDT"][1]["htf_close"] == 1000.0
     assert by_symbol["ETHUSDT"][1]["htf_close"] == 2000.0
+
+
+def test_regime_features_bucket_volatility_and_trend_point_in_time() -> None:
+    frame = generate_ohlcv_features(
+        [
+            _bar(1, close=100, high=101, low=99),
+            _bar(2, close=101, high=102, low=100),
+            _bar(3, close=102, high=103, low=101),
+            _bar(4, close=103, high=110, low=96),
+            _bar(5, close=101, high=102, low=100),
+        ],
+        FeatureConfig(feature_set_version="unit.features.v1", rolling_window=3),
+    )
+
+    warmup_row = frame.rows[1]
+    assert warmup_row["trend_above_ma_3"] is None
+    assert warmup_row["ma_slope_sign_3"] is None
+    assert warmup_row["volatility_bucket_3"] is None
+
+    expanded_row = frame.rows[3]
+    assert expanded_row["trend_above_ma_3"] == 1.0
+    assert expanded_row["ma_slope_sign_3"] == 1.0
+    assert expanded_row["volatility_expansion_3"] == pytest.approx(14 / 6)
+    assert expanded_row["volatility_bucket_3"] == 2.0
+
+    downtrend_row = frame.rows[4]
+    assert downtrend_row["trend_above_ma_3"] == 0.0
+    assert downtrend_row["ma_slope_sign_3"] == 0.0

@@ -102,12 +102,23 @@ def _build_feature_row(
 
     ma_name = f"ma_{config.rolling_window}"
     ma_slope_name = f"ma_slope_{config.rolling_window}"
+    trend_above_ma_name = f"trend_above_ma_{config.rolling_window}"
+    ma_slope_sign_name = f"ma_slope_sign_{config.rolling_window}"
     range_position_name = f"range_position_{config.rolling_window}"
     volume_zscore_name = f"volume_zscore_{config.rolling_window}"
     volatility_expansion_name = f"volatility_expansion_{config.rolling_window}"
+    volatility_bucket_name = f"volatility_bucket_{config.rolling_window}"
 
     current_ma = _mean(close_values) if len(window_rows) == config.rolling_window else None
     previous_ma = _previous_ma(rows, index, config.rolling_window)
+    ma_slope = (
+        _return(current_ma, previous_ma)
+        if current_ma is not None and previous_ma is not None
+        else None
+    )
+    volatility_expansion = (
+        _volatility_expansion(window_rows) if len(window_rows) == config.rolling_window else None
+    )
     htf_current, htf_previous = _aligned_higher_timeframe_rows(higher_rows, close_time)
 
     feature_row: dict[str, object] = {
@@ -125,9 +136,9 @@ def _build_feature_row(
         "return_1": _return(close, _as_float(previous_row["close"])) if previous_row else None,
         "roc_2": _return(close, _as_float(two_back_row["close"])) if two_back_row else None,
         ma_name: current_ma,
-        ma_slope_name: _return(current_ma, previous_ma)
-        if current_ma is not None and previous_ma is not None
-        else None,
+        ma_slope_name: ma_slope,
+        trend_above_ma_name: _flag(close >= current_ma) if current_ma is not None else None,
+        ma_slope_sign_name: _sign(ma_slope),
         "close_location": _ratio(close - low, range_value),
         "candle_body_pct": _ratio(abs(close - open_price), range_value),
         "upper_wick_ratio": _ratio(high - max(open_price, close), range_value),
@@ -138,9 +149,8 @@ def _build_feature_row(
         volume_zscore_name: _zscore(volume_values[-1], volume_values)
         if len(window_rows) == config.rolling_window
         else None,
-        volatility_expansion_name: _volatility_expansion(window_rows)
-        if len(window_rows) == config.rolling_window
-        else None,
+        volatility_expansion_name: volatility_expansion,
+        volatility_bucket_name: _volatility_bucket(volatility_expansion),
         "distance_from_rolling_high": _return(close, rolling_high),
         "distance_from_rolling_low": _return(close, rolling_low),
     }
@@ -177,6 +187,20 @@ def _feature_specs(rolling_window: int, has_higher_timeframe: bool) -> tuple[Fea
             "Rolling mean close-price slope.",
         ),
         FeatureSpec(
+            f"trend_above_ma_{rolling_window}",
+            "regime",
+            rolling_window,
+            "post_close",
+            "Numeric flag: 1 when close is at or above rolling mean, otherwise 0.",
+        ),
+        FeatureSpec(
+            f"ma_slope_sign_{rolling_window}",
+            "regime",
+            rolling_window + 1,
+            "post_close",
+            "Numeric trend slope sign: -1, 0, or 1 from rolling mean slope.",
+        ),
+        FeatureSpec(
             f"range_position_{rolling_window}",
             "price_action",
             rolling_window,
@@ -196,6 +220,13 @@ def _feature_specs(rolling_window: int, has_higher_timeframe: bool) -> tuple[Fea
             rolling_window,
             "post_close",
             "Current candle range divided by average rolling range.",
+        ),
+        FeatureSpec(
+            f"volatility_bucket_{rolling_window}",
+            "regime",
+            rolling_window,
+            "post_close",
+            "Numeric volatility regime bucket: 0 compressed, 1 normal, 2 expanded, 3 disorderly.",
         ),
         FeatureSpec(
             "close_location",
@@ -287,6 +318,32 @@ def _volatility_expansion(rows: Sequence[dict[str, object]]) -> float | None:
     ranges = [_as_float(row["high"]) - _as_float(row["low"]) for row in rows]
     average_range = _mean(ranges)
     return _ratio(ranges[-1], average_range)
+
+
+def _volatility_bucket(value: float | None) -> float | None:
+    if value is None:
+        return None
+    if value < 0.75:
+        return 0.0
+    if value < 1.5:
+        return 1.0
+    if value < 2.5:
+        return 2.0
+    return 3.0
+
+
+def _flag(value: bool) -> float:
+    return 1.0 if value else 0.0
+
+
+def _sign(value: float | None) -> float | None:
+    if value is None:
+        return None
+    if value > 0:
+        return 1.0
+    if value < 0:
+        return -1.0
+    return 0.0
 
 
 def _return(current: float | None, previous: float | None) -> float | None:
