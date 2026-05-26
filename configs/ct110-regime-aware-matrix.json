@@ -1,0 +1,34 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct110-trend-continuation-regime-base.json"
+    },
+    {
+      "config": "configs/ct110-trend-continuation-regime-base.json",
+      "overrides": {
+        "experiment_name": "ct110_trend_continuation_regime_h24",
+        "label": {
+          "label_set_version": "labels.ct110.long-24bar-2r.v1",
+          "horizon_bars": 24
+        },
+        "output_dir": "data/generated/ct110_trend_continuation_regime_h24"
+      }
+    },
+    {
+      "config": "configs/ct110-volatility-breakout-regime-base.json"
+    },
+    {
+      "config": "configs/ct110-volatility-breakout-regime-base.json",
+      "overrides": {
+        "experiment_name": "ct110_volatility_breakout_regime_h24",
+        "label": {
+          "label_set_version": "labels.ct110.long-24bar-2r.v1",
+          "horizon_bars": 24
+        },
+        "output_dir": "data/generated/ct110_volatility_breakout_regime_h24"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct110_regime_aware_matrix/leaderboard.json",
+  "markdown_path": "data/generated/ct110_regime_aware_matrix/leaderboard.md"
+}
