@@ -17,6 +17,7 @@ dependencies = [
 [project.scripts]
 crypto-trade-ingest-market-dataset = "crypto_trade_research.data.ingestion:main"
 crypto-trade-experiments = "crypto_trade_research.tracking.registry:main"
+crypto-trade-run-batch-experiments = "crypto_trade_research.experiments.batch:main"
 crypto-trade-run-baseline-experiment = "crypto_trade_research.experiments.runner:main"
 
 [project.optional-dependencies]

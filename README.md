@@ -171,6 +171,29 @@ The sample command uses `configs/sample-baseline-experiment.json` and writes ign
 `research.dataset.v1` export or set `dataset_manifest_path` to an already ingested dataset manifest.
 Splits must stay chronological; shuffled split configs are rejected.
 
+## Batch Experiment Runner
+
+Run a reproducible matrix of baseline experiment configs and write a leaderboard:
+
+```sh
+make sample-batch-experiments
+```
+
+The sample command uses `configs/sample-batch-experiments.json` and writes ignored outputs under
+`data/generated/sample_batch_experiments/`. Each matrix item points at a normal baseline experiment
+config. One failed experiment is recorded as a failed leaderboard row without deleting completed
+registry outputs from other configs.
+
+Direct command:
+
+```sh
+uv run crypto-trade-run-batch-experiments \
+  --matrix configs/sample-batch-experiments.json
+```
+
+Leaderboard rows include decision, failed gates, model/rule out-of-sample average R, trade count,
+max drawdown, symbol coverage, artifact hash, and registry path.
+
 ## Meta-Strategy
 
 Generate a deterministic candidate setup → take/skip/size report:

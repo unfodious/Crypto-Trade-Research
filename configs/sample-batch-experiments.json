@@ -1,0 +1,9 @@
+{
+  "experiments": [
+    {
+      "config": "configs/sample-baseline-experiment.json"
+    }
+  ],
+  "leaderboard_path": "data/generated/sample_batch_experiments/leaderboard.json",
+  "markdown_path": "data/generated/sample_batch_experiments/leaderboard.md"
+}
