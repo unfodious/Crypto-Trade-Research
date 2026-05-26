@@ -220,3 +220,52 @@ def test_regime_features_bucket_volatility_and_trend_point_in_time() -> None:
     downtrend_row = frame.rows[4]
     assert downtrend_row["trend_above_ma_3"] == 0.0
     assert downtrend_row["ma_slope_sign_3"] == 0.0
+
+
+def test_market_context_features_use_same_timestamp_reference_rows() -> None:
+    frame = generate_ohlcv_features(
+        [
+            _bar(1, close=100, symbol="BTCUSDT"),
+            _bar(2, close=102, symbol="BTCUSDT"),
+            _bar(3, close=101, symbol="BTCUSDT"),
+            _bar(1, close=50, symbol="ETHUSDT"),
+            _bar(2, close=49, symbol="ETHUSDT"),
+            _bar(3, close=51, symbol="ETHUSDT"),
+            _bar(1, close=10, symbol="ADAUSDT"),
+            _bar(2, close=11, symbol="ADAUSDT"),
+            _bar(3, close=12, symbol="ADAUSDT"),
+        ],
+        FeatureConfig(feature_set_version="unit.features.v1", rolling_window=2),
+    )
+
+    feature_names = {spec.name for spec in frame.manifest.features}
+    assert {
+        "market_positive_return_fraction",
+        "market_average_return_1",
+        "market_above_ma_fraction_2",
+        "risk_on_score_2",
+        "btc_return_1",
+        "eth_return_1",
+        "relative_strength_vs_btc_1",
+        "relative_strength_vs_eth_1",
+        "correlation_to_btc_2",
+        "beta_to_btc_2",
+    } <= feature_names
+
+    ada_rows = [row for row in frame.rows if row["symbol"] == "ADAUSDT"]
+    ada_second_row = ada_rows[1]
+    assert ada_second_row["decision_time"] == _ts(2)
+    assert ada_second_row["market_positive_return_fraction"] == pytest.approx(2 / 3)
+    assert ada_second_row["market_average_return_1"] == pytest.approx((0.02 - 0.02 + 0.1) / 3)
+    assert ada_second_row["market_above_ma_fraction_2"] == pytest.approx(2 / 3)
+    assert ada_second_row["risk_on_score_2"] == pytest.approx(7 / 12)
+    assert ada_second_row["btc_return_1"] == pytest.approx(0.02)
+    assert ada_second_row["eth_return_1"] == pytest.approx(-0.02)
+    assert ada_second_row["relative_strength_vs_btc_1"] == pytest.approx(0.08)
+    assert ada_second_row["relative_strength_vs_eth_1"] == pytest.approx(0.12)
+
+    ada_third_row = ada_rows[2]
+    assert ada_third_row["correlation_to_btc_2"] == pytest.approx(1.0)
+    assert ada_third_row["correlation_to_eth_2"] == pytest.approx(-1.0)
+    assert ada_third_row["beta_to_btc_2"] is not None
+    assert ada_third_row["beta_to_eth_2"] is not None

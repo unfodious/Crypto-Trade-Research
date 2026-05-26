@@ -7,6 +7,7 @@ from datetime import datetime
 
 SCHEMA_VERSION = "research.dataset.v1"
 GENERATOR_NAME = "crypto_trade_research.ohlcv_features"
+REFERENCE_SYMBOLS = ("BTCUSDT", "ETHUSDT")
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +64,8 @@ def generate_ohlcv_features(
             _build_feature_row(group_rows, index, config, group_higher_rows)
             for index in range(len(group_rows))
         )
+
+    _add_market_context_features(output_rows, config.rolling_window)
 
     return FeatureFrame(
         rows=output_rows,
@@ -463,7 +466,89 @@ def _feature_specs(rolling_window: int, has_higher_timeframe: bool) -> tuple[Fea
                 ),
             ]
         )
+    specs.extend(_market_context_specs(rolling_window))
     return tuple(specs)
+
+
+def _market_context_specs(rolling_window: int) -> list[FeatureSpec]:
+    specs = [
+        FeatureSpec(
+            "market_positive_return_fraction",
+            "market_context",
+            2,
+            "post_close",
+            "Fraction of same-market symbols with positive one-bar return.",
+        ),
+        FeatureSpec(
+            "market_average_return_1",
+            "market_context",
+            2,
+            "post_close",
+            "Average same-market one-bar return across available symbols.",
+        ),
+        FeatureSpec(
+            f"market_above_ma_fraction_{rolling_window}",
+            "market_context",
+            rolling_window,
+            "post_close",
+            "Fraction of same-market symbols above their rolling mean.",
+        ),
+        FeatureSpec(
+            f"risk_on_score_{rolling_window}",
+            "market_context",
+            rolling_window,
+            "post_close",
+            "Composite point-in-time risk-on score from breadth and BTC/ETH trend flags.",
+        ),
+    ]
+    for reference in ("btc", "eth"):
+        specs.extend(
+            [
+                FeatureSpec(
+                    f"{reference}_return_1",
+                    "market_context",
+                    2,
+                    "post_close",
+                    f"{reference.upper()} one-bar return at the decision timestamp.",
+                ),
+                FeatureSpec(
+                    f"{reference}_trend_above_ma_{rolling_window}",
+                    "market_context",
+                    rolling_window,
+                    "post_close",
+                    f"{reference.upper()} trend-above-MA flag at the decision timestamp.",
+                ),
+                FeatureSpec(
+                    f"{reference}_volatility_bucket_{rolling_window}",
+                    "market_context",
+                    rolling_window,
+                    "post_close",
+                    f"{reference.upper()} volatility bucket at the decision timestamp.",
+                ),
+                FeatureSpec(
+                    f"relative_strength_vs_{reference}_1",
+                    "market_context",
+                    2,
+                    "post_close",
+                    f"Symbol one-bar return minus {reference.upper()} one-bar return.",
+                ),
+                FeatureSpec(
+                    f"correlation_to_{reference}_{rolling_window}",
+                    "market_context",
+                    rolling_window,
+                    "post_close",
+                    f"Rolling return correlation to {reference.upper()}.",
+                ),
+                FeatureSpec(
+                    f"beta_to_{reference}_{rolling_window}",
+                    "market_context",
+                    rolling_window,
+                    "post_close",
+                    f"Rolling return beta to {reference.upper()}.",
+                ),
+            ]
+        )
+    return specs
 
 
 def _window(
@@ -473,6 +558,131 @@ def _window(
 ) -> Sequence[dict[str, object]]:
     start = max(index - size + 1, 0)
     return rows[start : index + 1]
+
+
+def _add_market_context_features(rows: list[dict[str, object]], rolling_window: int) -> None:
+    by_context: dict[tuple[object, ...], list[dict[str, object]]] = {}
+    by_series: dict[tuple[object, ...], list[dict[str, object]]] = {}
+    for row in rows:
+        context_key = (
+            row["venue"],
+            row["market_type"],
+            row["timeframe"],
+            row["decision_time"],
+        )
+        series_key = (
+            row["venue"],
+            row["market_type"],
+            row["timeframe"],
+            row["symbol"],
+        )
+        by_context.setdefault(context_key, []).append(row)
+        by_series.setdefault(series_key, []).append(row)
+
+    for series_rows in by_series.values():
+        series_rows.sort(key=lambda row: row["decision_time"])
+
+    trend_name = f"trend_above_ma_{rolling_window}"
+    volatility_bucket_name = f"volatility_bucket_{rolling_window}"
+    market_above_ma_name = f"market_above_ma_fraction_{rolling_window}"
+    risk_on_name = f"risk_on_score_{rolling_window}"
+
+    for context_rows in by_context.values():
+        reference_rows = {
+            str(row["symbol"]).upper(): row
+            for row in context_rows
+            if str(row["symbol"]).upper() in REFERENCE_SYMBOLS
+        }
+        numeric_returns = [_number(row.get("return_1")) for row in context_rows]
+        numeric_returns = [value for value in numeric_returns if value is not None]
+        trend_flags = [_number(row.get(trend_name)) for row in context_rows]
+        trend_flags = [value for value in trend_flags if value is not None]
+        market_positive_fraction = (
+            sum(1 for value in numeric_returns if value > 0) / len(numeric_returns)
+            if numeric_returns
+            else None
+        )
+        market_average_return = _mean(numeric_returns) if numeric_returns else None
+        market_above_ma_fraction = _mean(trend_flags) if trend_flags else None
+
+        reference_trend_flags = [
+            _number(reference_rows[symbol].get(trend_name))
+            for symbol in REFERENCE_SYMBOLS
+            if symbol in reference_rows
+        ]
+        breadth_inputs = [
+            market_positive_fraction,
+            market_above_ma_fraction,
+            *reference_trend_flags,
+        ]
+        risk_inputs = [value for value in breadth_inputs if value is not None]
+        risk_on_score = _mean(risk_inputs) if risk_inputs else None
+
+        for row in context_rows:
+            row["market_positive_return_fraction"] = market_positive_fraction
+            row["market_average_return_1"] = market_average_return
+            row[market_above_ma_name] = market_above_ma_fraction
+            row[risk_on_name] = risk_on_score
+            for symbol, prefix in (("BTCUSDT", "btc"), ("ETHUSDT", "eth")):
+                reference_row = reference_rows.get(symbol)
+                reference_return = (
+                    _number(reference_row.get("return_1")) if reference_row is not None else None
+                )
+                row[f"{prefix}_return_1"] = reference_return
+                row[f"{prefix}_trend_above_ma_{rolling_window}"] = (
+                    _number(reference_row.get(trend_name)) if reference_row is not None else None
+                )
+                row[f"{prefix}_volatility_bucket_{rolling_window}"] = (
+                    _number(reference_row.get(volatility_bucket_name))
+                    if reference_row is not None
+                    else None
+                )
+                row[f"relative_strength_vs_{prefix}_1"] = _difference(
+                    _number(row.get("return_1")),
+                    reference_return,
+                )
+
+    for series_key, series_rows in by_series.items():
+        venue, market_type, timeframe, _symbol = series_key
+        row_index = {id(row): index for index, row in enumerate(series_rows)}
+        for reference_symbol, prefix in (("BTCUSDT", "btc"), ("ETHUSDT", "eth")):
+            reference_rows = by_series.get((venue, market_type, timeframe, reference_symbol), [])
+            reference_by_time = {row["decision_time"]: row for row in reference_rows}
+            for row in series_rows:
+                candidate_index = row_index[id(row)]
+                candidate_returns, reference_returns = _aligned_return_windows(
+                    series_rows,
+                    candidate_index,
+                    reference_by_time,
+                    rolling_window,
+                )
+                row[f"correlation_to_{prefix}_{rolling_window}"] = _correlation(
+                    candidate_returns,
+                    reference_returns,
+                )
+                row[f"beta_to_{prefix}_{rolling_window}"] = _beta(
+                    candidate_returns,
+                    reference_returns,
+                )
+
+
+def _aligned_return_windows(
+    series_rows: Sequence[dict[str, object]],
+    index: int,
+    reference_by_time: dict[object, dict[str, object]],
+    size: int,
+) -> tuple[list[float], list[float]]:
+    start = max(index - size + 1, 0)
+    candidate_returns: list[float] = []
+    reference_returns: list[float] = []
+    for row in series_rows[start : index + 1]:
+        reference_row = reference_by_time.get(row["decision_time"])
+        candidate_return = _number(row.get("return_1"))
+        reference_return = _number(reference_row.get("return_1")) if reference_row else None
+        if candidate_return is not None and reference_return is not None:
+            candidate_returns.append(candidate_return)
+            reference_returns.append(reference_return)
+    return candidate_returns, reference_returns
 
 
 def _previous_ma(rows: Sequence[dict[str, object]], index: int, size: int) -> float | None:
@@ -705,6 +915,12 @@ def _ratio(numerator: float, denominator: float) -> float | None:
     return numerator / denominator
 
 
+def _difference(left: float | None, right: float | None) -> float | None:
+    if left is None or right is None:
+        return None
+    return left - right
+
+
 def _zscore(value: float, values: Sequence[float]) -> float | None:
     mean_value = _mean(values)
     standard_deviation = _standard_deviation(values)
@@ -719,8 +935,45 @@ def _standard_deviation(values: Sequence[float]) -> float:
     return math.sqrt(variance)
 
 
+def _correlation(left: Sequence[float], right: Sequence[float]) -> float | None:
+    if len(left) != len(right) or len(left) < 2:
+        return None
+    left_std = _standard_deviation(left)
+    right_std = _standard_deviation(right)
+    if left_std == 0 or right_std == 0:
+        return None
+    covariance = _covariance(left, right)
+    return covariance / (left_std * right_std)
+
+
+def _beta(left: Sequence[float], right: Sequence[float]) -> float | None:
+    if len(left) != len(right) or len(left) < 2:
+        return None
+    right_variance = _standard_deviation(right) ** 2
+    if right_variance == 0:
+        return None
+    return _covariance(left, right) / right_variance
+
+
+def _covariance(left: Sequence[float], right: Sequence[float]) -> float:
+    left_mean = _mean(left)
+    right_mean = _mean(right)
+    return _mean(
+        [
+            (left_value - left_mean) * (right_value - right_mean)
+            for left_value, right_value in zip(left, right, strict=False)
+        ]
+    )
+
+
 def _mean(values: Sequence[float]) -> float:
     return sum(values) / len(values)
+
+
+def _number(value: object) -> float | None:
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return float(value)
+    return None
 
 
 def _sort_key(row: dict[str, object]) -> tuple[object, ...]:

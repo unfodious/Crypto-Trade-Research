@@ -11,6 +11,8 @@ The first feature library converts clean OHLCV candles into deterministic, point
 - Participation: rolling volume z-score and relative volume.
 - Price action: candle body percentage, signed body pressure, wick ratios, wick pressure, close
   location, rolling range position, consecutive bull/bear bars.
+- Market context: same-timestamp breadth, BTC/ETH reference regime, relative strength,
+  correlation, and beta.
 - Multi-timeframe: most recent higher-timeframe close and return, joined only when its `source_available_at` and `close_time` are not later than the base row decision time.
 
 ## Warmup Policy
@@ -58,6 +60,28 @@ Failure modes remain part of the feature contract. Trend indicators lag and whip
 oscillators can stay extreme in strong trends; volume can be venue-specific; candle pressure needs
 context. Use model validation and regime gates rather than treating any single indicator as an
 authority.
+
+## Market Context Features
+
+CT-116 adds point-in-time market-context features using only rows available at the same decision
+timestamp and prior rolling returns:
+
+- `market_positive_return_fraction`: fraction of same-market symbols with positive one-bar return.
+- `market_average_return_1`: average same-market one-bar return.
+- `market_above_ma_fraction_N`: fraction of same-market symbols above their rolling mean.
+- `risk_on_score_N`: simple breadth/reference trend composite from market breadth and BTC/ETH
+  trend flags.
+- `btc_return_1`, `eth_return_1`: reference one-bar returns at the same decision timestamp.
+- `btc_trend_above_ma_N`, `eth_trend_above_ma_N`: reference trend state at the same timestamp.
+- `btc_volatility_bucket_N`, `eth_volatility_bucket_N`: reference volatility bucket.
+- `relative_strength_vs_btc_1`, `relative_strength_vs_eth_1`: symbol return minus reference
+  return.
+- `correlation_to_btc_N`, `beta_to_btc_N`, `correlation_to_eth_N`, `beta_to_eth_N`: rolling
+  return relationship to BTC/ETH using only aligned historical return rows.
+
+These features are designed for altcoin context: an alt setup should be allowed to know whether
+BTC/ETH and the tracked universe are risk-on, risk-off, shocked, or divergent. Missing reference
+rows produce `None`; the generator does not forward-fill future reference candles.
 
 ## Sample Run
 
