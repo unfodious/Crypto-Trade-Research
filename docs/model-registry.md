@@ -68,14 +68,19 @@ credentials, or generated reports. Keep them under ignored paths such as `data/`
 ## Model Artifact Contract
 
 The first artifact format is JSON with schema version `crypto-trade.model-artifact.v1`. It is
-intended for simple `linear_probability_threshold` candidates before any heavier serialization such
-as ONNX or pickle is considered.
+intended for dependency-free research candidates before any heavier serialization such as ONNX or
+pickle is considered. It supports:
+
+- `linear_probability_threshold` for legacy single-feature threshold artifacts.
+- `multifeature_ridge` for CT-117 multifeature ridge-probability artifacts.
 
 An artifact must include:
 
 - `model_id`, `model_version`, and `model.model_type`
-- linear model parameters: `feature_name`, `threshold`, `positive_direction`, and
-  `probability_threshold`
+- model parameters:
+  - linear: `feature_name`, `threshold`, `positive_direction`, and `probability_threshold`
+  - multifeature ridge: `feature_names`, train `means`, train `standard_deviations`, `intercept`,
+    `weights`, and validation-calibrated `probability_threshold`
 - `feature_schema.feature_set_version` and exact ordered `feature_schema.feature_names`
 - preprocessing and calibration metadata
 - dataset manifest reference and training data hash
@@ -91,6 +96,7 @@ Loaders must fail closed when:
 - required metadata is missing
 - the expected feature set version or feature names differ
 - a required inference feature is missing
+- multifeature statistics or weights are incomplete
 - any credential-like field or direct order authority field is present
 
 Artifacts must not include raw private dataset rows, credentials, exchange keys, order quantities,

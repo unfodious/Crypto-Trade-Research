@@ -7,6 +7,7 @@ from crypto_trade_research.models.artifacts import (
     FeatureSchema,
     LinearProbabilityArtifact,
     ModelArtifact,
+    MultifeatureRidgeArtifact,
     load_model_artifact,
     write_model_artifact,
 )
@@ -67,6 +68,44 @@ def test_model_artifact_loader_rejects_forbidden_order_authority_fields(tmp_path
 
     with pytest.raises(ValueError, match="forbidden ML authority field"):
         load_model_artifact(artifact_path)
+
+
+def test_multifeature_ridge_artifact_writes_loads_and_fails_closed(tmp_path: Path) -> None:
+    artifact = ModelArtifact(
+        model_id="unit_multifeature",
+        model_version="20260526T070000Z",
+        model=MultifeatureRidgeArtifact(
+            feature_names=("return_1", "risk_on_score_2"),
+            means={"return_1": 0.0, "risk_on_score_2": 0.5},
+            standard_deviations={"return_1": 0.02, "risk_on_score_2": 0.25},
+            intercept=0.0,
+            weights={"return_1": 1.0, "risk_on_score_2": 0.5},
+            probability_threshold=0.55,
+        ),
+        feature_schema=FeatureSchema(
+            feature_set_version="features.unit.v1",
+            feature_names=("return_1", "risk_on_score_2", "ma_2"),
+        ),
+        preprocessing={"missing_value_policy": "fail_closed"},
+        calibration={"method": "validation_threshold_v1"},
+        dataset_manifest_path="data/generated/unit/manifest.json",
+        training_data_hash="sha256:unit",
+        research_git_commit="unitcommit",
+        dependency_versions={"python": "3.12", "pyarrow": "unit"},
+        created_at="2026-05-26T07:00:00Z",
+    )
+    artifact_path = tmp_path / "multifeature.json"
+
+    write_model_artifact(artifact_path, artifact)
+    loaded = load_model_artifact(artifact_path)
+
+    take = loaded.predict({"return_1": 0.04, "risk_on_score_2": 0.75, "ma_2": 100.0})
+    skip = loaded.predict({"return_1": -0.04, "risk_on_score_2": 0.25, "ma_2": 100.0})
+    missing = loaded.predict({"return_1": 0.04, "ma_2": 100.0})
+    assert take.recommended_action == "take"
+    assert skip.recommended_action == "skip"
+    assert missing.recommended_action == "skip"
+    assert missing.reason_codes == ("missing_feature",)
 
 
 def _artifact() -> ModelArtifact:

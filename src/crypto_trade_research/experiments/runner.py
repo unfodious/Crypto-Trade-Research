@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import subprocess
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -24,9 +23,10 @@ from crypto_trade_research.labels import LabelConfig, generate_trade_labels
 from crypto_trade_research.models import (
     BaselineConfig,
     FeatureSchema,
-    LinearProbabilityArtifact,
     ModelArtifact,
     ModelSample,
+    MultifeatureRidgeArtifact,
+    fit_ridge_probability_model,
     train_and_evaluate_baselines,
     write_model_artifact,
 )
@@ -219,6 +219,7 @@ def run_baseline_experiment(config: BaselineExperimentConfig) -> BaselineExperim
     _write_json(feature_manifest_path, asdict(features.manifest))
     _write_json(label_manifest_path, asdict(labels.manifest))
 
+    baseline_payload = baseline_report.to_report_dict()
     model_artifact_hash = write_model_artifact(
         model_artifact_path,
         _model_artifact(
@@ -226,9 +227,9 @@ def run_baseline_experiment(config: BaselineExperimentConfig) -> BaselineExperim
             samples=samples,
             feature_names=feature_names,
             dataset_manifest_path=dataset_manifest_path,
+            baseline_payload=baseline_payload,
         ),
     )
-    baseline_payload = baseline_report.to_report_dict()
     baseline_payload["metadata"] = {
         "experiment_name": config.experiment_name,
         "dataset_manifest_path": str(dataset_manifest_path),
@@ -450,6 +451,7 @@ def _model_artifact(
     samples: list[ModelSample],
     feature_names: tuple[str, ...],
     dataset_manifest_path: Path,
+    baseline_payload: dict[str, Any],
 ) -> ModelArtifact:
     train_samples = [sample for sample in samples if sample.decision_time <= config.train_end]
     if not train_samples:
@@ -457,18 +459,19 @@ def _model_artifact(
     return ModelArtifact(
         model_id=config.experiment_name,
         model_version=_version(config.generated_at),
-        model=_linear_probability_artifact(train_samples, config),
+        model=_multifeature_ridge_artifact(train_samples, config, feature_names, baseline_payload),
         feature_schema=FeatureSchema(
             feature_set_version=config.feature_set_version,
             feature_names=feature_names,
         ),
         preprocessing={
             "missing_value_policy": "fail_closed",
+            "research_training_imputation": "train_mean",
             "warmup_rows": "excluded_when_decision_feature_missing",
         },
         calibration={
-            "method": "logistic_margin_v1",
-            "probability_threshold": config.probability_threshold,
+            "method": "validation_threshold_v1",
+            "probability_threshold": _multifeature_probability_threshold(baseline_payload),
         },
         dataset_manifest_path=str(dataset_manifest_path),
         training_data_hash=_file_sha256(dataset_manifest_path),
@@ -481,35 +484,38 @@ def _model_artifact(
     )
 
 
-def _linear_probability_artifact(
+def _multifeature_ridge_artifact(
     samples: list[ModelSample],
     config: BaselineExperimentConfig,
-) -> LinearProbabilityArtifact:
-    winners = [
-        sample.features[config.decision_feature] for sample in samples if sample.target_before_stop
-    ]
-    losers = [
-        sample.features[config.decision_feature]
-        for sample in samples
-        if not sample.target_before_stop
-    ]
-    if not winners or not losers:
-        values = [sample.features[config.decision_feature] for sample in samples]
-        threshold = sum(values) / len(values)
-        positive_direction = 1
-    else:
-        winner_mean = sum(winners) / len(winners)
-        loser_mean = sum(losers) / len(losers)
-        threshold = (winner_mean + loser_mean) / 2
-        positive_direction = 1 if winner_mean >= loser_mean else -1
-    if math.isnan(threshold):
-        raise ValueError("model threshold must be finite")
-    return LinearProbabilityArtifact(
-        feature_name=config.decision_feature,
-        threshold=threshold,
-        positive_direction=positive_direction,
-        probability_threshold=config.probability_threshold,
+    feature_names: tuple[str, ...],
+    baseline_payload: dict[str, Any],
+) -> MultifeatureRidgeArtifact:
+    model = fit_ridge_probability_model(
+        samples,
+        BaselineConfig(
+            feature_names=feature_names,
+            decision_feature=config.decision_feature,
+            train_end=config.train_end,
+            validation_end=config.validation_end,
+            test_end=config.test_end,
+            probability_threshold=config.probability_threshold,
+            initial_equity=config.initial_equity,
+            risk_per_trade_pct=config.risk_per_trade_pct,
+        ),
     )
+    return MultifeatureRidgeArtifact(
+        feature_names=model.feature_names,
+        means=model.means,
+        standard_deviations=model.standard_deviations,
+        intercept=model.intercept,
+        weights=model.weights,
+        probability_threshold=_multifeature_probability_threshold(baseline_payload),
+    )
+
+
+def _multifeature_probability_threshold(baseline_payload: dict[str, Any]) -> float:
+    metadata = dict(baseline_payload.get("model_metadata", {}))
+    return float(metadata.get("multifeature_probability_threshold", 0.5))
 
 
 def _experiment_record(
@@ -520,7 +526,8 @@ def _experiment_record(
     promotion_checklist_path: Path,
 ) -> ExperimentRecord:
     strategies = baseline_payload["strategies"]
-    model_metrics = strategies["linear_probability_oos"]["metrics"]
+    model_metrics = strategies["multifeature_ridge_oos"]["metrics"]
+    single_feature_metrics = strategies["linear_probability_oos"]["metrics"]
     rule_metrics = strategies["rule_only_oos"]["metrics"]
     naive_metrics = strategies["no_trade_oos"]["metrics"]
     gate_inputs = PromotionGateInputs(
@@ -540,7 +547,7 @@ def _experiment_record(
         model=ModelVersion(
             model_id=config.experiment_name,
             version=_version(config.generated_at),
-            model_type="linear_probability_threshold",
+            model_type="multifeature_ridge",
         ),
         research_git_commit=config.research_git_commit,
         dataset_manifest_path=str(dataset_manifest_path),
@@ -566,6 +573,7 @@ def _experiment_record(
             "rule_only_average_r": float(rule_metrics["average_r"]),
             "naive_average_r": float(naive_metrics["average_r"]),
             "walk_forward_average_r": float(model_metrics["average_r"]),
+            "single_feature_average_r": float(single_feature_metrics["average_r"]),
             "max_drawdown_pct": float(model_metrics["max_drawdown_pct"]),
             "max_drawdown_duration_bars": int(model_metrics["max_drawdown_duration"]),
             "trade_count": int(model_metrics["trade_count"]),

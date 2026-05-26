@@ -93,6 +93,7 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
 
     record = json.loads(result.registry_record_path.read_text(encoding="utf-8"))
     assert record["model"]["model_id"] == "unit_real_baseline"
+    assert record["model"]["model_type"] == "multifeature_ridge"
     assert record["research_git_commit"] == "unitcommit"
     assert record["dataset_manifest_path"] == str(result.dataset_manifest_path)
     assert record["metrics"]["artifact_hash"] == report["metadata"]["model_artifact_hash"]
@@ -119,10 +120,16 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
         expected_feature_set_version="features.unit.v1",
         expected_feature_names=tuple(record["feature_names"]),
     )
-    assert loaded_artifact.predict({"return_1": 0.05, "ma_2": 100.0}).recommended_action in {
+    artifact_payload = json.loads(result.model_artifact_path.read_text(encoding="utf-8"))
+    assert artifact_payload["model"]["model_type"] == "multifeature_ridge"
+    feature_values = {name: 0.0 for name in record["feature_names"]}
+    feature_values["return_1"] = 0.05
+    feature_values["ma_2"] = 100.0
+    assert loaded_artifact.predict(feature_values).recommended_action in {
         "take",
         "skip",
     }
+    assert loaded_artifact.predict({"return_1": 0.05}).reason_codes == ("missing_feature",)
 
 
 def test_runner_refuses_shuffled_splits_for_performance_claims(tmp_path: Path) -> None:

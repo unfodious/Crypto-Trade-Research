@@ -316,6 +316,15 @@ def _fit_ridge_probability_model(
     )
 
 
+def fit_ridge_probability_model(
+    samples: list[ModelSample],
+    config: BaselineConfig,
+) -> RidgeProbabilityModel:
+    """Fit the dependency-free multifeature ridge-probability baseline."""
+
+    return _fit_ridge_probability_model(samples, config)
+
+
 def _calibrate_probability_threshold(
     model: RidgeProbabilityModel,
     validation_samples: list[ModelSample],
