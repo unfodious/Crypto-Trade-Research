@@ -7,8 +7,13 @@ Start with simple baselines. If a simple model cannot beat no-trade and rule-onl
 - `no_trade`: zero trades, zero exposure.
 - `rule_only`: take every candidate setup without an ML filter.
 - `linear_probability`: a deterministic threshold model trained only on the time-based training window.
+- `multifeature_ridge`: a dependency-free multifeature ridge-probability baseline. It standardizes
+  features on the train window, imputes missing feature values to train means, fits a regularized
+  linear probability proxy, converts scores through a sigmoid, and calibrates its take threshold on
+  validation only.
 
-The first implementation is intentionally lightweight and dependency-free. It records the feature list, training/validation/test windows, out-of-sample average R, and feature importance for sanity checks.
+The implementation is intentionally lightweight and dependency-free. It records the feature list,
+training/validation/test windows, out-of-sample average R, and feature importance for sanity checks.
 
 Generated reports expose both scopes:
 
@@ -24,6 +29,20 @@ Do not use shuffled cross-validation for performance claims. Split by time:
 - test window
 
 Reject a model when edge only exists in the training window.
+
+## Multifeature Rules
+
+The multifeature baseline is meant to answer whether the enriched feature library contains useful
+combined information before introducing heavier model dependencies.
+
+Guardrails:
+
+- train statistics come from the train split only,
+- validation chooses the probability threshold,
+- test data is never used for fitting or calibration,
+- feature importance is diagnostic, not proof of causality,
+- missing feature values fail soft inside research by using train means; runtime artifacts still
+  fail closed until a promoted model contract explicitly supports imputation.
 
 ## Sample Run
 
