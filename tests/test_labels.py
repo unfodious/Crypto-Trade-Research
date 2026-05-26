@@ -155,6 +155,120 @@ def test_same_bar_target_stop_ambiguity_can_be_marked_target_first_for_sensitivi
     assert first["realized_r_after_costs"] == pytest.approx(1.45)
 
 
+def test_long_dynamic_breakeven_exit_locks_small_positive_r() -> None:
+    frame = generate_trade_labels(
+        [
+            _bar(1, 100, 100.5, 99.5, 100),
+            _bar(2, 100, 101.2, 100.4, 101.1),
+            _bar(3, 101.1, 101.3, 100.05, 100.2),
+        ],
+        LabelConfig(
+            label_set_version="unit.labels.dynamic.v1",
+            horizon_bars=2,
+            side="long",
+            stop_loss_pct=0.01,
+            target_pct=0.02,
+            cost_pct=0.001,
+            flat_threshold_pct=0.001,
+            exit_model="breakeven_trailing",
+            breakeven_activation_r=1.0,
+            breakeven_lock_r=0.2,
+        ),
+    )
+
+    first = frame.rows[0]
+    assert first["target_before_stop"] is True
+    assert first["time_to_target_bars"] is None
+    assert first["time_to_stop_bars"] == 2
+    assert first["time_to_breakeven_bars"] == 1
+    assert first["dynamic_exit_reason"] == "dynamic_stop"
+    assert first["realized_r_after_costs"] == pytest.approx(0.1)
+
+
+def test_dynamic_exit_uses_horizon_close_when_stop_never_moves_or_hits() -> None:
+    frame = generate_trade_labels(
+        [
+            _bar(1, 100, 100.5, 99.5, 100),
+            _bar(2, 100, 100.8, 99.4, 100.5),
+            _bar(3, 100.5, 100.9, 99.6, 100.4),
+        ],
+        LabelConfig(
+            label_set_version="unit.labels.dynamic.v1",
+            horizon_bars=2,
+            side="long",
+            stop_loss_pct=0.01,
+            target_pct=0.02,
+            cost_pct=0.001,
+            flat_threshold_pct=0.001,
+            exit_model="breakeven_trailing",
+            breakeven_activation_r=1.0,
+            breakeven_lock_r=0.0,
+        ),
+    )
+
+    first = frame.rows[0]
+    assert first["time_to_stop_bars"] is None
+    assert first["time_to_breakeven_bars"] is None
+    assert first["dynamic_exit_reason"] == "horizon_exit"
+    assert first["realized_r_after_costs"] == pytest.approx(0.3)
+
+
+def test_short_dynamic_trailing_exit_uses_more_protective_stop() -> None:
+    frame = generate_trade_labels(
+        [
+            _bar(1, 100, 100.5, 99.5, 100),
+            _bar(2, 100, 100.2, 98.6, 99.0),
+        ],
+        LabelConfig(
+            label_set_version="unit.labels.dynamic.v1",
+            horizon_bars=1,
+            side="short",
+            stop_loss_pct=0.01,
+            target_pct=0.02,
+            cost_pct=0.001,
+            flat_threshold_pct=0.001,
+            exit_model="breakeven_trailing",
+            breakeven_activation_r=1.0,
+            breakeven_lock_r=0.2,
+            trailing_stop_r=1.0,
+        ),
+    )
+
+    first = frame.rows[0]
+    assert first["target_before_stop"] is True
+    assert first["time_to_stop_bars"] == 1
+    assert first["time_to_breakeven_bars"] == 1
+    assert first["dynamic_exit_reason"] == "dynamic_stop"
+    assert first["realized_r_after_costs"] == pytest.approx(0.3)
+
+
+def test_dynamic_same_bar_stop_after_activation_defaults_to_stop_first() -> None:
+    frame = generate_trade_labels(
+        [
+            _bar(1, 100, 100.5, 99.5, 100),
+            _bar(2, 100, 101.5, 99.5, 100.8),
+        ],
+        LabelConfig(
+            label_set_version="unit.labels.dynamic.v1",
+            horizon_bars=1,
+            side="long",
+            stop_loss_pct=0.01,
+            target_pct=0.02,
+            cost_pct=0.001,
+            flat_threshold_pct=0.001,
+            exit_model="breakeven_trailing",
+            breakeven_activation_r=1.0,
+            breakeven_lock_r=0.2,
+        ),
+    )
+
+    first = frame.rows[0]
+    assert first["time_to_stop_bars"] == 1
+    assert first["time_to_breakeven_bars"] == 1
+    assert first["dynamic_exit_reason"] == "dynamic_stop"
+    assert first["realized_r_after_costs"] == pytest.approx(0.1)
+
+
 def test_label_rows_join_features_without_leaking_label_fields() -> None:
     bars = [
         _bar(1, 100, 101, 99, 100),

@@ -60,6 +60,9 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
                     "max_trades_per_decision_time": 1,
                     "loss_cooldown_signals": 1,
                 },
+                "reporting": {
+                    "include_trade_details": False,
+                },
                 "cost_assumptions": {
                     "fee_bps": 4.0,
                     "slippage_bps": 3.0,
@@ -104,6 +107,9 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     assert "multifeature_ridge_top1_oos" in report["strategies"]
     assert "regime_stratification" in report["model_metadata"]
     assert report["metadata"]["risk_controls"]["max_trades_per_decision_time"] == 1
+    assert report["metadata"]["include_trade_details"] is False
+    assert report["strategies"]["rule_only"]["trades"] == []
+    assert report["strategies"]["rule_only"]["trade_detail_count"] > 0
 
     record = json.loads(result.registry_record_path.read_text(encoding="utf-8"))
     assert record["model"]["model_id"] == "unit_real_baseline"

@@ -88,6 +88,7 @@ class BaselineExperimentConfig:
     max_trades_per_decision_time: int | None = None
     loss_cooldown_signals: int = 0
     label_generation_mode: str = "full"
+    include_trade_details: bool = True
     probability_threshold_candidates: tuple[float, ...] = (
         0.40,
         0.45,
@@ -119,6 +120,7 @@ class BaselineExperimentConfig:
         promotion_gates = dict(payload.get("promotion_gates", {}))
         risk_controls = dict(payload.get("risk_controls", {}))
         memory = dict(payload.get("memory", {}))
+        reporting = dict(payload.get("reporting", {}))
         source_csv = payload.get("source_csv")
         dataset_manifest_path = payload.get("dataset_manifest_path")
         return cls(
@@ -149,6 +151,10 @@ class BaselineExperimentConfig:
                 cost_pct=float(label["cost_pct"]),
                 flat_threshold_pct=float(label["flat_threshold_pct"]),
                 target_stop_tie_breaker=str(label.get("target_stop_tie_breaker", "stop_first")),
+                exit_model=str(label.get("exit_model", "fixed_target_stop")),
+                breakeven_activation_r=_optional_float(label.get("breakeven_activation_r")),
+                breakeven_lock_r=float(label.get("breakeven_lock_r", 0.0)),
+                trailing_stop_r=_optional_float(label.get("trailing_stop_r")),
             ),
             split_strategy=str(splits.get("strategy", "chronological")),
             train_end=_parse_timestamp(str(splits["train_end"])),
@@ -214,6 +220,7 @@ class BaselineExperimentConfig:
             ),
             loss_cooldown_signals=int(risk_controls.get("loss_cooldown_signals", 0)),
             label_generation_mode=str(memory.get("label_generation_mode", "full")),
+            include_trade_details=bool(reporting.get("include_trade_details", True)),
         )
 
 
@@ -423,7 +430,10 @@ def run_baseline_experiment(
         "feature_artifact_row_count": len(feature_artifact_rows),
         "research_git_commit": config.research_git_commit,
         "risk_controls": _risk_controls_payload(config),
+        "include_trade_details": config.include_trade_details,
     }
+    if not config.include_trade_details:
+        _remove_trade_details(baseline_payload)
     _write_json(baseline_report_path, baseline_payload)
     baseline_markdown_path.write_text(_markdown_report(baseline_payload), encoding="utf-8")
 
@@ -1021,6 +1031,18 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     )
 
 
+def _remove_trade_details(payload: dict[str, Any]) -> None:
+    for strategy in payload.get("strategies", {}).values():
+        if not isinstance(strategy, dict):
+            continue
+        trade_count = len(strategy.get("trades", ()))
+        equity_point_count = len(strategy.get("equity_curve", ()))
+        strategy["trade_detail_count"] = trade_count
+        strategy["equity_curve_detail_count"] = equity_point_count
+        strategy["trades"] = []
+        strategy["equity_curve"] = []
+
+
 def _file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -1041,6 +1063,10 @@ def _parse_timestamp_optional(value: object) -> datetime | None:
 
 def _optional_int(value: object) -> int | None:
     return int(value) if value is not None else None
+
+
+def _optional_float(value: object) -> float | None:
+    return float(value) if value is not None else None
 
 
 def _format_timestamp(value: datetime) -> str:

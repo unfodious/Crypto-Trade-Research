@@ -311,6 +311,10 @@ def _label_cache_key(config: BaselineExperimentConfig) -> tuple[object, ...]:
         label.cost_pct,
         label.flat_threshold_pct,
         label.target_stop_tie_breaker,
+        label.exit_model,
+        label.breakeven_activation_r,
+        label.breakeven_lock_r,
+        label.trailing_stop_r,
     )
 
 

@@ -1,0 +1,258 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct129-dynamic-exit-base.json",
+      "overrides": {
+        "experiment_name": "ct129_fixed_short_sell_pressure_top3_comparator",
+        "label": {
+          "label_set_version": "labels.ct129.short-24bar-fixed-2r.v1",
+          "horizon_bars": 24,
+          "side": "short",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.008,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first",
+          "exit_model": "fixed_target_stop",
+          "breakeven_activation_r": null,
+          "breakeven_lock_r": 0.0,
+          "trailing_stop_r": null
+        },
+        "training_target": {
+          "mode": "target_before_stop"
+        },
+        "output_dir": "data/generated/ct129_fixed_short_sell_pressure_top3_comparator"
+      }
+    },
+    {
+      "config": "configs/ct129-dynamic-exit-base.json",
+      "overrides": {
+        "experiment_name": "ct129_short_sell_pressure_dynamic_breakeven_top3",
+        "label": {
+          "label_set_version": "labels.ct129.short-24bar-breakeven-only.v1",
+          "trailing_stop_r": null
+        },
+        "output_dir": "data/generated/ct129_short_sell_pressure_dynamic_breakeven_top3"
+      }
+    },
+    {
+      "config": "configs/ct129-dynamic-exit-base.json"
+    },
+    {
+      "config": "configs/ct129-dynamic-exit-base.json",
+      "overrides": {
+        "experiment_name": "ct129_short_sell_pressure_dynamic_trail10_top3",
+        "label": {
+          "label_set_version": "labels.ct129.short-24bar-breakeven-trail10.v1",
+          "trailing_stop_r": 1.0
+        },
+        "output_dir": "data/generated/ct129_short_sell_pressure_dynamic_trail10_top3"
+      }
+    },
+    {
+      "config": "configs/ct129-dynamic-exit-base.json",
+      "overrides": {
+        "experiment_name": "ct129_short_sell_pressure_dynamic_trail15_top5",
+        "risk_controls": {
+          "max_trades_per_decision_time": 5
+        },
+        "output_dir": "data/generated/ct129_short_sell_pressure_dynamic_trail15_top5"
+      }
+    },
+    {
+      "config": "configs/ct129-dynamic-exit-base.json",
+      "overrides": {
+        "experiment_name": "ct129_short_sell_pressure_riskoff_dynamic_trail15_top3",
+        "candidate_setup": {
+          "name": "h24_short_taker_sell_pressure_riskoff",
+          "filters": [
+            {
+              "feature": "volatility_expansion_20",
+              "operator": ">=",
+              "value": 1.1
+            },
+            {
+              "feature": "close_location",
+              "operator": "<=",
+              "value": 0.45
+            },
+            {
+              "feature": "taker_flow_imbalance",
+              "operator": "<=",
+              "value": -0.15
+            },
+            {
+              "feature": "taker_flow_imbalance_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": "<=",
+              "value": 0.5
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": "<=",
+              "value": 0.5
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct129_short_sell_pressure_riskoff_dynamic_trail15_top3"
+      }
+    },
+    {
+      "config": "configs/ct129-dynamic-exit-base.json",
+      "overrides": {
+        "experiment_name": "ct129_long_buy_pressure_dynamic_trail15_probability_top3",
+        "label": {
+          "label_set_version": "labels.ct129.long-24bar-breakeven-trailing.v1",
+          "horizon_bars": 24,
+          "side": "long",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.008,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first",
+          "exit_model": "breakeven_trailing",
+          "breakeven_activation_r": 1.0,
+          "breakeven_lock_r": 0.1,
+          "trailing_stop_r": 1.5
+        },
+        "candidate_setup": {
+          "name": "h24_long_taker_buy_pressure",
+          "filters": [
+            {
+              "feature": "volatility_expansion_20",
+              "operator": ">=",
+              "value": 1.1
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.55
+            },
+            {
+              "feature": "taker_flow_imbalance",
+              "operator": ">=",
+              "value": 0.15
+            },
+            {
+              "feature": "taker_flow_imbalance_zscore_20",
+              "operator": ">=",
+              "value": 0.25
+            }
+          ]
+        },
+        "baseline": {
+          "primary_strategy": "multifeature_ridge_risk_controlled_oos"
+        },
+        "output_dir": "data/generated/ct129_long_buy_pressure_dynamic_trail15_probability_top3"
+      }
+    },
+    {
+      "config": "configs/ct129-dynamic-exit-base.json",
+      "overrides": {
+        "experiment_name": "ct129_long_buy_pressure_dynamic_trail15_expected_r_top3",
+        "label": {
+          "label_set_version": "labels.ct129.long-24bar-breakeven-trailing.v1",
+          "horizon_bars": 24,
+          "side": "long",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.008,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first",
+          "exit_model": "breakeven_trailing",
+          "breakeven_activation_r": 1.0,
+          "breakeven_lock_r": 0.1,
+          "trailing_stop_r": 1.5
+        },
+        "candidate_setup": {
+          "name": "h24_long_taker_buy_pressure",
+          "filters": [
+            {
+              "feature": "volatility_expansion_20",
+              "operator": ">=",
+              "value": 1.1
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.55
+            },
+            {
+              "feature": "taker_flow_imbalance",
+              "operator": ">=",
+              "value": 0.15
+            },
+            {
+              "feature": "taker_flow_imbalance_zscore_20",
+              "operator": ">=",
+              "value": 0.25
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct129_long_buy_pressure_dynamic_trail15_expected_r_top3"
+      }
+    },
+    {
+      "config": "configs/ct129-dynamic-exit-base.json",
+      "overrides": {
+        "experiment_name": "ct129_long_buy_pressure_riskon_dynamic_trail15_top3",
+        "label": {
+          "label_set_version": "labels.ct129.long-24bar-breakeven-trailing.v1",
+          "horizon_bars": 24,
+          "side": "long",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.008,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first",
+          "exit_model": "breakeven_trailing",
+          "breakeven_activation_r": 1.0,
+          "breakeven_lock_r": 0.1,
+          "trailing_stop_r": 1.5
+        },
+        "candidate_setup": {
+          "name": "h24_long_taker_buy_pressure_riskon",
+          "filters": [
+            {
+              "feature": "volatility_expansion_20",
+              "operator": ">=",
+              "value": 1.1
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.55
+            },
+            {
+              "feature": "taker_flow_imbalance",
+              "operator": ">=",
+              "value": 0.15
+            },
+            {
+              "feature": "taker_flow_imbalance_zscore_20",
+              "operator": ">=",
+              "value": 0.25
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.5
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct129_long_buy_pressure_riskon_dynamic_trail15_top3"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct129_dynamic_exit_matrix/leaderboard.json",
+  "markdown_path": "data/generated/ct129_dynamic_exit_matrix/leaderboard.md"
+}
