@@ -73,6 +73,7 @@ class BaselineExperimentConfig:
     higher_timeframes: tuple[str, ...] = ()
     source_csv: Path | None = None
     dataset_manifest_path: Path | None = None
+    funding_manifest_path: Path | None = None
     generated_at: datetime | None = None
     symbols: tuple[str, ...] = ()
     timeframes: tuple[str, ...] = ()
@@ -123,6 +124,7 @@ class BaselineExperimentConfig:
         reporting = dict(payload.get("reporting", {}))
         source_csv = payload.get("source_csv")
         dataset_manifest_path = payload.get("dataset_manifest_path")
+        funding_manifest_path = payload.get("funding_manifest_path")
         return cls(
             experiment_name=str(payload["experiment_name"]),
             output_dir=Path(str(payload["output_dir"])),
@@ -133,6 +135,9 @@ class BaselineExperimentConfig:
             source_csv=Path(str(source_csv)) if source_csv else None,
             dataset_manifest_path=(
                 Path(str(dataset_manifest_path)) if dataset_manifest_path else None
+            ),
+            funding_manifest_path=(
+                Path(str(funding_manifest_path)) if funding_manifest_path else None
             ),
             symbols=tuple(str(symbol).upper() for symbol in payload.get("symbols", ())),
             timeframes=tuple(str(timeframe).lower() for timeframe in payload.get("timeframes", ())),
@@ -253,6 +258,7 @@ class BaselineExperimentResult:
 class BaselineExperimentInputs:
     dataset_manifest_path: Path
     source_rows: list[dict[str, object]]
+    funding_rows: list[dict[str, object]]
     features: FeatureFrame
     labels: LabelFrame
 
@@ -272,9 +278,21 @@ def load_baseline_source_rows(
     return dataset_manifest_path, source_rows
 
 
+def load_baseline_funding_rows(config: BaselineExperimentConfig) -> list[dict[str, object]]:
+    """Load optional point-in-time funding rows for feature generation."""
+
+    if config.funding_manifest_path is None:
+        return []
+    _log_progress(config, "loading funding rows")
+    funding_rows = pq.read_table(_cleaned_dataset_path(config.funding_manifest_path)).to_pylist()
+    _log_progress(config, f"loaded {len(funding_rows)} funding rows")
+    return funding_rows
+
+
 def build_baseline_features(
     source_rows: list[dict[str, object]],
     config: BaselineExperimentConfig,
+    funding_rows: list[dict[str, object]] | None = None,
 ) -> FeatureFrame:
     """Build point-in-time features for a baseline experiment config."""
 
@@ -286,6 +304,7 @@ def build_baseline_features(
             rolling_window=config.rolling_window,
             higher_timeframes=config.higher_timeframes,
         ),
+        funding_rate_rows=funding_rows,
     )
     _log_progress(config, f"built {len(features.rows)} feature rows")
     return features
@@ -323,7 +342,8 @@ def prepare_baseline_experiment_inputs(
     """Load source rows and generate reusable feature/label frames."""
 
     dataset_manifest_path, source_rows = load_baseline_source_rows(config)
-    features = build_baseline_features(source_rows, config)
+    funding_rows = load_baseline_funding_rows(config)
+    features = build_baseline_features(source_rows, config, funding_rows)
     labels = (
         build_baseline_candidate_labels(source_rows, features.rows, config)
         if config.label_generation_mode == "candidate_only"
@@ -332,6 +352,7 @@ def prepare_baseline_experiment_inputs(
     return BaselineExperimentInputs(
         dataset_manifest_path=dataset_manifest_path,
         source_rows=source_rows,
+        funding_rows=funding_rows,
         features=features,
         labels=labels,
     )
@@ -427,6 +448,9 @@ def run_baseline_experiment(
         "sample_count": len(samples),
         "split_strategy": config.split_strategy,
         "label_generation_mode": config.label_generation_mode,
+        "funding_manifest_path": str(config.funding_manifest_path)
+        if config.funding_manifest_path is not None
+        else None,
         "feature_artifact_row_count": len(feature_artifact_rows),
         "research_git_commit": config.research_git_commit,
         "risk_controls": _risk_controls_payload(config),

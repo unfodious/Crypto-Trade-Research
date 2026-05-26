@@ -45,6 +45,7 @@ def generate_ohlcv_features(
     rows: Sequence[dict[str, object]],
     config: FeatureConfig,
     higher_timeframe_rows: Sequence[dict[str, object]] | None = None,
+    funding_rate_rows: Sequence[dict[str, object]] | None = None,
 ) -> FeatureFrame:
     """Generate deterministic, post-close OHLCV features from clean candle rows."""
 
@@ -55,6 +56,7 @@ def generate_ohlcv_features(
 
     sorted_rows = sorted(rows, key=_sort_key)
     higher_rows = sorted(higher_timeframe_rows or [], key=_sort_key)
+    funding_rows = sorted(funding_rate_rows or [], key=_funding_sort_key)
     output_rows: list[dict[str, object]] = []
     for group_rows in _group_rows(sorted_rows):
         base_group_key = _base_group_key(group_rows[0])
@@ -66,6 +68,7 @@ def generate_ohlcv_features(
             for index in range(len(group_rows))
         ]
         _add_derived_multi_timeframe_features(group_output_rows, group_rows, config)
+        _add_funding_features(group_output_rows, funding_rows, config.rolling_window)
         output_rows.extend(group_output_rows)
 
     _add_market_context_features(output_rows, config.rolling_window)
@@ -82,6 +85,7 @@ def generate_ohlcv_features(
                 config.rolling_window,
                 bool(higher_rows),
                 config.higher_timeframes,
+                bool(funding_rows),
             ),
         ),
     )
@@ -261,6 +265,7 @@ def _feature_specs(
     rolling_window: int,
     has_higher_timeframe: bool,
     higher_timeframes: tuple[str, ...],
+    has_funding_rates: bool,
 ) -> tuple[FeatureSpec, ...]:
     specs = [
         FeatureSpec("return_1", "indicator", 2, "post_close", "One-bar close-to-close return."),
@@ -627,11 +632,77 @@ def _feature_specs(
                     ),
                 ]
             )
-    specs.extend(_market_context_specs(rolling_window))
+    if has_funding_rates:
+        specs.extend(_funding_feature_specs(rolling_window))
+    specs.extend(_market_context_specs(rolling_window, has_funding_rates))
     return tuple(specs)
 
 
-def _market_context_specs(rolling_window: int) -> list[FeatureSpec]:
+def _funding_feature_specs(rolling_window: int) -> list[FeatureSpec]:
+    return [
+        FeatureSpec(
+            "funding_rate",
+            "funding",
+            1,
+            "post_funding_time",
+            "Most recent funding rate available by decision time.",
+        ),
+        FeatureSpec(
+            f"funding_rate_mean_{rolling_window}",
+            "funding",
+            rolling_window,
+            "post_funding_time",
+            "Rolling mean of available funding rates.",
+        ),
+        FeatureSpec(
+            f"funding_rate_zscore_{rolling_window}",
+            "funding",
+            rolling_window,
+            "post_funding_time",
+            "Current funding-rate z-score over recent funding events.",
+        ),
+        FeatureSpec(
+            f"funding_rate_abs_zscore_{rolling_window}",
+            "funding",
+            rolling_window,
+            "post_funding_time",
+            "Absolute current funding-rate z-score over recent funding events.",
+        ),
+        FeatureSpec(
+            "funding_rate_positive",
+            "funding",
+            1,
+            "post_funding_time",
+            "Flag set when the latest funding rate is positive.",
+        ),
+        FeatureSpec(
+            "funding_rate_abs",
+            "funding",
+            1,
+            "post_funding_time",
+            "Absolute value of the latest funding rate.",
+        ),
+        FeatureSpec(
+            "hours_since_funding",
+            "funding",
+            1,
+            "post_funding_time",
+            "Hours since the latest available funding event.",
+        ),
+        FeatureSpec(
+            "hours_to_next_funding_estimate",
+            "funding",
+            1,
+            "post_funding_time",
+            "Eight-hour-cycle estimate of hours until the next funding event.",
+        ),
+    ]
+
+
+def _market_context_specs(
+    rolling_window: int,
+    has_funding_rates: bool,
+) -> list[FeatureSpec]:
     specs = [
         FeatureSpec(
             "market_positive_return_fraction",
@@ -730,6 +801,44 @@ def _market_context_specs(rolling_window: int) -> list[FeatureSpec]:
                 ),
             ]
         )
+    if has_funding_rates:
+        specs.extend(
+            [
+                FeatureSpec(
+                    "market_average_funding_rate",
+                    "funding_context",
+                    1,
+                    "post_funding_time",
+                    "Average latest funding rate across same-market symbols.",
+                ),
+                FeatureSpec(
+                    "market_positive_funding_fraction",
+                    "funding_context",
+                    1,
+                    "post_funding_time",
+                    "Fraction of same-market symbols with positive latest funding.",
+                ),
+            ]
+        )
+        for reference in ("btc", "eth"):
+            specs.extend(
+                [
+                    FeatureSpec(
+                        f"{reference}_funding_rate",
+                        "funding_context",
+                        1,
+                        "post_funding_time",
+                        f"{reference.upper()} latest funding rate at the decision timestamp.",
+                    ),
+                    FeatureSpec(
+                        f"relative_funding_vs_{reference}",
+                        "funding_context",
+                        1,
+                        "post_funding_time",
+                        f"Symbol latest funding rate minus {reference.upper()} latest funding.",
+                    ),
+                ]
+            )
     return specs
 
 
@@ -781,6 +890,8 @@ def _add_market_context_features(rows: list[dict[str, object]], rolling_window: 
         trend_flags = [value for value in trend_flags if value is not None]
         taker_flows = [_number(row.get("taker_flow_imbalance")) for row in context_rows]
         taker_flows = [value for value in taker_flows if value is not None]
+        funding_rates = [_number(row.get("funding_rate")) for row in context_rows]
+        funding_rates = [value for value in funding_rates if value is not None]
         market_positive_fraction = (
             sum(1 for value in numeric_returns if value > 0) / len(numeric_returns)
             if numeric_returns
@@ -789,6 +900,12 @@ def _add_market_context_features(rows: list[dict[str, object]], rolling_window: 
         market_average_return = _mean(numeric_returns) if numeric_returns else None
         market_above_ma_fraction = _mean(trend_flags) if trend_flags else None
         market_taker_flow_imbalance = _mean(taker_flows) if taker_flows else None
+        market_average_funding_rate = _mean(funding_rates) if funding_rates else None
+        market_positive_funding_fraction = (
+            sum(1 for value in funding_rates if value > 0) / len(funding_rates)
+            if funding_rates
+            else None
+        )
 
         reference_trend_flags = [
             _number(reference_rows[symbol].get(trend_name))
@@ -809,6 +926,9 @@ def _add_market_context_features(rows: list[dict[str, object]], rolling_window: 
             row[market_above_ma_name] = market_above_ma_fraction
             row[risk_on_name] = risk_on_score
             row["market_taker_flow_imbalance"] = market_taker_flow_imbalance
+            if "funding_rate" in row:
+                row["market_average_funding_rate"] = market_average_funding_rate
+                row["market_positive_funding_fraction"] = market_positive_funding_fraction
             for symbol, prefix in (("BTCUSDT", "btc"), ("ETHUSDT", "eth")):
                 reference_row = reference_rows.get(symbol)
                 reference_return = (
@@ -816,6 +936,11 @@ def _add_market_context_features(rows: list[dict[str, object]], rolling_window: 
                 )
                 reference_taker_flow = (
                     _number(reference_row.get("taker_flow_imbalance"))
+                    if reference_row is not None
+                    else None
+                )
+                reference_funding_rate = (
+                    _number(reference_row.get("funding_rate"))
                     if reference_row is not None
                     else None
                 )
@@ -837,6 +962,12 @@ def _add_market_context_features(rows: list[dict[str, object]], rolling_window: 
                     _number(row.get("taker_flow_imbalance")),
                     reference_taker_flow,
                 )
+                if "funding_rate" in row:
+                    row[f"{prefix}_funding_rate"] = reference_funding_rate
+                    row[f"relative_funding_vs_{prefix}"] = _difference(
+                        _number(row.get("funding_rate")),
+                        reference_funding_rate,
+                    )
 
     for series_key, series_rows in by_series.items():
         venue, market_type, timeframe, _symbol = series_key
@@ -888,6 +1019,73 @@ def _add_derived_multi_timeframe_features(
             htf_feature = htf_features[pointer]
             for name in names:
                 row[name] = htf_feature.get(name)
+
+
+def _add_funding_features(
+    feature_rows: list[dict[str, object]],
+    funding_rows: Sequence[dict[str, object]],
+    rolling_window: int,
+) -> None:
+    if not funding_rows:
+        return
+    if not feature_rows:
+        return
+    group_key = _base_group_key(feature_rows[0])
+    group_funding_rows = [row for row in funding_rows if _funding_group_key(row) == group_key]
+    names = _funding_feature_names(rolling_window)
+    pointer = -1
+    for row in feature_rows:
+        decision_time = _as_datetime(row["decision_time"])
+        while (
+            pointer + 1 < len(group_funding_rows)
+            and _as_datetime(group_funding_rows[pointer + 1]["funding_time"]) <= decision_time
+            and _as_datetime(group_funding_rows[pointer + 1]["source_available_at"])
+            <= decision_time
+        ):
+            pointer += 1
+        if pointer < 0:
+            for name in names:
+                row[name] = None
+            continue
+        latest = group_funding_rows[pointer]
+        window_rows = group_funding_rows[max(pointer - rolling_window + 1, 0) : pointer + 1]
+        funding_rate = _number(latest.get("funding_rate"))
+        funding_values = [_number(item.get("funding_rate")) for item in window_rows]
+        funding_zscore = _zscore_optional(funding_rate, funding_values, rolling_window)
+        funding_time = _as_datetime(latest["funding_time"])
+        hours_since_funding = (decision_time - funding_time).total_seconds() / 3600
+        row.update(
+            {
+                "funding_rate": funding_rate,
+                f"funding_rate_mean_{rolling_window}": _mean_optional(
+                    funding_values,
+                    rolling_window,
+                ),
+                f"funding_rate_zscore_{rolling_window}": funding_zscore,
+                f"funding_rate_abs_zscore_{rolling_window}": abs(funding_zscore)
+                if funding_zscore is not None
+                else None,
+                "funding_rate_positive": _flag(funding_rate > 0)
+                if funding_rate is not None
+                else None,
+                "funding_rate_abs": abs(funding_rate) if funding_rate is not None else None,
+                "hours_since_funding": hours_since_funding,
+                "hours_to_next_funding_estimate": max(8 - hours_since_funding, 0.0),
+            }
+        )
+
+
+def _funding_feature_names(rolling_window: int) -> tuple[str, ...]:
+    return (
+        "funding_rate",
+        f"funding_rate_mean_{rolling_window}",
+        f"funding_rate_zscore_{rolling_window}",
+        f"funding_rate_abs_zscore_{rolling_window}",
+        "funding_rate_positive",
+        "funding_rate_abs",
+        "hours_since_funding",
+        "hours_to_next_funding_estimate",
+    )
 
 
 def _aggregate_closed_timeframe_rows(
@@ -1457,6 +1655,15 @@ def _sort_key(row: dict[str, object]) -> tuple[object, ...]:
     )
 
 
+def _funding_sort_key(row: dict[str, object]) -> tuple[object, ...]:
+    return (
+        row["venue"],
+        row["market_type"],
+        row["symbol"],
+        row["funding_time"],
+    )
+
+
 def _group_rows(rows: Sequence[dict[str, object]]) -> list[list[dict[str, object]]]:
     groups: list[list[dict[str, object]]] = []
     for row in rows:
@@ -1476,6 +1683,14 @@ def _sort_group_key(row: dict[str, object]) -> tuple[object, ...]:
 
 
 def _base_group_key(row: dict[str, object]) -> tuple[object, ...]:
+    return (
+        row["venue"],
+        row["market_type"],
+        row["symbol"],
+    )
+
+
+def _funding_group_key(row: dict[str, object]) -> tuple[object, ...]:
     return (
         row["venue"],
         row["market_type"],

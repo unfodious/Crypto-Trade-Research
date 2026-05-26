@@ -47,6 +47,26 @@ def _bar(
     }
 
 
+def _funding(
+    minute: int,
+    symbol: str,
+    funding_rate: float,
+    mark_price: float = 100.0,
+) -> dict[str, object]:
+    timestamp = datetime(2026, 1, 1, 0, minute, tzinfo=UTC)
+    return {
+        "schema_version": "research.funding_rate.v1",
+        "venue": "binance",
+        "market_type": "um_futures",
+        "symbol": symbol,
+        "funding_time": timestamp,
+        "source_available_at": timestamp,
+        "funding_rate": funding_rate,
+        "mark_price": mark_price,
+        "data_source": "binance_fapi_funding_rate",
+    }
+
+
 def test_generate_ohlcv_features_is_deterministic_and_documents_columns() -> None:
     frame = generate_ohlcv_features(
         [
@@ -320,6 +340,69 @@ def test_market_context_features_use_same_timestamp_reference_rows() -> None:
     assert ada_third_row["correlation_to_eth_2"] == pytest.approx(-1.0)
     assert ada_third_row["beta_to_btc_2"] is not None
     assert ada_third_row["beta_to_eth_2"] is not None
+
+
+def test_funding_features_use_only_available_funding_events() -> None:
+    rows = []
+    for symbol, base in (("BTCUSDT", 100), ("ETHUSDT", 50), ("ADAUSDT", 10)):
+        rows.extend(
+            [
+                _bar(1, close=base, symbol=symbol),
+                _bar(2, close=base + 1, symbol=symbol),
+                _bar(3, close=base + 2, symbol=symbol),
+            ]
+        )
+
+    frame = generate_ohlcv_features(
+        rows,
+        FeatureConfig(feature_set_version="unit.features.v1", rolling_window=2),
+        funding_rate_rows=[
+            _funding(0, "BTCUSDT", 0.0001),
+            _funding(1, "BTCUSDT", 0.0003),
+            _funding(0, "ETHUSDT", -0.0002),
+            _funding(1, "ETHUSDT", -0.0001),
+            _funding(0, "ADAUSDT", 0.0002),
+            _funding(1, "ADAUSDT", 0.0004),
+            _funding(8, "ADAUSDT", 0.01),
+        ],
+    )
+
+    feature_names = {spec.name for spec in frame.manifest.features}
+    assert {
+        "funding_rate",
+        "funding_rate_mean_2",
+        "funding_rate_zscore_2",
+        "funding_rate_abs_zscore_2",
+        "funding_rate_positive",
+        "funding_rate_abs",
+        "hours_since_funding",
+        "hours_to_next_funding_estimate",
+        "market_average_funding_rate",
+        "market_positive_funding_fraction",
+        "btc_funding_rate",
+        "eth_funding_rate",
+        "relative_funding_vs_btc",
+    } <= feature_names
+
+    ada_rows = [row for row in frame.rows if row["symbol"] == "ADAUSDT"]
+    first_row = ada_rows[0]
+    assert first_row["funding_rate"] == pytest.approx(0.0004)
+    assert first_row["funding_rate_mean_2"] == pytest.approx(0.0003)
+    assert first_row["funding_rate_zscore_2"] == pytest.approx(1.0)
+    assert first_row["funding_rate_abs_zscore_2"] == pytest.approx(1.0)
+    assert first_row["funding_rate_positive"] == 1.0
+    assert first_row["hours_since_funding"] == pytest.approx(0.0)
+    assert first_row["hours_to_next_funding_estimate"] == pytest.approx(8.0)
+    assert first_row["market_average_funding_rate"] == pytest.approx((0.0003 - 0.0001 + 0.0004) / 3)
+    assert first_row["market_positive_funding_fraction"] == pytest.approx(2 / 3)
+    assert first_row["btc_funding_rate"] == pytest.approx(0.0003)
+    assert first_row["eth_funding_rate"] == pytest.approx(-0.0001)
+    assert first_row["relative_funding_vs_btc"] == pytest.approx(0.0001)
+
+    last_row = ada_rows[-1]
+    assert last_row["decision_time"] == _ts(3)
+    assert last_row["funding_rate"] == pytest.approx(0.0004)
+    assert last_row["hours_since_funding"] == pytest.approx(2 / 60)
 
 
 def test_derived_multi_timeframe_features_use_only_closed_candles() -> None:

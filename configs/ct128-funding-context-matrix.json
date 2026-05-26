@@ -1,0 +1,234 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct128-funding-context-base.json"
+    },
+    {
+      "config": "configs/ct128-funding-context-base.json",
+      "overrides": {
+        "experiment_name": "ct128_short_positive_funding_probability_top3",
+        "baseline": {
+          "primary_strategy": "multifeature_ridge_risk_controlled_oos"
+        },
+        "output_dir": "data/generated/ct128_short_positive_funding_probability_top3"
+      }
+    },
+    {
+      "config": "configs/ct128-funding-context-base.json",
+      "overrides": {
+        "experiment_name": "ct128_short_positive_funding_riskoff_expected_r_top3",
+        "candidate_setup": {
+          "name": "h12_short_positive_funding_riskoff",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": ">=",
+              "value": 0.0001
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": ">=",
+              "value": 0.25
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": "<=",
+              "value": 0.5
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": "<=",
+              "value": 0.5
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct128_short_positive_funding_riskoff_expected_r_top3"
+      }
+    },
+    {
+      "config": "configs/ct128-funding-context-base.json",
+      "overrides": {
+        "experiment_name": "ct128_short_positive_funding_sell_pressure_expected_r_top3",
+        "candidate_setup": {
+          "name": "h12_short_positive_funding_sell_pressure",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": ">=",
+              "value": 0.0001
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": ">=",
+              "value": 0.25
+            },
+            {
+              "feature": "taker_flow_imbalance",
+              "operator": "<=",
+              "value": -0.1
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct128_short_positive_funding_sell_pressure_expected_r_top3"
+      }
+    },
+    {
+      "config": "configs/ct128-funding-context-base.json",
+      "overrides": {
+        "experiment_name": "ct128_long_negative_funding_expected_r_top3",
+        "label": {
+          "label_set_version": "labels.ct128.long-12bar-2r.v1",
+          "horizon_bars": 12,
+          "side": "long",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.008,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first"
+        },
+        "candidate_setup": {
+          "name": "h12_long_negative_funding_crowded_shorts",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct128_long_negative_funding_expected_r_top3"
+      }
+    },
+    {
+      "config": "configs/ct128-funding-context-base.json",
+      "overrides": {
+        "experiment_name": "ct128_long_negative_funding_probability_top3",
+        "label": {
+          "label_set_version": "labels.ct128.long-12bar-2r.v1",
+          "horizon_bars": 12,
+          "side": "long",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.008,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first"
+        },
+        "candidate_setup": {
+          "name": "h12_long_negative_funding_crowded_shorts",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            }
+          ]
+        },
+        "baseline": {
+          "primary_strategy": "multifeature_ridge_risk_controlled_oos"
+        },
+        "output_dir": "data/generated/ct128_long_negative_funding_probability_top3"
+      }
+    },
+    {
+      "config": "configs/ct128-funding-context-base.json",
+      "overrides": {
+        "experiment_name": "ct128_long_negative_funding_riskon_expected_r_top3",
+        "label": {
+          "label_set_version": "labels.ct128.long-12bar-2r.v1",
+          "horizon_bars": 12,
+          "side": "long",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.008,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first"
+        },
+        "candidate_setup": {
+          "name": "h12_long_negative_funding_riskon",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.5
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct128_long_negative_funding_riskon_expected_r_top3"
+      }
+    },
+    {
+      "config": "configs/ct128-funding-context-base.json",
+      "overrides": {
+        "experiment_name": "ct128_long_negative_funding_buy_pressure_expected_r_top3",
+        "label": {
+          "label_set_version": "labels.ct128.long-12bar-2r.v1",
+          "horizon_bars": 12,
+          "side": "long",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.008,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first"
+        },
+        "candidate_setup": {
+          "name": "h12_long_negative_funding_buy_pressure",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "taker_flow_imbalance",
+              "operator": ">=",
+              "value": 0.1
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct128_long_negative_funding_buy_pressure_expected_r_top3"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct128_funding_context_matrix/leaderboard.json",
+  "markdown_path": "data/generated/ct128_funding_context_matrix/leaderboard.md"
+}

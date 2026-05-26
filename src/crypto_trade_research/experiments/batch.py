@@ -18,6 +18,7 @@ from crypto_trade_research.experiments.runner import (
     build_baseline_candidate_labels,
     build_baseline_features,
     build_baseline_labels,
+    load_baseline_funding_rows,
     load_baseline_source_rows,
     run_baseline_experiment,
 )
@@ -78,6 +79,7 @@ ExperimentRunner = Callable[[BaselineExperimentConfig], BaselineExperimentResult
 class _CachedSourceRows:
     dataset_manifest_path: Path
     rows: list[dict[str, object]]
+    funding_rows: list[dict[str, object]]
 
 
 class _ExperimentInputCache:
@@ -91,7 +93,8 @@ class _ExperimentInputCache:
         source = self._sources.get(source_key)
         if source is None:
             dataset_manifest_path, source_rows = load_baseline_source_rows(config)
-            source = _CachedSourceRows(dataset_manifest_path, source_rows)
+            funding_rows = load_baseline_funding_rows(config)
+            source = _CachedSourceRows(dataset_manifest_path, source_rows, funding_rows)
             self._sources[source_key] = source
 
         feature_key = (
@@ -102,7 +105,7 @@ class _ExperimentInputCache:
         )
         features = self._features.get(feature_key)
         if features is None:
-            features = build_baseline_features(source.rows, config)
+            features = build_baseline_features(source.rows, config, source.funding_rows)
             self._features[feature_key] = features
 
         if config.label_generation_mode == "candidate_only":
@@ -126,6 +129,7 @@ class _ExperimentInputCache:
         return BaselineExperimentInputs(
             dataset_manifest_path=source.dataset_manifest_path,
             source_rows=source.rows,
+            funding_rows=source.funding_rows,
             features=features,
             labels=labels,
         )
@@ -293,6 +297,7 @@ def _source_cache_key(config: BaselineExperimentConfig) -> tuple[object, ...]:
     return (
         str(config.source_csv) if config.source_csv else None,
         str(config.dataset_manifest_path) if config.dataset_manifest_path else None,
+        str(config.funding_manifest_path) if config.funding_manifest_path else None,
         config.dataset_name,
         config.generator_version,
         config.symbols,
