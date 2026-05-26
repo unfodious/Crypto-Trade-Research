@@ -70,6 +70,9 @@ class BaselineExperimentConfig:
     research_git_commit: str = "unknown"
     promotion_gate_thresholds: PromotionGateThresholds = PromotionGateThresholds()
     candidate_setup: CandidateSetup | None = None
+    max_trades_per_symbol: int | None = None
+    max_trades_per_decision_time: int | None = None
+    loss_cooldown_signals: int = 0
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> BaselineExperimentConfig:
@@ -79,6 +82,7 @@ class BaselineExperimentConfig:
         baseline = dict(payload.get("baseline", {}))
         costs = dict(payload.get("cost_assumptions", {}))
         promotion_gates = dict(payload.get("promotion_gates", {}))
+        risk_controls = dict(payload.get("risk_controls", {}))
         source_csv = payload.get("source_csv")
         dataset_manifest_path = payload.get("dataset_manifest_path")
         return cls(
@@ -139,6 +143,11 @@ class BaselineExperimentConfig:
                 ),
             ),
             candidate_setup=_candidate_setup_from_payload(payload.get("candidate_setup")),
+            max_trades_per_symbol=_optional_int(risk_controls.get("max_trades_per_symbol")),
+            max_trades_per_decision_time=_optional_int(
+                risk_controls.get("max_trades_per_decision_time")
+            ),
+            loss_cooldown_signals=int(risk_controls.get("loss_cooldown_signals", 0)),
         )
 
 
@@ -203,6 +212,9 @@ def run_baseline_experiment(config: BaselineExperimentConfig) -> BaselineExperim
             probability_threshold=config.probability_threshold,
             initial_equity=config.initial_equity,
             risk_per_trade_pct=config.risk_per_trade_pct,
+            max_trades_per_symbol=config.max_trades_per_symbol,
+            max_trades_per_decision_time=config.max_trades_per_decision_time,
+            loss_cooldown_signals=config.loss_cooldown_signals,
         ),
     )
 
@@ -242,6 +254,7 @@ def run_baseline_experiment(config: BaselineExperimentConfig) -> BaselineExperim
         "sample_count": len(samples),
         "split_strategy": config.split_strategy,
         "research_git_commit": config.research_git_commit,
+        "risk_controls": _risk_controls_payload(config),
     }
     _write_json(baseline_report_path, baseline_payload)
     baseline_markdown_path.write_text(_markdown_report(baseline_payload), encoding="utf-8")
@@ -501,6 +514,9 @@ def _multifeature_ridge_artifact(
             probability_threshold=config.probability_threshold,
             initial_equity=config.initial_equity,
             risk_per_trade_pct=config.risk_per_trade_pct,
+            max_trades_per_symbol=config.max_trades_per_symbol,
+            max_trades_per_decision_time=config.max_trades_per_decision_time,
+            loss_cooldown_signals=config.loss_cooldown_signals,
         ),
     )
     return MultifeatureRidgeArtifact(
@@ -518,6 +534,14 @@ def _multifeature_probability_threshold(baseline_payload: dict[str, Any]) -> flo
     return float(metadata.get("multifeature_probability_threshold", 0.5))
 
 
+def _risk_controls_payload(config: BaselineExperimentConfig) -> dict[str, int | None]:
+    return {
+        "max_trades_per_symbol": config.max_trades_per_symbol,
+        "max_trades_per_decision_time": config.max_trades_per_decision_time,
+        "loss_cooldown_signals": config.loss_cooldown_signals,
+    }
+
+
 def _experiment_record(
     config: BaselineExperimentConfig,
     dataset_manifest_path: Path,
@@ -526,7 +550,13 @@ def _experiment_record(
     promotion_checklist_path: Path,
 ) -> ExperimentRecord:
     strategies = baseline_payload["strategies"]
-    model_metrics = strategies["multifeature_ridge_oos"]["metrics"]
+    primary_strategy = str(
+        dict(baseline_payload.get("model_metadata", {})).get(
+            "primary_strategy",
+            "multifeature_ridge_oos",
+        )
+    )
+    model_metrics = strategies[primary_strategy]["metrics"]
     single_feature_metrics = strategies["linear_probability_oos"]["metrics"]
     rule_metrics = strategies["rule_only_oos"]["metrics"]
     naive_metrics = strategies["no_trade_oos"]["metrics"]
@@ -646,6 +676,10 @@ def _parse_timestamp(value: str) -> datetime:
 
 def _parse_timestamp_optional(value: object) -> datetime | None:
     return _parse_timestamp(str(value)) if value else None
+
+
+def _optional_int(value: object) -> int | None:
+    return int(value) if value is not None else None
 
 
 def _format_timestamp(value: datetime) -> str:

@@ -53,6 +53,11 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
                     "initial_equity": 10000,
                     "risk_per_trade_pct": 0.01,
                 },
+                "risk_controls": {
+                    "max_trades_per_symbol": 2,
+                    "max_trades_per_decision_time": 1,
+                    "loss_cooldown_signals": 1,
+                },
                 "cost_assumptions": {
                     "fee_bps": 4.0,
                     "slippage_bps": 3.0,
@@ -90,6 +95,8 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     assert report["splits"][0]["name"] == "train"
     assert report["strategies"]["rule_only_oos"]["sample_scope"] == "validation_test"
     assert report["strategies"]["linear_probability_oos"]["sample_scope"] == "validation_test"
+    assert report["model_metadata"]["primary_strategy"] == "multifeature_ridge_risk_controlled_oos"
+    assert report["metadata"]["risk_controls"]["max_trades_per_decision_time"] == 1
 
     record = json.loads(result.registry_record_path.read_text(encoding="utf-8"))
     assert record["model"]["model_id"] == "unit_real_baseline"
@@ -97,6 +104,7 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     assert record["research_git_commit"] == "unitcommit"
     assert record["dataset_manifest_path"] == str(result.dataset_manifest_path)
     assert record["metrics"]["artifact_hash"] == report["metadata"]["model_artifact_hash"]
+    assert "single_feature_average_r" in record["metrics"]
     assert record["metrics"]["promotion_checklist_path"] == str(result.promotion_checklist_path)
     assert record["decision"]["thresholds"]["min_oos_trade_count"] == 10
     assert record["feature_names"]

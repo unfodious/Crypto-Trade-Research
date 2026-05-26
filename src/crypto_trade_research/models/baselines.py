@@ -52,6 +52,9 @@ class BaselineConfig:
     initial_equity: float = 10_000
     risk_per_trade_pct: float = 0.01
     ridge_lambda: float = 1.0
+    max_trades_per_symbol: int | None = None
+    max_trades_per_decision_time: int | None = None
+    loss_cooldown_signals: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,12 +149,24 @@ def train_and_evaluate_baselines(
         initial_equity=config.initial_equity,
         risk_per_trade_pct=config.risk_per_trade_pct,
     )
+    risk_backtest_config = BacktestConfig(
+        initial_equity=config.initial_equity,
+        risk_per_trade_pct=config.risk_per_trade_pct,
+        max_trades_per_symbol=config.max_trades_per_symbol,
+        max_trades_per_decision_time=config.max_trades_per_decision_time,
+        loss_cooldown_signals=config.loss_cooldown_signals,
+    )
     validation_test_samples = validation_samples + test_samples
     ridge_probability_threshold = _calibrate_probability_threshold(
         ridge_model,
         validation_samples,
-        backtest_config,
+        risk_backtest_config,
         fallback=config.probability_threshold,
+    )
+    primary_strategy_name = (
+        "multifeature_ridge_risk_controlled_oos"
+        if _has_risk_controls(config)
+        else "multifeature_ridge_oos"
     )
     strategy_reports = {
         "no_trade": evaluate_signal_strategy("no_trade", [], backtest_config),
@@ -163,7 +178,7 @@ def train_and_evaluate_baselines(
         "linear_probability": evaluate_signal_strategy(
             "linear_probability",
             [
-                _sample_to_signal(sample)
+                _sample_to_signal(sample, confidence=model.probability(sample))
                 for sample in all_samples
                 if model.probability(sample) >= config.probability_threshold
             ],
@@ -172,11 +187,20 @@ def train_and_evaluate_baselines(
         "multifeature_ridge": evaluate_signal_strategy(
             "multifeature_ridge",
             [
-                _sample_to_signal(sample)
+                _sample_to_signal(sample, confidence=ridge_model.probability(sample))
                 for sample in all_samples
                 if ridge_model.probability(sample) >= ridge_probability_threshold
             ],
             backtest_config,
+        ),
+        "multifeature_ridge_risk_controlled": evaluate_signal_strategy(
+            "multifeature_ridge_risk_controlled",
+            [
+                _sample_to_signal(sample, confidence=ridge_model.probability(sample))
+                for sample in all_samples
+                if ridge_model.probability(sample) >= ridge_probability_threshold
+            ],
+            risk_backtest_config,
         ),
         "no_trade_oos": evaluate_signal_strategy("no_trade_oos", [], backtest_config),
         "rule_only_oos": evaluate_signal_strategy(
@@ -187,7 +211,7 @@ def train_and_evaluate_baselines(
         "linear_probability_oos": evaluate_signal_strategy(
             "linear_probability_oos",
             [
-                _sample_to_signal(sample)
+                _sample_to_signal(sample, confidence=model.probability(sample))
                 for sample in validation_test_samples
                 if model.probability(sample) >= config.probability_threshold
             ],
@@ -196,14 +220,23 @@ def train_and_evaluate_baselines(
         "multifeature_ridge_oos": evaluate_signal_strategy(
             "multifeature_ridge_oos",
             [
-                _sample_to_signal(sample)
+                _sample_to_signal(sample, confidence=ridge_model.probability(sample))
                 for sample in validation_test_samples
                 if ridge_model.probability(sample) >= ridge_probability_threshold
             ],
             backtest_config,
         ),
+        "multifeature_ridge_risk_controlled_oos": evaluate_signal_strategy(
+            "multifeature_ridge_risk_controlled_oos",
+            [
+                _sample_to_signal(sample, confidence=ridge_model.probability(sample))
+                for sample in validation_test_samples
+                if ridge_model.probability(sample) >= ridge_probability_threshold
+            ],
+            risk_backtest_config,
+        ),
     }
-    validation_test_model_report = strategy_reports["multifeature_ridge_oos"]
+    validation_test_model_report = strategy_reports[primary_strategy_name]
     decision = "research_further"
     rejection_reason = None
     if validation_test_model_report.metrics.average_r <= 0:
@@ -220,6 +253,8 @@ def train_and_evaluate_baselines(
             "probability_threshold": config.probability_threshold,
             "multifeature_probability_threshold": ridge_probability_threshold,
             "multifeature_feature_count": len(ridge_model.feature_names),
+            "primary_strategy": primary_strategy_name,
+            "risk_controls": _risk_controls_payload(config),
             "train_window": [
                 _format_timestamp(train_samples[0].decision_time),
                 _format_timestamp(config.train_end),
@@ -356,6 +391,22 @@ def _calibrate_probability_threshold(
     return best_threshold
 
 
+def _has_risk_controls(config: BaselineConfig) -> bool:
+    return (
+        config.max_trades_per_symbol is not None
+        or config.max_trades_per_decision_time is not None
+        or config.loss_cooldown_signals > 0
+    )
+
+
+def _risk_controls_payload(config: BaselineConfig) -> dict[str, int | None]:
+    return {
+        "max_trades_per_symbol": config.max_trades_per_symbol,
+        "max_trades_per_decision_time": config.max_trades_per_decision_time,
+        "loss_cooldown_signals": config.loss_cooldown_signals,
+    }
+
+
 def _ridge_feature_importance(model: RidgeProbabilityModel) -> list[dict[str, float | str]]:
     return [
         {
@@ -437,13 +488,14 @@ def _standard_deviation(values: list[float]) -> float:
     return math.sqrt(variance)
 
 
-def _sample_to_signal(sample: ModelSample) -> SignalRow:
+def _sample_to_signal(sample: ModelSample, confidence: float = 1.0) -> SignalRow:
     return SignalRow(
         decision_time=sample.decision_time,
         symbol=sample.symbol,
         timeframe=sample.timeframe,
         side=sample.side,
         gross_r=sample.realized_r_after_costs,
+        confidence=confidence,
     )
 
 
@@ -484,6 +536,12 @@ def _validate_config(config: BaselineConfig) -> None:
         raise ValueError("train_end, validation_end, and test_end must be time ordered")
     if not 0 <= config.probability_threshold <= 1:
         raise ValueError("probability_threshold must be between 0 and 1")
+    if config.max_trades_per_symbol is not None and config.max_trades_per_symbol <= 0:
+        raise ValueError("max_trades_per_symbol must be positive when set")
+    if config.max_trades_per_decision_time is not None and config.max_trades_per_decision_time <= 0:
+        raise ValueError("max_trades_per_decision_time must be positive when set")
+    if config.loss_cooldown_signals < 0:
+        raise ValueError("loss_cooldown_signals must be non-negative")
 
 
 def _serialize_dataclass(value: object) -> dict[str, object]:

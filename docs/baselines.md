@@ -11,6 +11,9 @@ Start with simple baselines. If a simple model cannot beat no-trade and rule-onl
   features on the train window, imputes missing feature values to train means, fits a regularized
   linear probability proxy, converts scores through a sigmoid, and calibrates its take threshold on
   validation only.
+- `multifeature_ridge_risk_controlled`: the same multifeature model evaluated with configured
+  research risk controls such as top-N same-timestamp ranking, per-symbol trade caps, and cooldown
+  after accepted losses.
 
 The implementation is intentionally lightweight and dependency-free. It records the feature list,
 training/validation/test windows, out-of-sample average R, and feature importance for sanity checks.
@@ -43,6 +46,8 @@ Guardrails:
 - feature importance is diagnostic, not proof of causality,
 - missing feature values fail soft inside research by using train means; runtime artifacts still
   fail closed until a promoted model contract explicitly supports imputation.
+- when `risk_controls` are configured, `multifeature_ridge_risk_controlled_oos` becomes the primary
+  model strategy for registry gates; otherwise `multifeature_ridge_oos` remains primary.
 
 ## Sample Run
 
