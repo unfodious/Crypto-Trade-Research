@@ -66,7 +66,17 @@ class BaselineConfig:
         0.65,
         0.70,
     )
+    min_validation_trades_for_threshold: int = 1
+    expected_r_threshold_candidates: tuple[float, ...] = (
+        0.00,
+        0.05,
+        0.10,
+        0.20,
+        0.30,
+        0.50,
+    )
     ranking_top_n_values: tuple[int, ...] = ()
+    primary_strategy: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +144,28 @@ class RidgeProbabilityModel:
         return 1 / (1 + math.exp(-score))
 
 
+@dataclass(frozen=True, slots=True)
+class RidgeExpectedRModel:
+    feature_names: tuple[str, ...]
+    means: dict[str, float]
+    standard_deviations: dict[str, float]
+    intercept: float
+    weights: dict[str, float]
+
+    def expected_r(self, sample: ModelSample) -> float:
+        score = self.intercept
+        for feature_name in self.feature_names:
+            value = sample.features.get(feature_name, self.means[feature_name])
+            standard_deviation = self.standard_deviations[feature_name]
+            standardized = (
+                0.0
+                if standard_deviation == 0
+                else (value - self.means[feature_name]) / standard_deviation
+            )
+            score += self.weights[feature_name] * standardized
+        return score
+
+
 def train_and_evaluate_baselines(
     samples: list[ModelSample],
     config: BaselineConfig,
@@ -155,6 +187,7 @@ def train_and_evaluate_baselines(
     ]
     model = _fit_linear_probability_model(train_samples, config.decision_feature)
     ridge_model = _fit_ridge_probability_model(train_samples, config)
+    expected_r_model = _fit_ridge_expected_r_model(train_samples, config)
     all_samples = train_samples + validation_samples + test_samples
 
     backtest_config = BacktestConfig(
@@ -175,13 +208,23 @@ def train_and_evaluate_baselines(
         risk_backtest_config,
         fallback=config.probability_threshold,
         candidates=config.probability_threshold_candidates,
+        min_validation_trades=config.min_validation_trades_for_threshold,
     )
     ridge_probability_threshold = threshold_calibration["selected_threshold"]
-    primary_strategy_name = (
+    expected_r_calibration = _calibrate_expected_r_threshold(
+        expected_r_model,
+        validation_samples,
+        risk_backtest_config,
+        candidates=config.expected_r_threshold_candidates,
+        min_validation_trades=config.min_validation_trades_for_threshold,
+    )
+    expected_r_threshold = expected_r_calibration["selected_threshold"]
+    default_primary_strategy_name = (
         "multifeature_ridge_risk_controlled_oos"
         if _has_risk_controls(config)
         else "multifeature_ridge_oos"
     )
+    primary_strategy_name = config.primary_strategy or default_primary_strategy_name
     strategy_reports = {
         "no_trade": evaluate_signal_strategy("no_trade", [], backtest_config),
         "rule_only": evaluate_signal_strategy(
@@ -213,6 +256,24 @@ def train_and_evaluate_baselines(
                 _sample_to_signal(sample, confidence=ridge_model.probability(sample))
                 for sample in all_samples
                 if ridge_model.probability(sample) >= ridge_probability_threshold
+            ],
+            risk_backtest_config,
+        ),
+        "expected_r_ridge": evaluate_signal_strategy(
+            "expected_r_ridge",
+            [
+                _sample_to_expected_r_signal(sample, expected_r_model.expected_r(sample))
+                for sample in all_samples
+                if expected_r_model.expected_r(sample) >= expected_r_threshold
+            ],
+            backtest_config,
+        ),
+        "expected_r_ridge_risk_controlled": evaluate_signal_strategy(
+            "expected_r_ridge_risk_controlled",
+            [
+                _sample_to_expected_r_signal(sample, expected_r_model.expected_r(sample))
+                for sample in all_samples
+                if expected_r_model.expected_r(sample) >= expected_r_threshold
             ],
             risk_backtest_config,
         ),
@@ -249,6 +310,24 @@ def train_and_evaluate_baselines(
             ],
             risk_backtest_config,
         ),
+        "expected_r_ridge_oos": evaluate_signal_strategy(
+            "expected_r_ridge_oos",
+            [
+                _sample_to_expected_r_signal(sample, expected_r_model.expected_r(sample))
+                for sample in validation_test_samples
+                if expected_r_model.expected_r(sample) >= expected_r_threshold
+            ],
+            backtest_config,
+        ),
+        "expected_r_ridge_risk_controlled_oos": evaluate_signal_strategy(
+            "expected_r_ridge_risk_controlled_oos",
+            [
+                _sample_to_expected_r_signal(sample, expected_r_model.expected_r(sample))
+                for sample in validation_test_samples
+                if expected_r_model.expected_r(sample) >= expected_r_threshold
+            ],
+            risk_backtest_config,
+        ),
     }
     strategy_reports.update(
         _ranking_strategy_reports(
@@ -258,6 +337,16 @@ def train_and_evaluate_baselines(
             config,
         )
     )
+    strategy_reports.update(
+        _expected_r_ranking_strategy_reports(
+            expected_r_model,
+            validation_test_samples,
+            expected_r_threshold,
+            config,
+        )
+    )
+    if primary_strategy_name not in strategy_reports:
+        raise ValueError(f"primary_strategy is not available: {primary_strategy_name}")
     validation_test_model_report = strategy_reports[primary_strategy_name]
     decision = "research_further"
     rejection_reason = None
@@ -271,6 +360,7 @@ def train_and_evaluate_baselines(
             "model_type": "multifeature_ridge",
             "single_feature_model_type": "linear_probability_threshold",
             "multifeature_model_type": "ridge_probability",
+            "expected_r_model_type": "ridge_expected_r",
             "training_target": config.training_target_name,
             "feature_names": list(config.feature_names),
             "decision_feature": config.decision_feature,
@@ -278,6 +368,10 @@ def train_and_evaluate_baselines(
             "multifeature_probability_threshold": ridge_probability_threshold,
             "multifeature_probability_threshold_source": threshold_calibration["selected_source"],
             "validation_threshold_sweep": threshold_calibration["sweep"],
+            "min_validation_trades_for_threshold": config.min_validation_trades_for_threshold,
+            "expected_r_threshold": expected_r_threshold,
+            "expected_r_threshold_source": expected_r_calibration["selected_source"],
+            "expected_r_validation_threshold_sweep": expected_r_calibration["sweep"],
             "multifeature_feature_count": len(ridge_model.feature_names),
             "primary_strategy": primary_strategy_name,
             "ranking_top_n_values": list(config.ranking_top_n_values),
@@ -309,7 +403,8 @@ def train_and_evaluate_baselines(
                 "importance": 1.0,
             }
         ]
-        + _ridge_feature_importance(ridge_model),
+        + _ridge_feature_importance(ridge_model)
+        + _expected_r_feature_importance(expected_r_model),
         strategy_reports=strategy_reports,
         decision=decision,
         rejection_reason=rejection_reason,
@@ -384,6 +479,52 @@ def _fit_ridge_probability_model(
     )
 
 
+def _fit_ridge_expected_r_model(
+    samples: list[ModelSample],
+    config: BaselineConfig,
+) -> RidgeExpectedRModel:
+    if not samples:
+        raise ValueError("training split must not be empty")
+    feature_names = tuple(
+        name for name in config.feature_names if any(name in sample.features for sample in samples)
+    )
+    if not feature_names:
+        raise ValueError("expected-R model requires at least one populated feature")
+
+    means = {
+        name: _mean([sample.features[name] for sample in samples if name in sample.features])
+        for name in feature_names
+    }
+    standard_deviations = {
+        name: _standard_deviation([sample.features.get(name, means[name]) for sample in samples])
+        for name in feature_names
+    }
+    matrix = [
+        [1.0]
+        + [
+            _standardized(
+                sample.features.get(name, means[name]),
+                means[name],
+                standard_deviations[name],
+            )
+            for name in feature_names
+        ]
+        for sample in samples
+    ]
+    targets = [sample.realized_r_after_costs for sample in samples]
+    coefficients = _solve_ridge(matrix, targets, config.ridge_lambda)
+    return RidgeExpectedRModel(
+        feature_names=feature_names,
+        means=means,
+        standard_deviations=standard_deviations,
+        intercept=coefficients[0],
+        weights={
+            name: coefficient
+            for name, coefficient in zip(feature_names, coefficients[1:], strict=False)
+        },
+    )
+
+
 def fit_ridge_probability_model(
     samples: list[ModelSample],
     config: BaselineConfig,
@@ -400,6 +541,7 @@ def _calibrate_probability_threshold(
     *,
     fallback: float,
     candidates: tuple[float, ...],
+    min_validation_trades: int = 1,
 ) -> dict[str, object]:
     if not candidates:
         raise ValueError("probability_threshold_candidates must not be empty")
@@ -422,6 +564,7 @@ def _calibrate_probability_threshold(
             backtest_config,
         )
         scored.append((report.metrics.average_r, report.metrics.trade_count, threshold))
+        meets_exposure_floor = report.metrics.trade_count >= min_validation_trades
         sweep.append(
             {
                 "threshold": threshold,
@@ -429,18 +572,87 @@ def _calibrate_probability_threshold(
                 "validation_average_r": report.metrics.average_r,
                 "validation_max_drawdown_pct": report.metrics.max_drawdown_pct,
                 "validation_profit_factor": report.metrics.profit_factor,
+                "meets_exposure_floor": meets_exposure_floor,
                 "selected": False,
             }
         )
-    scored_with_trades = [item for item in scored if item[1] > 0]
+    scored_with_trades = [item for item in scored if item[1] >= min_validation_trades]
     if not scored_with_trades:
         return {
             "selected_threshold": fallback,
-            "selected_source": "fallback_no_validation_trades",
+            "selected_source": "fallback_insufficient_validation_trades",
             "sweep": sweep,
         }
     best_average_r, best_trade_count, best_threshold = max(
         scored_with_trades,
+        key=lambda item: (item[0], item[1], item[2]),
+    )
+    if math.isnan(best_average_r):
+        return {
+            "selected_threshold": fallback,
+            "selected_source": "fallback_nan_validation_score",
+            "sweep": sweep,
+        }
+    for row in sweep:
+        row["selected"] = row["threshold"] == best_threshold
+    return {
+        "selected_threshold": best_threshold,
+        "selected_source": "validation",
+        "sweep": sweep,
+    }
+
+
+def _calibrate_expected_r_threshold(
+    model: RidgeExpectedRModel,
+    validation_samples: list[ModelSample],
+    backtest_config: BacktestConfig,
+    *,
+    candidates: tuple[float, ...],
+    min_validation_trades: int,
+) -> dict[str, object]:
+    if not candidates:
+        raise ValueError("expected_r_threshold_candidates must not be empty")
+    fallback = candidates[0]
+    if not validation_samples:
+        return {
+            "selected_threshold": fallback,
+            "selected_source": "fallback_no_validation_samples",
+            "sweep": [],
+        }
+    scored: list[tuple[float, int, float]] = []
+    sweep: list[dict[str, float | int | bool]] = []
+    for threshold in candidates:
+        report = evaluate_signal_strategy(
+            "expected_r_validation_threshold",
+            [
+                _sample_to_expected_r_signal(sample, model.expected_r(sample))
+                for sample in validation_samples
+                if model.expected_r(sample) >= threshold
+            ],
+            backtest_config,
+        )
+        scored.append((report.metrics.average_r, report.metrics.trade_count, threshold))
+        meets_exposure_floor = report.metrics.trade_count >= min_validation_trades
+        sweep.append(
+            {
+                "threshold": threshold,
+                "validation_trade_count": report.metrics.trade_count,
+                "validation_average_r": report.metrics.average_r,
+                "validation_max_drawdown_pct": report.metrics.max_drawdown_pct,
+                "validation_profit_factor": report.metrics.profit_factor,
+                "meets_exposure_floor": meets_exposure_floor,
+                "selected": False,
+            }
+        )
+    scored_with_floor = [item for item in scored if item[1] >= min_validation_trades]
+    if not scored_with_floor:
+        return {
+            "selected_threshold": fallback,
+            "selected_source": "fallback_insufficient_validation_trades",
+            "sweep": sweep,
+        }
+    best_average_r, best_trade_count, best_threshold = max(
+        scored_with_floor,
         key=lambda item: (item[0], item[1], item[2]),
     )
     if math.isnan(best_average_r):
@@ -486,12 +698,42 @@ def _ranking_strategy_reports(
     return reports
 
 
+def _expected_r_ranking_strategy_reports(
+    model: RidgeExpectedRModel,
+    samples: list[ModelSample],
+    threshold: float,
+    config: BaselineConfig,
+) -> dict[str, BacktestReport]:
+    reports: dict[str, BacktestReport] = {}
+    for top_n in config.ranking_top_n_values:
+        top_n_config = BacktestConfig(
+            initial_equity=config.initial_equity,
+            risk_per_trade_pct=config.risk_per_trade_pct,
+            max_trades_per_symbol=config.max_trades_per_symbol,
+            max_trades_per_decision_time=top_n,
+            loss_cooldown_signals=config.loss_cooldown_signals,
+        )
+        strategy_name = f"expected_r_ridge_top{top_n}_oos"
+        reports[strategy_name] = evaluate_signal_strategy(
+            strategy_name,
+            [
+                _sample_to_expected_r_signal(sample, model.expected_r(sample))
+                for sample in samples
+                if model.expected_r(sample) >= threshold
+            ],
+            top_n_config,
+        )
+    return reports
+
+
 def _ranking_comparison(
     strategy_reports: dict[str, BacktestReport],
 ) -> list[dict[str, float | int | str]]:
     rows: list[dict[str, float | int | str]] = []
     for name, report in sorted(strategy_reports.items()):
-        if not (name.startswith("multifeature_ridge_top") and name.endswith("_oos")):
+        if not (
+            name.startswith("multifeature_ridge_top") or name.startswith("expected_r_ridge_top")
+        ) or not name.endswith("_oos"):
             continue
         rows.append(
             {
@@ -650,6 +892,21 @@ def _ridge_feature_importance(model: RidgeProbabilityModel) -> list[dict[str, fl
     ]
 
 
+def _expected_r_feature_importance(model: RidgeExpectedRModel) -> list[dict[str, float | str]]:
+    return [
+        {
+            "feature": feature_name,
+            "importance": abs(weight),
+            "model": "ridge_expected_r",
+        }
+        for feature_name, weight in sorted(
+            model.weights.items(),
+            key=lambda item: abs(item[1]),
+            reverse=True,
+        )[:20]
+    ]
+
+
 def _solve_ridge(
     matrix: list[list[float]],
     targets: list[float],
@@ -727,6 +984,14 @@ def _sample_to_signal(sample: ModelSample, confidence: float = 1.0) -> SignalRow
     )
 
 
+def _sample_to_expected_r_signal(sample: ModelSample, expected_r: float) -> SignalRow:
+    return _sample_to_signal(sample, confidence=_expected_r_confidence(expected_r))
+
+
+def _expected_r_confidence(expected_r: float) -> float:
+    return min(1.0, max(0.01, expected_r))
+
+
 def _splits(
     train_samples: list[ModelSample],
     validation_samples: list[ModelSample],
@@ -774,6 +1039,10 @@ def _validate_config(config: BaselineConfig) -> None:
         raise ValueError("probability_threshold_candidates must not be empty")
     if any(threshold < 0 or threshold > 1 for threshold in config.probability_threshold_candidates):
         raise ValueError("probability_threshold_candidates must be between 0 and 1")
+    if config.min_validation_trades_for_threshold <= 0:
+        raise ValueError("min_validation_trades_for_threshold must be positive")
+    if not config.expected_r_threshold_candidates:
+        raise ValueError("expected_r_threshold_candidates must not be empty")
     if any(top_n <= 0 for top_n in config.ranking_top_n_values):
         raise ValueError("ranking_top_n_values must be positive")
 

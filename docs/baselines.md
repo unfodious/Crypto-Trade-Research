@@ -16,6 +16,11 @@ Start with simple baselines. If a simple model cannot beat no-trade and rule-onl
   after accepted losses.
 - `multifeature_ridge_topN_oos`: diagnostic validation+test reports that force explicit
   same-timestamp confidence ranking for configured N values, for example top 1, 2, 3, and 5.
+- `expected_r_ridge`: a dependency-free multifeature ridge regression baseline trained directly on
+  realized R after costs. It is used for research ranking and calibration diagnostics when binary
+  win-probability selection is too sparse or misleading.
+- `expected_r_ridge_topN_oos`: diagnostic validation+test reports that rank same-timestamp signals
+  by predicted expected R instead of target-before-stop probability.
 
 The implementation is intentionally lightweight and dependency-free. It records the feature list,
 training/validation/test windows, out-of-sample average R, and feature importance for sanity checks.
@@ -48,6 +53,12 @@ Guardrails:
   reports must show the selected threshold and every validation row tested. Thresholds with zero
   validation trades are reported but cannot win calibration over thresholds with actual validation
   trades,
+- `baseline.min_validation_trades_for_threshold` may require a minimum number of validation trades
+  before a probability or expected-R threshold can win calibration. If no candidate threshold meets
+  the floor, the runner falls back to the configured default and records the fallback source,
+- `baseline.expected_r_threshold_candidates` may declare expected-R threshold candidates for
+  `expected_r_ridge`; reports show the selected threshold and whether each candidate met the
+  validation exposure floor,
 - `baseline.ranking_top_n_values` may declare explicit top-N diagnostics; use these to test signal
   ranking instead of loosening the candidate setup,
 - `memory.label_generation_mode=candidate_only` may be used for large predeclared setup matrices
@@ -63,6 +74,9 @@ Guardrails:
   fail closed until a promoted model contract explicitly supports imputation.
 - when `risk_controls` are configured, `multifeature_ridge_risk_controlled_oos` becomes the primary
   model strategy for registry gates; otherwise `multifeature_ridge_oos` remains primary.
+- `baseline.primary_strategy` may override the primary strategy for research matrices, for example
+  `expected_r_ridge_risk_controlled_oos`. Only use this when the experiment explicitly tests a
+  different selection objective.
 
 ## Sample Run
 

@@ -215,6 +215,10 @@ def leaderboard_row_from_record(
         "selected_probability_threshold": _optional_float(
             metrics.get("multifeature_probability_threshold")
         ),
+        "selected_expected_r_threshold": _optional_float(metrics.get("expected_r_threshold")),
+        "min_validation_trades_for_threshold": _optional_int(
+            metrics.get("min_validation_trades_for_threshold")
+        ),
         "primary_strategy": str(metrics.get("primary_strategy", "")),
         "symbol_coverage": _symbol_coverage(config),
         "artifact_hash": str(metrics.get("artifact_hash", "")),
@@ -267,6 +271,8 @@ def _failure_row(
         "trade_count": None,
         "max_drawdown_pct": None,
         "selected_probability_threshold": None,
+        "selected_expected_r_threshold": None,
+        "min_validation_trades_for_threshold": None,
         "primary_strategy": "",
         "symbol_coverage": _symbol_coverage(config),
         "artifact_hash": "",
@@ -335,8 +341,10 @@ def _markdown_leaderboard(rows: list[dict[str, object]]) -> str:
         "# Batch Experiment Leaderboard",
         "",
         "| Experiment | Run | Decision | Failed gates | Model avg R | Rule avg R | "
-        "Trades | Max DD | Selected p | Primary | Symbols | Registry |",
-        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
+        "Trades | Max DD | Selected p | Selected E[R] | Min Val Trades | Primary | Symbols | "
+        "Registry |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | "
+        "--- | --- |",
     ]
     for row in rows:
         lines.append(
@@ -350,6 +358,8 @@ def _markdown_leaderboard(rows: list[dict[str, object]]) -> str:
             f"{row['trade_count'] if row['trade_count'] is not None else '-'} | "
             f"{_fmt_metric(row['max_drawdown_pct'])} | "
             f"{_fmt_metric(row['selected_probability_threshold'])} | "
+            f"{_fmt_metric(row['selected_expected_r_threshold'])} | "
+            f"{_fmt_optional_int(row['min_validation_trades_for_threshold'])} | "
             f"{row['primary_strategy'] or '-'} | "
             f"{row['symbol_coverage']} | "
             f"{row['registry_path'] or row['error']} |"
@@ -366,6 +376,10 @@ def _markdown_leaderboard(rows: list[dict[str, object]]) -> str:
 
 def _fmt_metric(value: object) -> str:
     return f"{float(value):.4f}" if value is not None else "-"
+
+
+def _fmt_optional_int(value: object) -> str:
+    return str(value) if value is not None else "-"
 
 
 def _format_timestamp(value: datetime) -> str:

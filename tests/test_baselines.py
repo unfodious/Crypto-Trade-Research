@@ -256,6 +256,8 @@ def test_multifeature_ridge_reports_top_n_ranking_and_regime_slices() -> None:
     assert "multifeature_ridge_top1_oos" in report.strategy_reports
     assert "multifeature_ridge_top2_oos" in report.strategy_reports
     assert [row["strategy"] for row in report.model_metadata["ranking_comparison"]] == [
+        "expected_r_ridge_top1_oos",
+        "expected_r_ridge_top2_oos",
         "multifeature_ridge_top1_oos",
         "multifeature_ridge_top2_oos",
     ]
@@ -264,6 +266,80 @@ def test_multifeature_ridge_reports_top_n_ranking_and_regime_slices() -> None:
     assert "risk_on_score_band" in regime
     assert "volatility_bucket" in regime
     assert any(row["bucket"] != "missing" for row in regime["btc_eth_trend_regime"])
+
+
+def test_expected_r_ridge_reports_threshold_and_can_be_primary() -> None:
+    samples = [
+        _multi_sample(1, setup_score=0.1, context_score=0.9, outcome_r=1.5),
+        _multi_sample(2, setup_score=0.2, context_score=0.8, outcome_r=1.0),
+        _multi_sample(3, setup_score=0.9, context_score=0.1, outcome_r=-1.0),
+        _multi_sample(4, setup_score=0.8, context_score=0.2, outcome_r=-1.0),
+        _multi_sample(5, setup_score=0.3, context_score=0.7, outcome_r=1.5),
+        _multi_sample(6, setup_score=0.7, context_score=0.3, outcome_r=-1.0),
+    ]
+
+    report = train_and_evaluate_baselines(
+        samples,
+        BaselineConfig(
+            feature_names=("setup_score", "context_score"),
+            decision_feature="setup_score",
+            train_end=_ts(4),
+            validation_end=_ts(5),
+            test_end=_ts(6),
+            expected_r_threshold_candidates=(0.0, 0.2, 0.5),
+            primary_strategy="expected_r_ridge_oos",
+        ),
+    )
+
+    assert report.model_metadata["expected_r_model_type"] == "ridge_expected_r"
+    assert report.model_metadata["primary_strategy"] == "expected_r_ridge_oos"
+    assert report.model_metadata["expected_r_validation_threshold_sweep"]
+    assert any(
+        row["selected"] for row in report.model_metadata["expected_r_validation_threshold_sweep"]
+    )
+    assert "expected_r_ridge_oos" in report.strategy_reports
+    assert any(
+        item.get("model") == "ridge_expected_r" and item["feature"] == "context_score"
+        for item in report.feature_importance
+    )
+
+
+def test_validation_threshold_calibration_requires_exposure_floor() -> None:
+    class ProbabilityFeatureModel:
+        def probability(self, sample: ModelSample) -> float:
+            return sample.features["probability"]
+
+    result = _calibrate_probability_threshold(
+        ProbabilityFeatureModel(),
+        [
+            ModelSample(
+                decision_time=_ts(1),
+                symbol="BTCUSDT",
+                timeframe="1d",
+                side="long",
+                features={"probability": 0.5},
+                target_before_stop=True,
+                realized_r_after_costs=1.0,
+            ),
+            ModelSample(
+                decision_time=_ts(2),
+                symbol="ETHUSDT",
+                timeframe="1d",
+                side="long",
+                features={"probability": 0.5},
+                target_before_stop=True,
+                realized_r_after_costs=1.0,
+            ),
+        ],
+        BacktestConfig(initial_equity=10_000, risk_per_trade_pct=0.01),
+        fallback=0.55,
+        candidates=(0.4, 0.6),
+        min_validation_trades=3,
+    )
+
+    assert result["selected_threshold"] == 0.55
+    assert result["selected_source"] == "fallback_insufficient_validation_trades"
+    assert result["sweep"][0]["meets_exposure_floor"] is False
 
 
 def test_validation_threshold_calibration_ignores_zero_trade_thresholds() -> None:

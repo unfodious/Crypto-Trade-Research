@@ -96,7 +96,17 @@ class BaselineExperimentConfig:
         0.65,
         0.70,
     )
+    min_validation_trades_for_threshold: int = 1
+    expected_r_threshold_candidates: tuple[float, ...] = (
+        0.00,
+        0.05,
+        0.10,
+        0.20,
+        0.30,
+        0.50,
+    )
     ranking_top_n_values: tuple[int, ...] = ()
+    primary_strategy: str | None = None
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> BaselineExperimentConfig:
@@ -150,8 +160,23 @@ class BaselineExperimentConfig:
                     (0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70),
                 )
             ),
+            min_validation_trades_for_threshold=int(
+                baseline.get("min_validation_trades_for_threshold", 1)
+            ),
+            expected_r_threshold_candidates=tuple(
+                float(value)
+                for value in baseline.get(
+                    "expected_r_threshold_candidates",
+                    (0.00, 0.05, 0.10, 0.20, 0.30, 0.50),
+                )
+            ),
             ranking_top_n_values=tuple(
                 int(value) for value in baseline.get("ranking_top_n_values", ())
+            ),
+            primary_strategy=(
+                str(baseline["primary_strategy"])
+                if baseline.get("primary_strategy") is not None
+                else None
             ),
             cost_assumptions=CostAssumptions(
                 fee_bps=float(costs.get("fee_bps", 0.0)),
@@ -335,7 +360,10 @@ def run_baseline_experiment(
             max_trades_per_decision_time=config.max_trades_per_decision_time,
             loss_cooldown_signals=config.loss_cooldown_signals,
             probability_threshold_candidates=config.probability_threshold_candidates,
+            min_validation_trades_for_threshold=config.min_validation_trades_for_threshold,
+            expected_r_threshold_candidates=config.expected_r_threshold_candidates,
             ranking_top_n_values=config.ranking_top_n_values,
+            primary_strategy=config.primary_strategy,
             training_target_name=_training_target_name(config.training_target),
         ),
     )
@@ -432,6 +460,10 @@ def _validate_config(config: BaselineExperimentConfig) -> None:
         raise ValueError("probability_threshold_candidates must not be empty")
     if any(threshold < 0 or threshold > 1 for threshold in config.probability_threshold_candidates):
         raise ValueError("probability_threshold_candidates must be between 0 and 1")
+    if config.min_validation_trades_for_threshold <= 0:
+        raise ValueError("min_validation_trades_for_threshold must be positive")
+    if not config.expected_r_threshold_candidates:
+        raise ValueError("expected_r_threshold_candidates must not be empty")
     if any(top_n <= 0 for top_n in config.ranking_top_n_values):
         raise ValueError("ranking_top_n_values must be positive")
     if config.label_generation_mode not in {"full", "candidate_only"}:
@@ -732,6 +764,10 @@ def _model_artifact(
         calibration={
             "method": "validation_threshold_v1",
             "probability_threshold": _multifeature_probability_threshold(baseline_payload),
+            "min_validation_trades_for_threshold": config.min_validation_trades_for_threshold,
+            "expected_r_threshold": float(
+                baseline_payload["model_metadata"].get("expected_r_threshold", 0.0)
+            ),
         },
         dataset_manifest_path=str(dataset_manifest_path),
         training_data_hash=_file_sha256(dataset_manifest_path),
@@ -765,7 +801,10 @@ def _multifeature_ridge_artifact(
             max_trades_per_decision_time=config.max_trades_per_decision_time,
             loss_cooldown_signals=config.loss_cooldown_signals,
             probability_threshold_candidates=config.probability_threshold_candidates,
+            min_validation_trades_for_threshold=config.min_validation_trades_for_threshold,
+            expected_r_threshold_candidates=config.expected_r_threshold_candidates,
             ranking_top_n_values=config.ranking_top_n_values,
+            primary_strategy=config.primary_strategy,
             training_target_name=_training_target_name(config.training_target),
         ),
     )
@@ -866,6 +905,12 @@ def _experiment_record(
             "multifeature_probability_threshold": float(
                 baseline_payload["model_metadata"]["multifeature_probability_threshold"]
             ),
+            "expected_r_threshold": float(
+                baseline_payload["model_metadata"].get("expected_r_threshold", 0.0)
+            ),
+            "min_validation_trades_for_threshold": int(
+                baseline_payload["model_metadata"].get("min_validation_trades_for_threshold", 1)
+            ),
         },
         walk_forward_report_path=str(Path(config.output_dir) / "baseline_report.json"),
         decision=evaluate_promotion_gates(gate_inputs),
@@ -911,6 +956,26 @@ def _markdown_report(payload: dict[str, Any]) -> str:
         lines.append(
             f"| {row['threshold']:.2f} | "
             f"{'yes' if row['selected'] else 'no'} | "
+            f"{row['validation_trade_count']} | "
+            f"{row['validation_average_r']:.4f} | "
+            f"{row['validation_max_drawdown_pct']:.4%} | "
+            f"{row['validation_profit_factor']:.4f} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Expected-R Threshold Sweep",
+            "",
+            "| Threshold | Selected | Meets Exposure Floor | Validation Trades | "
+            "Validation Avg R | Max DD | Profit Factor |",
+            "| ---: | --- | --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for row in payload["model_metadata"].get("expected_r_validation_threshold_sweep", ()):
+        lines.append(
+            f"| {row['threshold']:.2f} | "
+            f"{'yes' if row['selected'] else 'no'} | "
+            f"{'yes' if row.get('meets_exposure_floor') else 'no'} | "
             f"{row['validation_trade_count']} | "
             f"{row['validation_average_r']:.4f} | "
             f"{row['validation_max_drawdown_pct']:.4%} | "
