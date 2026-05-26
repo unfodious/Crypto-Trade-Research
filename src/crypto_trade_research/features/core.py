@@ -53,10 +53,16 @@ def generate_ohlcv_features(
 
     sorted_rows = sorted(rows, key=_sort_key)
     higher_rows = sorted(higher_timeframe_rows or [], key=_sort_key)
-    output_rows = [
-        _build_feature_row(sorted_rows, index, config, higher_rows)
-        for index in range(len(sorted_rows))
-    ]
+    output_rows: list[dict[str, object]] = []
+    for group_rows in _group_rows(sorted_rows):
+        base_group_key = _base_group_key(group_rows[0])
+        group_higher_rows = [
+            row for row in higher_rows if _higher_timeframe_group_key(row) == base_group_key
+        ]
+        output_rows.extend(
+            _build_feature_row(group_rows, index, config, group_higher_rows)
+            for index in range(len(group_rows))
+        )
 
     return FeatureFrame(
         rows=output_rows,
@@ -315,6 +321,40 @@ def _sort_key(row: dict[str, object]) -> tuple[object, ...]:
         row["symbol"],
         row["timeframe"],
         row["close_time"],
+    )
+
+
+def _group_rows(rows: Sequence[dict[str, object]]) -> list[list[dict[str, object]]]:
+    groups: list[list[dict[str, object]]] = []
+    for row in rows:
+        if not groups or _sort_group_key(groups[-1][0]) != _sort_group_key(row):
+            groups.append([])
+        groups[-1].append(row)
+    return groups
+
+
+def _sort_group_key(row: dict[str, object]) -> tuple[object, ...]:
+    return (
+        row["venue"],
+        row["market_type"],
+        row["symbol"],
+        row["timeframe"],
+    )
+
+
+def _base_group_key(row: dict[str, object]) -> tuple[object, ...]:
+    return (
+        row["venue"],
+        row["market_type"],
+        row["symbol"],
+    )
+
+
+def _higher_timeframe_group_key(row: dict[str, object]) -> tuple[object, ...]:
+    return (
+        row["venue"],
+        row["market_type"],
+        row["symbol"],
     )
 
 

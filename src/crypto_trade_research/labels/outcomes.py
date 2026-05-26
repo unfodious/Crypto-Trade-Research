@@ -54,7 +54,11 @@ def generate_trade_labels(
 
     _validate_config(config)
     sorted_rows = sorted(rows, key=_sort_key)
-    label_rows = [_build_label_row(sorted_rows, index, config) for index in range(len(sorted_rows))]
+    label_rows: list[dict[str, object]] = []
+    for group_rows in _group_rows(sorted_rows):
+        label_rows.extend(
+            _build_label_row(group_rows, index, config) for index in range(len(group_rows))
+        )
     return LabelFrame(
         rows=label_rows,
         manifest=LabelManifest(
@@ -291,6 +295,24 @@ def _sort_key(row: dict[str, object]) -> tuple[object, ...]:
         row["symbol"],
         row["timeframe"],
         row["close_time"],
+    )
+
+
+def _group_rows(rows: Sequence[dict[str, object]]) -> list[list[dict[str, object]]]:
+    groups: list[list[dict[str, object]]] = []
+    for row in rows:
+        if not groups or _group_key(groups[-1][0]) != _group_key(row):
+            groups.append([])
+        groups[-1].append(row)
+    return groups
+
+
+def _group_key(row: dict[str, object]) -> tuple[object, ...]:
+    return (
+        row["venue"],
+        row["market_type"],
+        row["symbol"],
+        row["timeframe"],
     )
 
 

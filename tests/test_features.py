@@ -19,12 +19,13 @@ def _bar(
     low: float | None = None,
     volume: float = 100.0,
     timeframe: str = "1m",
+    symbol: str = "BTCUSDT",
 ) -> dict[str, object]:
     return {
         "schema_version": "research.dataset.v1",
         "venue": "binance",
         "market_type": "um_futures",
-        "symbol": "BTCUSDT",
+        "symbol": symbol,
         "base_asset": "BTC",
         "quote_asset": "USDT",
         "timeframe": timeframe,
@@ -115,3 +116,30 @@ def test_higher_timeframe_alignment_does_not_leak_future_candle_close() -> None:
     aligned = [row["htf_close"] for row in frame.rows]
     assert aligned == [None, None, 110.0, 110.0, 110.0]
     assert frame.rows[-1]["htf_return_1"] is None
+
+
+def test_feature_windows_do_not_cross_symbol_boundaries() -> None:
+    frame = generate_ohlcv_features(
+        [
+            _bar(1, close=100, symbol="BTCUSDT"),
+            _bar(2, close=102, symbol="BTCUSDT"),
+            _bar(1, close=10, symbol="ETHUSDT"),
+            _bar(2, close=11, symbol="ETHUSDT"),
+        ],
+        FeatureConfig(feature_set_version="unit.features.v1", rolling_window=2),
+        higher_timeframe_rows=[
+            _bar(2, close=1000, timeframe="2m", symbol="BTCUSDT"),
+            _bar(2, close=2000, timeframe="2m", symbol="ETHUSDT"),
+        ],
+    )
+
+    by_symbol = {row["symbol"]: [] for row in frame.rows}
+    for row in frame.rows:
+        by_symbol[row["symbol"]].append(row)
+
+    assert by_symbol["BTCUSDT"][0]["return_1"] is None
+    assert by_symbol["ETHUSDT"][0]["return_1"] is None
+    assert by_symbol["BTCUSDT"][1]["return_1"] == pytest.approx(0.02)
+    assert by_symbol["ETHUSDT"][1]["return_1"] == pytest.approx(0.1)
+    assert by_symbol["BTCUSDT"][1]["htf_close"] == 1000.0
+    assert by_symbol["ETHUSDT"][1]["htf_close"] == 2000.0

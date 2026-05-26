@@ -13,12 +13,19 @@ def _ts(minute: int) -> datetime:
     return datetime(2026, 1, 1, 0, minute, tzinfo=UTC)
 
 
-def _bar(minute: int, open_: float, high: float, low: float, close: float) -> dict[str, object]:
+def _bar(
+    minute: int,
+    open_: float,
+    high: float,
+    low: float,
+    close: float,
+    symbol: str = "BTCUSDT",
+) -> dict[str, object]:
     return {
         "schema_version": "research.dataset.v1",
         "venue": "binance",
         "market_type": "um_futures",
-        "symbol": "BTCUSDT",
+        "symbol": symbol,
         "base_asset": "BTC",
         "quote_asset": "USDT",
         "timeframe": "1m",
@@ -178,3 +185,32 @@ def test_label_rows_join_features_without_leaking_label_fields() -> None:
     assert "target_before_stop" not in features.rows[0]
     assert labels.rows[0]["directional_class"] == "flat"
     assert labels.rows[-1]["no_trade_reason"] == "insufficient_future_window"
+
+
+def test_label_future_windows_do_not_cross_symbol_boundaries() -> None:
+    frame = generate_trade_labels(
+        [
+            _bar(1, 100, 101, 99, 100, symbol="BTCUSDT"),
+            _bar(2, 100, 103, 99, 102, symbol="BTCUSDT"),
+            _bar(1, 10, 11, 9, 10, symbol="ETHUSDT"),
+            _bar(2, 10, 10.5, 9.5, 10.1, symbol="ETHUSDT"),
+        ],
+        LabelConfig(
+            label_set_version="unit.labels.v1",
+            horizon_bars=2,
+            side="long",
+            stop_loss_pct=0.02,
+            target_pct=0.04,
+            cost_pct=0.001,
+            flat_threshold_pct=0.001,
+        ),
+    )
+
+    by_symbol = {row["symbol"]: [] for row in frame.rows}
+    for row in frame.rows:
+        by_symbol[row["symbol"]].append(row)
+
+    assert by_symbol["BTCUSDT"][0]["no_trade_reason"] == "insufficient_future_window"
+    assert by_symbol["ETHUSDT"][0]["no_trade_reason"] == "insufficient_future_window"
+    assert by_symbol["BTCUSDT"][1]["source_window_start"] is None
+    assert by_symbol["ETHUSDT"][1]["source_window_start"] is None
