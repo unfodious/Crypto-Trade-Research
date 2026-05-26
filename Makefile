@@ -1,4 +1,4 @@
-.PHONY: install test lint format check sample-dataset sample-features sample-labels sample-backtest sample-baselines sample-meta-strategy sample-experiment-registry
+.PHONY: install test lint format check sample-dataset sample-features sample-labels sample-backtest sample-baselines sample-meta-strategy sample-experiment-registry sample-baseline-experiment
 
 install:
 	uv sync --extra dev --extra research
@@ -56,3 +56,7 @@ sample-meta-strategy:
 sample-experiment-registry:
 	uv run python scripts/generate_sample_experiment_registry.py \
 		--registry-dir data/generated/experiment_registry
+
+sample-baseline-experiment:
+	uv run crypto-trade-run-baseline-experiment \
+		--config configs/sample-baseline-experiment.json

@@ -157,6 +157,20 @@ The command writes ignored local outputs under `data/generated/sample_baselines/
 
 The baseline layer compares no-trade, rule-only, and simple linear-probability filtering before any sequence/deep model is considered.
 
+## Baseline Experiment Runner
+
+Run the end-to-end baseline experiment runner from a JSON config:
+
+```sh
+make sample-baseline-experiment
+```
+
+The sample command uses `configs/sample-baseline-experiment.json` and writes ignored outputs under
+`data/generated/sample_baseline_experiment/` plus an experiment registry record under
+`data/generated/experiment_registry/`. For real data, point `source_csv` at the backend
+`research.dataset.v1` export or set `dataset_manifest_path` to an already ingested dataset manifest.
+Splits must stay chronological; shuffled split configs are rejected.
+
 ## Meta-Strategy
 
 Generate a deterministic candidate setup → take/skip/size report:
