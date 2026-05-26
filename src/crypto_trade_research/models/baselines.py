@@ -246,7 +246,8 @@ def train_and_evaluate_baselines(
     return BaselineComparisonReport(
         splits=_splits(train_samples, validation_samples, test_samples, config),
         model_metadata={
-            "model_type": "linear_probability_threshold",
+            "model_type": "multifeature_ridge",
+            "single_feature_model_type": "linear_probability_threshold",
             "multifeature_model_type": "ridge_probability",
             "feature_names": list(config.feature_names),
             "decision_feature": config.decision_feature,

@@ -74,6 +74,8 @@ def test_baseline_report_compares_no_trade_rule_only_and_linear_model() -> None:
     assert report.strategy_reports["rule_only_oos"].metrics.trade_count == 2
     assert report.strategy_reports["linear_probability_oos"].metrics.trade_count == 1
     assert "multifeature_ridge_oos" in report.strategy_reports
+    assert report.model_metadata["model_type"] == "multifeature_ridge"
+    assert report.model_metadata["single_feature_model_type"] == "linear_probability_threshold"
     assert report.model_metadata["multifeature_model_type"] == "ridge_probability"
     assert report.strategy_reports["linear_probability_oos"].metrics.average_r == 1.0
     assert report.feature_importance[0]["feature"] == "setup_score"
