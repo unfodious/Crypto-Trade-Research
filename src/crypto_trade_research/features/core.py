@@ -801,11 +801,15 @@ def _macd(
     if index + 1 < slow_span:
         return None, None, None
 
-    close_values = [_as_float(row["close"]) for row in rows[: index + 1]]
     macd_values: list[float] = []
-    for end_index in range(slow_span - 1, len(close_values)):
-        slow_values = close_values[end_index - slow_span + 1 : end_index + 1]
-        fast_values = close_values[end_index - fast_span + 1 : end_index + 1]
+    start_index = max(slow_span - 1, index - signal_span + 1)
+    for end_index in range(start_index, index + 1):
+        slow_values = [
+            _as_float(row["close"]) for row in rows[end_index - slow_span + 1 : end_index + 1]
+        ]
+        fast_values = [
+            _as_float(row["close"]) for row in rows[end_index - fast_span + 1 : end_index + 1]
+        ]
         macd_values.append(_ema(fast_values) - _ema(slow_values))
 
     macd_value = macd_values[-1]
