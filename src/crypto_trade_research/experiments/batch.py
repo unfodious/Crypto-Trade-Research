@@ -13,9 +13,15 @@ from typing import Any
 
 from crypto_trade_research.experiments.runner import (
     BaselineExperimentConfig,
+    BaselineExperimentInputs,
     BaselineExperimentResult,
+    build_baseline_features,
+    build_baseline_labels,
+    load_baseline_source_rows,
     run_baseline_experiment,
 )
+from crypto_trade_research.features import FeatureFrame
+from crypto_trade_research.labels import LabelFrame
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +73,50 @@ class BatchExperimentRunResult:
 ExperimentRunner = Callable[[BaselineExperimentConfig], BaselineExperimentResult]
 
 
+@dataclass(frozen=True, slots=True)
+class _CachedSourceRows:
+    dataset_manifest_path: Path
+    rows: list[dict[str, object]]
+
+
+class _ExperimentInputCache:
+    def __init__(self) -> None:
+        self._sources: dict[tuple[object, ...], _CachedSourceRows] = {}
+        self._features: dict[tuple[object, ...], FeatureFrame] = {}
+        self._labels: dict[tuple[object, ...], LabelFrame] = {}
+
+    def inputs_for(self, config: BaselineExperimentConfig) -> BaselineExperimentInputs:
+        source_key = _source_cache_key(config)
+        source = self._sources.get(source_key)
+        if source is None:
+            dataset_manifest_path, source_rows = load_baseline_source_rows(config)
+            source = _CachedSourceRows(dataset_manifest_path, source_rows)
+            self._sources[source_key] = source
+
+        feature_key = (
+            *source_key,
+            config.feature_set_version,
+            config.rolling_window,
+        )
+        features = self._features.get(feature_key)
+        if features is None:
+            features = build_baseline_features(source.rows, config)
+            self._features[feature_key] = features
+
+        label_key = (*source_key, *_label_cache_key(config))
+        labels = self._labels.get(label_key)
+        if labels is None:
+            labels = build_baseline_labels(source.rows, config)
+            self._labels[label_key] = labels
+
+        return BaselineExperimentInputs(
+            dataset_manifest_path=source.dataset_manifest_path,
+            source_rows=source.rows,
+            features=features,
+            labels=labels,
+        )
+
+
 def run_experiment_batch(
     matrix: BatchExperimentMatrix,
     *,
@@ -75,23 +125,34 @@ def run_experiment_batch(
     """Run each experiment config and write a failure-safe leaderboard."""
 
     rows: list[dict[str, object]] = []
-    for spec in matrix.experiments:
+    input_cache = _ExperimentInputCache()
+    for index, spec in enumerate(matrix.experiments, start=1):
         raw_config: dict[str, object] = {}
         try:
             raw_config = _merged_config(
                 json.loads(spec.config_path.read_text(encoding="utf-8")),
                 spec.overrides,
             )
+            experiment_name = str(raw_config.get("experiment_name") or spec.config_path.stem)
+            print(
+                f"[{index}/{len(matrix.experiments)}] running {experiment_name}",
+                flush=True,
+            )
             config = _runner_config(raw_config, runner)
-            result = runner(config)
+            if runner is run_baseline_experiment:
+                result = run_baseline_experiment(config, inputs=input_cache.inputs_for(config))
+            else:
+                result = runner(config)
             rows.append(
                 leaderboard_row_from_record(
                     config=raw_config,
                     registry_record_path=Path(str(result.registry_record_path)),
                 )
             )
+            print(f"[{index}/{len(matrix.experiments)}] completed {experiment_name}", flush=True)
         except Exception as exc:  # noqa: BLE001 - batch mode must report per-config failures.
             rows.append(_failure_row(raw_config, spec.config_path, exc))
+            print(f"[{index}/{len(matrix.experiments)}] failed: {exc}", flush=True)
 
     completed_count = sum(1 for row in rows if row["run_status"] == "completed")
     failed_count = len(rows) - completed_count
@@ -200,6 +261,31 @@ def _symbol_coverage(config: dict[str, object]) -> str:
     if not symbols:
         return "all"
     return ",".join(str(symbol).upper() for symbol in symbols)
+
+
+def _source_cache_key(config: BaselineExperimentConfig) -> tuple[object, ...]:
+    return (
+        str(config.source_csv) if config.source_csv else None,
+        str(config.dataset_manifest_path) if config.dataset_manifest_path else None,
+        config.dataset_name,
+        config.generator_version,
+        config.symbols,
+        config.timeframes,
+    )
+
+
+def _label_cache_key(config: BaselineExperimentConfig) -> tuple[object, ...]:
+    label = config.label_config
+    return (
+        label.label_set_version,
+        label.horizon_bars,
+        label.side,
+        label.stop_loss_pct,
+        label.target_pct,
+        label.cost_pct,
+        label.flat_threshold_pct,
+        label.target_stop_tie_breaker,
+    )
 
 
 def _optional_float(value: object) -> float | None:

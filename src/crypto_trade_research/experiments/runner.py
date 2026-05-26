@@ -18,8 +18,8 @@ from crypto_trade_research.data.ingestion import (
     MarketDatasetConfig,
     generate_market_dataset,
 )
-from crypto_trade_research.features import FeatureConfig, generate_ohlcv_features
-from crypto_trade_research.labels import LabelConfig, generate_trade_labels
+from crypto_trade_research.features import FeatureConfig, FeatureFrame, generate_ohlcv_features
+from crypto_trade_research.labels import LabelConfig, LabelFrame, generate_trade_labels
 from crypto_trade_research.models import (
     BaselineConfig,
     FeatureSchema,
@@ -176,25 +176,78 @@ class BaselineExperimentResult:
     registry_record_path: Path
 
 
-def run_baseline_experiment(config: BaselineExperimentConfig) -> BaselineExperimentResult:
-    """Run dataset ingestion, feature generation, labels, baselines, and registry capture."""
+@dataclass(frozen=True, slots=True)
+class BaselineExperimentInputs:
+    dataset_manifest_path: Path
+    source_rows: list[dict[str, object]]
+    features: FeatureFrame
+    labels: LabelFrame
 
-    _validate_config(config)
-    config.output_dir.mkdir(parents=True, exist_ok=True)
+
+def load_baseline_source_rows(
+    config: BaselineExperimentConfig,
+) -> tuple[Path, list[dict[str, object]]]:
+    """Load and filter the market rows for a baseline experiment config."""
+
     dataset_manifest_path = _dataset_manifest_path(config)
     source_rows = pq.read_table(_cleaned_dataset_path(dataset_manifest_path)).to_pylist()
     source_rows = _filter_rows(source_rows, config)
     if not source_rows:
         raise ValueError("dataset filters produced no market rows")
+    return dataset_manifest_path, source_rows
 
-    features = generate_ohlcv_features(
+
+def build_baseline_features(
+    source_rows: list[dict[str, object]],
+    config: BaselineExperimentConfig,
+) -> FeatureFrame:
+    """Build point-in-time features for a baseline experiment config."""
+
+    return generate_ohlcv_features(
         source_rows,
         FeatureConfig(
             feature_set_version=config.feature_set_version,
             rolling_window=config.rolling_window,
         ),
     )
-    labels = generate_trade_labels(source_rows, config.label_config)
+
+
+def build_baseline_labels(
+    source_rows: list[dict[str, object]],
+    config: BaselineExperimentConfig,
+) -> LabelFrame:
+    """Build supervised trade outcome labels for a baseline experiment config."""
+
+    return generate_trade_labels(source_rows, config.label_config)
+
+
+def prepare_baseline_experiment_inputs(
+    config: BaselineExperimentConfig,
+) -> BaselineExperimentInputs:
+    """Load source rows and generate reusable feature/label frames."""
+
+    dataset_manifest_path, source_rows = load_baseline_source_rows(config)
+    return BaselineExperimentInputs(
+        dataset_manifest_path=dataset_manifest_path,
+        source_rows=source_rows,
+        features=build_baseline_features(source_rows, config),
+        labels=build_baseline_labels(source_rows, config),
+    )
+
+
+def run_baseline_experiment(
+    config: BaselineExperimentConfig,
+    *,
+    inputs: BaselineExperimentInputs | None = None,
+) -> BaselineExperimentResult:
+    """Run dataset ingestion, feature generation, labels, baselines, and registry capture."""
+
+    _validate_config(config)
+    config.output_dir.mkdir(parents=True, exist_ok=True)
+    prepared_inputs = inputs or prepare_baseline_experiment_inputs(config)
+    dataset_manifest_path = prepared_inputs.dataset_manifest_path
+    features = prepared_inputs.features
+    labels = prepared_inputs.labels
     samples = _build_samples(features.rows, labels.rows, config)
     samples = _apply_candidate_setup(samples, config.candidate_setup)
     if not samples:
