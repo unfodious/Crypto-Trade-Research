@@ -189,11 +189,13 @@ def load_baseline_source_rows(
 ) -> tuple[Path, list[dict[str, object]]]:
     """Load and filter the market rows for a baseline experiment config."""
 
+    _log_progress(config, "loading source rows")
     dataset_manifest_path = _dataset_manifest_path(config)
     source_rows = pq.read_table(_cleaned_dataset_path(dataset_manifest_path)).to_pylist()
     source_rows = _filter_rows(source_rows, config)
     if not source_rows:
         raise ValueError("dataset filters produced no market rows")
+    _log_progress(config, f"loaded {len(source_rows)} source rows")
     return dataset_manifest_path, source_rows
 
 
@@ -203,13 +205,16 @@ def build_baseline_features(
 ) -> FeatureFrame:
     """Build point-in-time features for a baseline experiment config."""
 
-    return generate_ohlcv_features(
+    _log_progress(config, "building features")
+    features = generate_ohlcv_features(
         source_rows,
         FeatureConfig(
             feature_set_version=config.feature_set_version,
             rolling_window=config.rolling_window,
         ),
     )
+    _log_progress(config, f"built {len(features.rows)} feature rows")
+    return features
 
 
 def build_baseline_labels(
@@ -218,7 +223,10 @@ def build_baseline_labels(
 ) -> LabelFrame:
     """Build supervised trade outcome labels for a baseline experiment config."""
 
-    return generate_trade_labels(source_rows, config.label_config)
+    _log_progress(config, "building labels")
+    labels = generate_trade_labels(source_rows, config.label_config)
+    _log_progress(config, f"built {len(labels.rows)} label rows")
+    return labels
 
 
 def prepare_baseline_experiment_inputs(
@@ -252,6 +260,7 @@ def run_baseline_experiment(
     samples = _apply_candidate_setup(samples, config.candidate_setup)
     if not samples:
         raise ValueError("no trainable samples after warmup and label filtering")
+    _log_progress(config, f"training/evaluating {len(samples)} samples")
 
     feature_names = _feature_names(features.rows)
     baseline_report = train_and_evaluate_baselines(
@@ -270,6 +279,7 @@ def run_baseline_experiment(
             loss_cooldown_signals=config.loss_cooldown_signals,
         ),
     )
+    _log_progress(config, "writing artifacts")
 
     features_path = config.output_dir / "features.parquet"
     labels_path = config.output_dir / "labels.parquet"
@@ -324,6 +334,7 @@ def run_baseline_experiment(
         config.registry_dir,
         experiment_record,
     )
+    _log_progress(config, "done")
     return BaselineExperimentResult(
         dataset_manifest_path=dataset_manifest_path,
         features_path=features_path,
@@ -345,6 +356,10 @@ def _validate_config(config: BaselineExperimentConfig) -> None:
         raise ValueError("source_csv and dataset_manifest_path are mutually exclusive")
     if config.candidate_setup is not None and not config.candidate_setup.filters:
         raise ValueError("candidate_setup filters must not be empty")
+
+
+def _log_progress(config: BaselineExperimentConfig, message: str) -> None:
+    print(f"[{config.experiment_name}] {message}", flush=True)
 
 
 def _candidate_setup_from_payload(payload: object) -> CandidateSetup | None:
