@@ -106,8 +106,23 @@ def _build_feature_row(
     ma_slope_sign_name = f"ma_slope_sign_{config.rolling_window}"
     range_position_name = f"range_position_{config.rolling_window}"
     volume_zscore_name = f"volume_zscore_{config.rolling_window}"
+    relative_volume_name = f"relative_volume_{config.rolling_window}"
     volatility_expansion_name = f"volatility_expansion_{config.rolling_window}"
     volatility_bucket_name = f"volatility_bucket_{config.rolling_window}"
+    realized_volatility_name = f"realized_volatility_{config.rolling_window}"
+    ema_name = f"ema_{config.rolling_window}"
+    rsi_name = f"rsi_{config.rolling_window}"
+    stochastic_k_name = f"stochastic_k_{config.rolling_window}"
+    atr_name = f"atr_{config.rolling_window}"
+    normalized_atr_name = f"normalized_atr_{config.rolling_window}"
+    bollinger_position_name = f"bollinger_position_{config.rolling_window}"
+    bollinger_width_name = f"bollinger_width_{config.rolling_window}"
+    macd_name = f"macd_{config.rolling_window}"
+    macd_signal_name = f"macd_signal_{config.rolling_window}"
+    macd_histogram_name = f"macd_histogram_{config.rolling_window}"
+    dmi_plus_name = f"dmi_plus_{config.rolling_window}"
+    dmi_minus_name = f"dmi_minus_{config.rolling_window}"
+    adx_name = f"adx_{config.rolling_window}"
 
     current_ma = _mean(close_values) if len(window_rows) == config.rolling_window else None
     previous_ma = _previous_ma(rows, index, config.rolling_window)
@@ -119,6 +134,11 @@ def _build_feature_row(
     volatility_expansion = (
         _volatility_expansion(window_rows) if len(window_rows) == config.rolling_window else None
     )
+    true_range_values = _true_ranges(rows, index, config.rolling_window)
+    atr = _mean(true_range_values) if len(true_range_values) == config.rolling_window else None
+    dmi_plus, dmi_minus, adx = _dmi(rows, index, config.rolling_window)
+    macd, macd_signal, macd_histogram = _macd(rows, index, config.rolling_window)
+    realized_volatility = _realized_volatility(close_values)
     htf_current, htf_previous = _aligned_higher_timeframe_rows(higher_rows, close_time)
 
     feature_row: dict[str, object] = {
@@ -149,10 +169,42 @@ def _build_feature_row(
         volume_zscore_name: _zscore(volume_values[-1], volume_values)
         if len(window_rows) == config.rolling_window
         else None,
+        relative_volume_name: _ratio(volume_values[-1], _mean(volume_values))
+        if len(window_rows) == config.rolling_window
+        else None,
         volatility_expansion_name: volatility_expansion,
         volatility_bucket_name: _volatility_bucket(volatility_expansion),
+        realized_volatility_name: realized_volatility
+        if len(window_rows) == config.rolling_window
+        else None,
+        ema_name: _ema(close_values) if len(window_rows) == config.rolling_window else None,
+        rsi_name: _rsi(close_values) if len(window_rows) == config.rolling_window else None,
+        stochastic_k_name: _ratio(close - rolling_low, rolling_range)
+        if len(window_rows) == config.rolling_window
+        else None,
+        atr_name: atr,
+        normalized_atr_name: _ratio(atr, close) if atr is not None else None,
+        bollinger_position_name: _bollinger_position(close_values)
+        if len(window_rows) == config.rolling_window
+        else None,
+        bollinger_width_name: _bollinger_width(close_values)
+        if len(window_rows) == config.rolling_window
+        else None,
+        macd_name: macd,
+        macd_signal_name: macd_signal,
+        macd_histogram_name: macd_histogram,
+        dmi_plus_name: dmi_plus,
+        dmi_minus_name: dmi_minus,
+        adx_name: adx,
         "distance_from_rolling_high": _return(close, rolling_high),
         "distance_from_rolling_low": _return(close, rolling_low),
+        "body_pressure": _body_pressure(open_price, close, range_value),
+        "wick_pressure": _ratio(
+            min(open_price, close) - low - (high - max(open_price, close)),
+            range_value,
+        ),
+        "consecutive_bull_bars": float(_consecutive_bars(rows, index, bullish=True)),
+        "consecutive_bear_bars": float(_consecutive_bars(rows, index, bullish=False)),
     }
 
     if htf_current is not None:
@@ -215,6 +267,13 @@ def _feature_specs(rolling_window: int, has_higher_timeframe: bool) -> tuple[Fea
             "Current volume z-score inside rolling window.",
         ),
         FeatureSpec(
+            f"relative_volume_{rolling_window}",
+            "participation",
+            rolling_window,
+            "post_close",
+            "Current volume divided by rolling average volume.",
+        ),
+        FeatureSpec(
             f"volatility_expansion_{rolling_window}",
             "regime",
             rolling_window,
@@ -227,6 +286,104 @@ def _feature_specs(rolling_window: int, has_higher_timeframe: bool) -> tuple[Fea
             rolling_window,
             "post_close",
             "Numeric volatility regime bucket: 0 compressed, 1 normal, 2 expanded, 3 disorderly.",
+        ),
+        FeatureSpec(
+            f"realized_volatility_{rolling_window}",
+            "volatility",
+            rolling_window,
+            "post_close",
+            "Standard deviation of close-to-close returns inside the rolling window.",
+        ),
+        FeatureSpec(
+            f"ema_{rolling_window}",
+            "trend",
+            rolling_window,
+            "post_close",
+            "Exponential moving average over the rolling close window.",
+        ),
+        FeatureSpec(
+            f"rsi_{rolling_window}",
+            "momentum",
+            rolling_window,
+            "post_close",
+            "RSI-style normalized momentum from gains and losses inside the rolling window.",
+        ),
+        FeatureSpec(
+            f"stochastic_k_{rolling_window}",
+            "momentum",
+            rolling_window,
+            "post_close",
+            "Close location inside the rolling high-low range, normalized from 0 to 1.",
+        ),
+        FeatureSpec(
+            f"atr_{rolling_window}",
+            "volatility",
+            rolling_window,
+            "post_close",
+            "Average true range over the rolling window.",
+        ),
+        FeatureSpec(
+            f"normalized_atr_{rolling_window}",
+            "volatility",
+            rolling_window,
+            "post_close",
+            "Average true range divided by close.",
+        ),
+        FeatureSpec(
+            f"bollinger_position_{rolling_window}",
+            "volatility",
+            rolling_window,
+            "post_close",
+            "Close position between two-standard-deviation Bollinger bands.",
+        ),
+        FeatureSpec(
+            f"bollinger_width_{rolling_window}",
+            "volatility",
+            rolling_window,
+            "post_close",
+            "Two-standard-deviation Bollinger band width divided by rolling mean close.",
+        ),
+        FeatureSpec(
+            f"macd_{rolling_window}",
+            "trend",
+            rolling_window,
+            "post_close",
+            "Fast EMA minus slow EMA using rolling-window-derived MACD spans.",
+        ),
+        FeatureSpec(
+            f"macd_signal_{rolling_window}",
+            "trend",
+            rolling_window,
+            "post_close",
+            "EMA signal line of recent MACD values.",
+        ),
+        FeatureSpec(
+            f"macd_histogram_{rolling_window}",
+            "momentum",
+            rolling_window,
+            "post_close",
+            "MACD minus MACD signal.",
+        ),
+        FeatureSpec(
+            f"dmi_plus_{rolling_window}",
+            "trend",
+            rolling_window,
+            "post_close",
+            "Positive directional movement index over the rolling window.",
+        ),
+        FeatureSpec(
+            f"dmi_minus_{rolling_window}",
+            "trend",
+            rolling_window,
+            "post_close",
+            "Negative directional movement index over the rolling window.",
+        ),
+        FeatureSpec(
+            f"adx_{rolling_window}",
+            "trend",
+            rolling_window,
+            "post_close",
+            "Directional movement strength proxy over the rolling window.",
         ),
         FeatureSpec(
             "close_location",
@@ -244,6 +401,34 @@ def _feature_specs(rolling_window: int, has_higher_timeframe: bool) -> tuple[Fea
         ),
         FeatureSpec("upper_wick_ratio", "price_action", 1, "post_close", "Upper wick vs range."),
         FeatureSpec("lower_wick_ratio", "price_action", 1, "post_close", "Lower wick vs range."),
+        FeatureSpec(
+            "body_pressure",
+            "price_action",
+            1,
+            "post_close",
+            "Signed candle body pressure: bullish body positive, bearish body negative.",
+        ),
+        FeatureSpec(
+            "wick_pressure",
+            "price_action",
+            1,
+            "post_close",
+            "Lower wick pressure minus upper wick pressure, normalized by candle range.",
+        ),
+        FeatureSpec(
+            "consecutive_bull_bars",
+            "price_action",
+            1,
+            "post_close",
+            "Count of consecutive bullish candles ending at the decision row.",
+        ),
+        FeatureSpec(
+            "consecutive_bear_bars",
+            "price_action",
+            1,
+            "post_close",
+            "Count of consecutive bearish candles ending at the decision row.",
+        ),
         FeatureSpec(
             "distance_from_rolling_high",
             "price_action",
@@ -320,6 +505,168 @@ def _volatility_expansion(rows: Sequence[dict[str, object]]) -> float | None:
     return _ratio(ranges[-1], average_range)
 
 
+def _true_ranges(
+    rows: Sequence[dict[str, object]],
+    index: int,
+    size: int,
+) -> list[float]:
+    start = max(index - size + 1, 0)
+    values: list[float] = []
+    for current_index in range(start, index + 1):
+        row = rows[current_index]
+        high = _as_float(row["high"])
+        low = _as_float(row["low"])
+        previous_close = _as_float(rows[current_index - 1]["close"]) if current_index >= 1 else None
+        if previous_close is None:
+            values.append(high - low)
+        else:
+            values.append(max(high - low, abs(high - previous_close), abs(low - previous_close)))
+    return values
+
+
+def _realized_volatility(values: Sequence[float]) -> float | None:
+    returns = [
+        _return(current, previous) for previous, current in zip(values, values[1:], strict=False)
+    ]
+    numeric_returns = [value for value in returns if value is not None]
+    if len(numeric_returns) < 2:
+        return None
+    return _standard_deviation(numeric_returns)
+
+
+def _ema(values: Sequence[float]) -> float:
+    alpha = 2 / (len(values) + 1)
+    ema_value = values[0]
+    for value in values[1:]:
+        ema_value = value * alpha + ema_value * (1 - alpha)
+    return ema_value
+
+
+def _rsi(values: Sequence[float]) -> float | None:
+    if len(values) < 2:
+        return None
+    gains: list[float] = []
+    losses: list[float] = []
+    for previous, current in zip(values, values[1:], strict=False):
+        change = current - previous
+        if change > 0:
+            gains.append(change)
+            losses.append(0.0)
+        else:
+            gains.append(0.0)
+            losses.append(abs(change))
+    average_gain = _mean(gains)
+    average_loss = _mean(losses)
+    if average_gain == 0 and average_loss == 0:
+        return 50.0
+    if average_loss == 0:
+        return 100.0
+    if average_gain == 0:
+        return 0.0
+    relative_strength = average_gain / average_loss
+    return 100 - (100 / (1 + relative_strength))
+
+
+def _bollinger_position(values: Sequence[float]) -> float | None:
+    mean_value = _mean(values)
+    standard_deviation = _standard_deviation(values)
+    upper_band = mean_value + 2 * standard_deviation
+    lower_band = mean_value - 2 * standard_deviation
+    return _ratio(values[-1] - lower_band, upper_band - lower_band)
+
+
+def _bollinger_width(values: Sequence[float]) -> float | None:
+    mean_value = _mean(values)
+    standard_deviation = _standard_deviation(values)
+    return _ratio(4 * standard_deviation, mean_value)
+
+
+def _macd(
+    rows: Sequence[dict[str, object]],
+    index: int,
+    slow_span: int,
+) -> tuple[float | None, float | None, float | None]:
+    fast_span = max(2, slow_span // 2)
+    signal_span = max(2, slow_span // 3)
+    if index + 1 < slow_span:
+        return None, None, None
+
+    close_values = [_as_float(row["close"]) for row in rows[: index + 1]]
+    macd_values: list[float] = []
+    for end_index in range(slow_span - 1, len(close_values)):
+        slow_values = close_values[end_index - slow_span + 1 : end_index + 1]
+        fast_values = close_values[end_index - fast_span + 1 : end_index + 1]
+        macd_values.append(_ema(fast_values) - _ema(slow_values))
+
+    macd_value = macd_values[-1]
+    if len(macd_values) < signal_span:
+        return macd_value, None, None
+    signal_value = _ema(macd_values[-signal_span:])
+    return macd_value, signal_value, macd_value - signal_value
+
+
+def _dmi(
+    rows: Sequence[dict[str, object]],
+    index: int,
+    size: int,
+) -> tuple[float | None, float | None, float | None]:
+    if index + 1 < size or index == 0:
+        return None, None, None
+    start = max(index - size + 1, 1)
+    plus_dm_values: list[float] = []
+    minus_dm_values: list[float] = []
+    true_range_values: list[float] = []
+    for current_index in range(start, index + 1):
+        current = rows[current_index]
+        previous = rows[current_index - 1]
+        high = _as_float(current["high"])
+        low = _as_float(current["low"])
+        previous_high = _as_float(previous["high"])
+        previous_low = _as_float(previous["low"])
+        previous_close = _as_float(previous["close"])
+        up_move = high - previous_high
+        down_move = previous_low - low
+        plus_dm_values.append(up_move if up_move > down_move and up_move > 0 else 0.0)
+        minus_dm_values.append(down_move if down_move > up_move and down_move > 0 else 0.0)
+        true_range_values.append(
+            max(high - low, abs(high - previous_close), abs(low - previous_close))
+        )
+
+    true_range_sum = sum(true_range_values)
+    if true_range_sum == 0:
+        return None, None, None
+    plus_di = 100 * sum(plus_dm_values) / true_range_sum
+    minus_di = 100 * sum(minus_dm_values) / true_range_sum
+    directional_sum = plus_di + minus_di
+    adx = 0.0 if directional_sum == 0 else 100 * abs(plus_di - minus_di) / directional_sum
+    return plus_di, minus_di, adx
+
+
+def _body_pressure(open_price: float, close: float, range_value: float) -> float | None:
+    body_ratio = _ratio(abs(close - open_price), range_value)
+    if body_ratio is None:
+        return None
+    return body_ratio if close >= open_price else -body_ratio
+
+
+def _consecutive_bars(
+    rows: Sequence[dict[str, object]],
+    index: int,
+    *,
+    bullish: bool,
+) -> int:
+    count = 0
+    for current_index in range(index, -1, -1):
+        row = rows[current_index]
+        close = _as_float(row["close"])
+        open_price = _as_float(row["open"])
+        matches = close >= open_price if bullish else close < open_price
+        if not matches:
+            break
+        count += 1
+    return count
+
+
 def _volatility_bucket(value: float | None) -> float | None:
     if value is None:
         return None
@@ -360,11 +707,16 @@ def _ratio(numerator: float, denominator: float) -> float | None:
 
 def _zscore(value: float, values: Sequence[float]) -> float | None:
     mean_value = _mean(values)
-    variance = _mean([(item - mean_value) ** 2 for item in values])
-    standard_deviation = math.sqrt(variance)
+    standard_deviation = _standard_deviation(values)
     if standard_deviation == 0:
         return None
     return (value - mean_value) / standard_deviation
+
+
+def _standard_deviation(values: Sequence[float]) -> float:
+    mean_value = _mean(values)
+    variance = _mean([(item - mean_value) ** 2 for item in values])
+    return math.sqrt(variance)
 
 
 def _mean(values: Sequence[float]) -> float:

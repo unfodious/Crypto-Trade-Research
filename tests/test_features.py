@@ -63,7 +63,26 @@ def test_generate_ohlcv_features_is_deterministic_and_documents_columns() -> Non
         "ma_slope_sign_3",
         "range_position_3",
         "volume_zscore_3",
+        "relative_volume_3",
         "volatility_bucket_3",
+        "realized_volatility_3",
+        "ema_3",
+        "rsi_3",
+        "stochastic_k_3",
+        "atr_3",
+        "normalized_atr_3",
+        "bollinger_position_3",
+        "bollinger_width_3",
+        "macd_3",
+        "macd_signal_3",
+        "macd_histogram_3",
+        "dmi_plus_3",
+        "dmi_minus_3",
+        "adx_3",
+        "body_pressure",
+        "wick_pressure",
+        "consecutive_bull_bars",
+        "consecutive_bear_bars",
         "candle_body_pct",
         "close_location",
     } <= feature_names
@@ -73,6 +92,8 @@ def test_generate_ohlcv_features_is_deterministic_and_documents_columns() -> Non
     assert first_row["return_1"] is None
     assert first_row["roc_2"] is None
     assert first_row["ma_3"] is None
+    assert first_row["rsi_3"] is None
+    assert first_row["atr_3"] is None
     assert first_row["warmup_missing_bars"] == 2
 
     last_row = frame.rows[-1]
@@ -84,7 +105,25 @@ def test_generate_ohlcv_features_is_deterministic_and_documents_columns() -> Non
     assert last_row["ma_slope_sign_3"] == 1.0
     assert last_row["range_position_3"] == pytest.approx(5 / 7)
     assert last_row["volume_zscore_3"] == pytest.approx(1.0690449676496976)
+    assert last_row["relative_volume_3"] == pytest.approx(140 / (340 / 3))
     assert last_row["volatility_bucket_3"] == 1.0
+    assert last_row["ema_3"] == pytest.approx(102.75)
+    assert last_row["rsi_3"] == pytest.approx(75.0)
+    assert last_row["stochastic_k_3"] == pytest.approx(5 / 7)
+    assert last_row["atr_3"] == pytest.approx(13 / 3)
+    assert last_row["normalized_atr_3"] == pytest.approx((13 / 3) / 104)
+    assert last_row["bollinger_position_3"] == pytest.approx(0.8340765523905306)
+    assert last_row["bollinger_width_3"] == pytest.approx(0.048751236309758195)
+    assert last_row["macd_3"] == pytest.approx(0.25)
+    assert last_row["macd_signal_3"] == pytest.approx(0.2777777777777768)
+    assert last_row["macd_histogram_3"] == pytest.approx(-0.02777777777777679)
+    assert last_row["dmi_plus_3"] == pytest.approx(500 / 13)
+    assert last_row["dmi_minus_3"] == pytest.approx(100 / 13)
+    assert last_row["adx_3"] == pytest.approx(200 / 3)
+    assert last_row["body_pressure"] == pytest.approx(0.25)
+    assert last_row["wick_pressure"] == pytest.approx(-0.25)
+    assert last_row["consecutive_bull_bars"] == 4.0
+    assert last_row["consecutive_bear_bars"] == 0.0
 
 
 def test_feature_generation_sorts_rows_and_keeps_point_in_time_windows() -> None:
