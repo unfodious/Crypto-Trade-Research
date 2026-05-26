@@ -1,0 +1,49 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct119-multifeature-context-breakout-base.json"
+    },
+    {
+      "config": "configs/ct119-multifeature-context-breakout-base.json",
+      "overrides": {
+        "experiment_name": "ct119_context_breakout_risk_h24",
+        "risk_controls": {
+          "max_trades_per_symbol": 200,
+          "max_trades_per_decision_time": 3,
+          "loss_cooldown_signals": 2
+        },
+        "output_dir": "data/generated/ct119_context_breakout_risk_h24"
+      }
+    },
+    {
+      "config": "configs/ct119-multifeature-context-breakout-base.json",
+      "overrides": {
+        "experiment_name": "ct119_context_breakout_risk_h12",
+        "label": {
+          "label_set_version": "labels.ct119.long-12bar-2r.v1",
+          "horizon_bars": 12
+        },
+        "risk_controls": {
+          "max_trades_per_symbol": 200,
+          "max_trades_per_decision_time": 3,
+          "loss_cooldown_signals": 2
+        },
+        "output_dir": "data/generated/ct119_context_breakout_risk_h12"
+      }
+    },
+    {
+      "config": "configs/ct119-multifeature-context-breakout-base.json",
+      "overrides": {
+        "experiment_name": "ct119_context_breakout_top1_h24",
+        "risk_controls": {
+          "max_trades_per_symbol": 100,
+          "max_trades_per_decision_time": 1,
+          "loss_cooldown_signals": 3
+        },
+        "output_dir": "data/generated/ct119_context_breakout_top1_h24"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct119_controlled_multifeature_matrix/leaderboard.json",
+  "markdown_path": "data/generated/ct119_controlled_multifeature_matrix/leaderboard.md"
+}

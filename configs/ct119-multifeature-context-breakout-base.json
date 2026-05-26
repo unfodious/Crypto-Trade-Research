@@ -1,0 +1,86 @@
+{
+  "experiment_name": "ct119_context_breakout_h24",
+  "dataset_manifest_path": "data/generated/ct96_expanded_core_futures_dataset/manifest.json",
+  "dataset_name": "ct96_expanded_core_futures_dataset",
+  "generator_version": "ct119.controlled_multifeature_matrix.v1",
+  "generated_at": "2026-05-26T15:30:00Z",
+  "symbols": [
+    "SOLUSDT",
+    "SUIUSDT",
+    "AVAXUSDT",
+    "ADAUSDT",
+    "ICPUSDT",
+    "ATOMUSDT",
+    "XRPUSDT",
+    "TONUSDT",
+    "DOTUSDT",
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "timeframes": [
+    "1m"
+  ],
+  "feature": {
+    "feature_set_version": "features.ct119.multifeature-context.v1",
+    "rolling_window": 20,
+    "decision_feature": "close_location"
+  },
+  "label": {
+    "label_set_version": "labels.ct119.long-24bar-2r.v1",
+    "horizon_bars": 24,
+    "side": "long",
+    "stop_loss_pct": 0.004,
+    "target_pct": 0.008,
+    "cost_pct": 0.0007,
+    "flat_threshold_pct": 0.0002,
+    "target_stop_tie_breaker": "stop_first"
+  },
+  "candidate_setup": {
+    "name": "context_breakout_long",
+    "filters": [
+      {
+        "feature": "volatility_expansion_20",
+        "operator": ">=",
+        "value": 1.3
+      },
+      {
+        "feature": "close_location",
+        "operator": ">=",
+        "value": 0.7
+      },
+      {
+        "feature": "risk_on_score_20",
+        "operator": ">=",
+        "value": 0.5
+      }
+    ]
+  },
+  "splits": {
+    "strategy": "chronological",
+    "train_end": "2026-04-25T00:00:00Z",
+    "validation_end": "2026-05-10T00:00:00Z",
+    "test_end": "2026-05-25T00:00:00Z"
+  },
+  "baseline": {
+    "probability_threshold": 0.55,
+    "initial_equity": 10000,
+    "risk_per_trade_pct": 0.01
+  },
+  "cost_assumptions": {
+    "fee_bps": 4.0,
+    "slippage_bps": 2.0,
+    "funding_bps": 0.0,
+    "notes": "CT-119 multifeature BTC/ETH/breadth context breakout on CT-96 expanded USD-M futures data."
+  },
+  "promotion_gates": {
+    "min_walk_forward_average_r": 0.0,
+    "min_oos_trade_count": 100,
+    "max_drawdown_pct": 0.08,
+    "max_drawdown_duration_bars": 2400,
+    "require_leakage_checks": true,
+    "require_stability_checks": true,
+    "require_paper_trading_plan": true
+  },
+  "output_dir": "data/generated/ct119_context_breakout_h24",
+  "registry_dir": "data/generated/experiment_registry"
+}
