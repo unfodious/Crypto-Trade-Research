@@ -45,6 +45,15 @@ docker run --rm -v "$PWD":/app -w /app python:3.12-slim \
   sh -lc 'python -m pip install -e ".[dev]" && python -m pytest && ruff check . && ruff format --check .'
 ```
 
+For real experiment evidence that writes model artifacts or registry records, install `git` inside
+the Docker container. Records with `research_git_commit: unknown` are acceptable only for rejected
+local evidence and block promotion:
+
+```sh
+docker run --rm -v "$PWD":/app -w /app python:3.12-slim \
+  sh -lc 'apt-get update >/tmp/apt.log && apt-get install -y git >/tmp/git.log && python -m pip install -e ".[dev]" >/tmp/pip.log && crypto-trade-run-batch-experiments --matrix configs/ct102-complementary-expanded-matrix.json'
+```
+
 ## Generate The First Research Artifacts
 
 Use the fake committed fixtures to create ignored local outputs:
@@ -104,6 +113,22 @@ Promote only to paper-trading candidate when:
 - `ml-inference.v1` output contains only take/skip authority
 - rollback and kill-switch expectations are documented
 - a separate safety-reviewed runtime task exists
+
+## CT-96 Expanded Dataset Outcome
+
+CT-96 expanded the dataset to 90 open days across 11 USD-M futures symbols and produced no promoted
+candidate. Use these notes before trying related setup families again:
+
+- Dataset audit: `docs/audit/2026-05-26-ct99-expanded-dataset-quality-audit.md`
+- Short-fade rejection: `docs/experiments/ct101-expanded-short-fade-matrix.md`
+- Complementary setup rejection: `docs/experiments/ct102-complementary-expanded-matrix.md`
+- Stability gates: `docs/experiments/ct103-stability-drawdown-gates.md`
+- Selection block: `docs/experiments/ct104-selection-blocked.md`
+- Paper pack block: `docs/experiments/ct105-paper-trading-pack-blocked.md`
+
+Do not create a paper-trading pack for rejected candidates. A future promoted candidate must have
+positive OOS expectancy after costs, beat rule-only/no-trade, pass drawdown and stability gates,
+and capture an exact research git commit in artifact and registry metadata.
 
 ## Troubleshooting
 
