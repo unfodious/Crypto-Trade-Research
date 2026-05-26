@@ -130,6 +130,20 @@ Do not create a paper-trading pack for rejected candidates. A future promoted ca
 positive OOS expectancy after costs, beat rule-only/no-trade, pass drawdown and stability gates,
 and capture an exact research git commit in artifact and registry metadata.
 
+## CT-107 Regime-Aware Outcome
+
+CT-107 added explicit local regime filters after CT-96 and still produced no promoted candidate:
+
+- Hypothesis and risk gaps: `docs/experiments/ct108-regime-aware-hypothesis.md`
+- Regime-aware matrix: `docs/experiments/ct110-regime-aware-matrix.md`
+- Selection block: `docs/experiments/ct111-selection-blocked.md`
+- Final lessons: `docs/experiments/ct112-regime-aware-lessons.md`
+
+Do not rerun the CT-110 trend-aligned continuation or trend-filtered volatility breakout families
+with only minor nearby thresholds. The next matrix should change the risk model or information set,
+for example market-reference BTC/ETH regime, cooldown/adaptive-risk abstention, short-side
+risk-off continuation, or pre-declared higher-timeframe context.
+
 ## Troubleshooting
 
 If `uv` is missing, use the Docker fallback.
