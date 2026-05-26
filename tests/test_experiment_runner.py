@@ -98,6 +98,7 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     assert report["strategies"]["rule_only_oos"]["sample_scope"] == "validation_test"
     assert report["strategies"]["linear_probability_oos"]["sample_scope"] == "validation_test"
     assert report["model_metadata"]["primary_strategy"] == "multifeature_ridge_risk_controlled_oos"
+    assert report["model_metadata"]["training_target"] == "target_before_stop"
     assert report["model_metadata"]["validation_threshold_sweep"]
     assert report["model_metadata"]["ranking_top_n_values"] == [1, 2]
     assert "multifeature_ridge_top1_oos" in report["strategies"]
@@ -111,6 +112,7 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     assert record["dataset_manifest_path"] == str(result.dataset_manifest_path)
     assert record["metrics"]["artifact_hash"] == report["metadata"]["model_artifact_hash"]
     assert "single_feature_average_r" in record["metrics"]
+    assert record["metrics"]["training_target"] == "target_before_stop"
     assert record["metrics"]["promotion_checklist_path"] == str(result.promotion_checklist_path)
     assert record["decision"]["thresholds"]["min_oos_trade_count"] == 10
     assert record["feature_names"]
@@ -136,6 +138,9 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     )
     artifact_payload = json.loads(result.model_artifact_path.read_text(encoding="utf-8"))
     assert artifact_payload["model"]["model_type"] == "multifeature_ridge"
+    assert artifact_payload["preprocessing"]["research_training_target"]["mode"] == (
+        "target_before_stop"
+    )
     feature_values = {name: 0.0 for name in record["feature_names"]}
     feature_values["return_1"] = 0.05
     feature_values["ma_2"] = 100.0
@@ -305,6 +310,66 @@ def test_runner_can_generate_candidate_only_labels(tmp_path: Path) -> None:
     assert report["metadata"]["sample_count"] == 3
     assert len(features) == 3
     assert len(labels) == 3
+
+
+def test_runner_supports_clean_win_training_target(tmp_path: Path) -> None:
+    source_csv = tmp_path / "market_candles.csv"
+    _write_market_csv(source_csv)
+    output_dir = tmp_path / "experiment"
+
+    result = run_baseline_experiment(
+        BaselineExperimentConfig.from_dict(
+            {
+                "experiment_name": "unit_clean_win_objective",
+                "source_csv": str(source_csv),
+                "dataset_name": "unit_real_dataset",
+                "generator_version": "unit.runner.v1",
+                "generated_at": "2026-05-26T06:00:00Z",
+                "feature": {
+                    "feature_set_version": "features.unit.v1",
+                    "rolling_window": 2,
+                    "decision_feature": "return_1",
+                },
+                "label": {
+                    "label_set_version": "labels.unit.v1",
+                    "horizon_bars": 1,
+                    "side": "long",
+                    "stop_loss_pct": 0.01,
+                    "target_pct": 0.02,
+                    "cost_pct": 0.001,
+                    "flat_threshold_pct": 0.0,
+                },
+                "training_target": {
+                    "mode": "clean_win_max_adverse_r",
+                    "max_adverse_r_floor": -0.5,
+                    "min_realized_r": 0.0,
+                },
+                "splits": {
+                    "strategy": "chronological",
+                    "train_end": "2026-01-01T00:04:00Z",
+                    "validation_end": "2026-01-01T00:06:00Z",
+                    "test_end": "2026-01-01T00:07:00Z",
+                },
+                "output_dir": str(output_dir),
+                "registry_dir": str(tmp_path / "registry"),
+                "research_git_commit": "unitcommit",
+            }
+        )
+    )
+
+    report = json.loads(result.baseline_report_path.read_text(encoding="utf-8"))
+    artifact = json.loads(result.model_artifact_path.read_text(encoding="utf-8"))
+    record = json.loads(result.registry_record_path.read_text(encoding="utf-8"))
+    assert report["metadata"]["training_target"] == {
+        "max_adverse_r_floor": -0.5,
+        "min_realized_r": 0.0,
+        "mode": "clean_win_max_adverse_r",
+    }
+    assert report["model_metadata"]["training_target"] == "clean_win_max_adverse_r_gte_-0.5"
+    assert artifact["preprocessing"]["research_training_target"]["mode"] == (
+        "clean_win_max_adverse_r"
+    )
+    assert record["metrics"]["training_target"] == "clean_win_max_adverse_r_gte_-0.5"
 
 
 def _write_market_csv(path: Path) -> None:

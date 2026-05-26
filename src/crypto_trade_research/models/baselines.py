@@ -56,6 +56,7 @@ class BaselineConfig:
     max_trades_per_symbol: int | None = None
     max_trades_per_decision_time: int | None = None
     loss_cooldown_signals: int = 0
+    training_target_name: str = "target_before_stop"
     probability_threshold_candidates: tuple[float, ...] = (
         0.40,
         0.45,
@@ -270,6 +271,7 @@ def train_and_evaluate_baselines(
             "model_type": "multifeature_ridge",
             "single_feature_model_type": "linear_probability_threshold",
             "multifeature_model_type": "ridge_probability",
+            "training_target": config.training_target_name,
             "feature_names": list(config.feature_names),
             "decision_feature": config.decision_feature,
             "probability_threshold": config.probability_threshold,

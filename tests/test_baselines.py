@@ -90,6 +90,7 @@ def test_baseline_report_compares_no_trade_rule_only_and_linear_model() -> None:
     assert report.model_metadata["model_type"] == "multifeature_ridge"
     assert report.model_metadata["single_feature_model_type"] == "linear_probability_threshold"
     assert report.model_metadata["multifeature_model_type"] == "ridge_probability"
+    assert report.model_metadata["training_target"] == "target_before_stop"
     assert report.strategy_reports["linear_probability_oos"].metrics.average_r == 1.0
     assert report.feature_importance[0]["feature"] == "setup_score"
     linear_report = report.to_report_dict()["strategies"]["linear_probability"]

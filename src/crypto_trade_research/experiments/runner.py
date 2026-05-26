@@ -6,7 +6,7 @@ import argparse
 import hashlib
 import json
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -49,6 +49,13 @@ from crypto_trade_research.tracking import (
 
 
 @dataclass(frozen=True, slots=True)
+class TrainingTarget:
+    mode: str = "target_before_stop"
+    max_adverse_r_floor: float | None = None
+    min_realized_r: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
 class BaselineExperimentConfig:
     experiment_name: str
     output_dir: Path
@@ -75,6 +82,7 @@ class BaselineExperimentConfig:
     research_git_commit: str = "unknown"
     promotion_gate_thresholds: PromotionGateThresholds = PromotionGateThresholds()
     candidate_setup: CandidateSetup | None = None
+    training_target: TrainingTarget = field(default_factory=TrainingTarget)
     max_trades_per_symbol: int | None = None
     max_trades_per_decision_time: int | None = None
     loss_cooldown_signals: int = 0
@@ -170,6 +178,7 @@ class BaselineExperimentConfig:
                 ),
             ),
             candidate_setup=_candidate_setup_from_payload(payload.get("candidate_setup")),
+            training_target=_training_target_from_payload(payload.get("training_target")),
             max_trades_per_symbol=_optional_int(risk_controls.get("max_trades_per_symbol")),
             max_trades_per_decision_time=_optional_int(
                 risk_controls.get("max_trades_per_decision_time")
@@ -327,6 +336,7 @@ def run_baseline_experiment(
             loss_cooldown_signals=config.loss_cooldown_signals,
             probability_threshold_candidates=config.probability_threshold_candidates,
             ranking_top_n_values=config.ranking_top_n_values,
+            training_target_name=_training_target_name(config.training_target),
         ),
     )
     _log_progress(config, "writing artifacts")
@@ -373,6 +383,7 @@ def run_baseline_experiment(
         "model_artifact_hash": model_artifact_hash,
         "promotion_checklist_path": str(promotion_checklist_path),
         "candidate_setup": _candidate_setup_payload(config.candidate_setup),
+        "training_target": _training_target_payload(config.training_target),
         "sample_count": len(samples),
         "split_strategy": config.split_strategy,
         "label_generation_mode": config.label_generation_mode,
@@ -427,6 +438,17 @@ def _validate_config(config: BaselineExperimentConfig) -> None:
         raise ValueError("label_generation_mode must be full or candidate_only")
     if config.label_generation_mode == "candidate_only" and config.candidate_setup is None:
         raise ValueError("candidate_only label generation requires candidate_setup")
+    if config.training_target.mode not in {
+        "target_before_stop",
+        "positive_r_after_costs",
+        "clean_win_max_adverse_r",
+    }:
+        raise ValueError("unsupported training_target mode")
+    if (
+        config.training_target.mode == "clean_win_max_adverse_r"
+        and config.training_target.max_adverse_r_floor is None
+    ):
+        raise ValueError("clean_win_max_adverse_r requires max_adverse_r_floor")
 
 
 def _log_progress(config: BaselineExperimentConfig, message: str) -> None:
@@ -457,6 +479,33 @@ def _candidate_setup_payload(setup: CandidateSetup | None) -> dict[str, object]:
             "filters": [],
         }
     return asdict(setup)
+
+
+def _training_target_from_payload(payload: object) -> TrainingTarget:
+    if not payload:
+        return TrainingTarget()
+    target = dict(payload)
+    return TrainingTarget(
+        mode=str(target.get("mode", "target_before_stop")),
+        max_adverse_r_floor=(
+            float(target["max_adverse_r_floor"])
+            if target.get("max_adverse_r_floor") is not None
+            else None
+        ),
+        min_realized_r=float(target.get("min_realized_r", 0.0)),
+    )
+
+
+def _training_target_payload(target: TrainingTarget) -> dict[str, object]:
+    return asdict(target)
+
+
+def _training_target_name(target: TrainingTarget) -> str:
+    if target.mode == "clean_win_max_adverse_r":
+        return f"{target.mode}_gte_{target.max_adverse_r_floor:g}"
+    if target.mode == "positive_r_after_costs":
+        return f"{target.mode}_gte_{target.min_realized_r:g}"
+    return target.mode
 
 
 def _dataset_manifest_path(config: BaselineExperimentConfig) -> Path:
@@ -524,11 +573,32 @@ def _build_samples(
                 timeframe=str(feature_row["timeframe"]),
                 side=str(label_row["side"]),
                 features=feature_values,
-                target_before_stop=bool(label_row["target_before_stop"]),
+                target_before_stop=_training_target_value(label_row, config.training_target),
                 realized_r_after_costs=float(label_row["realized_r_after_costs"]),
             )
         )
     return samples
+
+
+def _training_target_value(
+    label_row: dict[str, object],
+    target: TrainingTarget,
+) -> bool:
+    target_before_stop = bool(label_row["target_before_stop"])
+    realized_r = float(label_row["realized_r_after_costs"])
+    if target.mode == "target_before_stop":
+        return target_before_stop
+    if target.mode == "positive_r_after_costs":
+        return realized_r >= target.min_realized_r
+    if target.mode == "clean_win_max_adverse_r":
+        mae = label_row.get("max_adverse_excursion_r")
+        return (
+            target_before_stop
+            and realized_r >= target.min_realized_r
+            and mae is not None
+            and float(mae) >= float(target.max_adverse_r_floor)
+        )
+    raise ValueError(f"unsupported training_target mode: {target.mode}")
 
 
 def _candidate_feature_keys(
@@ -656,6 +726,7 @@ def _model_artifact(
         preprocessing={
             "missing_value_policy": "fail_closed",
             "research_training_imputation": "train_mean",
+            "research_training_target": _training_target_payload(config.training_target),
             "warmup_rows": "excluded_when_decision_feature_missing",
         },
         calibration={
@@ -695,6 +766,7 @@ def _multifeature_ridge_artifact(
             loss_cooldown_signals=config.loss_cooldown_signals,
             probability_threshold_candidates=config.probability_threshold_candidates,
             ranking_top_n_values=config.ranking_top_n_values,
+            training_target_name=_training_target_name(config.training_target),
         ),
     )
     return MultifeatureRidgeArtifact(
@@ -789,6 +861,7 @@ def _experiment_record(
             "promotion_checklist_path": str(promotion_checklist_path),
             "candidate_setup_name": str(baseline_payload["metadata"]["candidate_setup"]["name"]),
             "candidate_sample_count": int(baseline_payload["metadata"]["sample_count"]),
+            "training_target": str(baseline_payload["model_metadata"]["training_target"]),
             "primary_strategy": primary_strategy,
             "multifeature_probability_threshold": float(
                 baseline_payload["model_metadata"]["multifeature_probability_threshold"]

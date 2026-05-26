@@ -52,6 +52,9 @@ Guardrails:
   ranking instead of loosening the candidate setup,
 - `memory.label_generation_mode=candidate_only` may be used for large predeclared setup matrices
   where labels should be generated only for rows that match `candidate_setup`,
+- `training_target` may change the supervised target without changing realized-R evaluation. The
+  default is `target_before_stop`; `positive_r_after_costs` and `clean_win_max_adverse_r` are
+  research-only abstention objectives for testing whether a model can avoid poor risk paths,
 - test data is never used for fitting or calibration,
 - regime stratification is diagnostic evidence on selected OOS signals, not a separate trained
   regime model,

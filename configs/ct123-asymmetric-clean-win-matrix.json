@@ -1,0 +1,211 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct123-asymmetric-clean-win-base.json"
+    },
+    {
+      "config": "configs/ct123-asymmetric-clean-win-base.json",
+      "overrides": {
+        "experiment_name": "ct123_h12_clean_mae025_top1",
+        "training_target": {
+          "mode": "clean_win_max_adverse_r",
+          "max_adverse_r_floor": -0.25,
+          "min_realized_r": 0.0
+        },
+        "output_dir": "data/generated/ct123_h12_clean_mae025_top1"
+      }
+    },
+    {
+      "config": "configs/ct123-asymmetric-clean-win-base.json",
+      "overrides": {
+        "experiment_name": "ct123_h12_clean_mae075_top1",
+        "training_target": {
+          "mode": "clean_win_max_adverse_r",
+          "max_adverse_r_floor": -0.75,
+          "min_realized_r": 0.0
+        },
+        "output_dir": "data/generated/ct123_h12_clean_mae075_top1"
+      }
+    },
+    {
+      "config": "configs/ct123-asymmetric-clean-win-base.json",
+      "overrides": {
+        "experiment_name": "ct123_h12_clean_mae05_top3",
+        "risk_controls": {
+          "max_trades_per_symbol": 600,
+          "max_trades_per_decision_time": 3,
+          "loss_cooldown_signals": 2
+        },
+        "output_dir": "data/generated/ct123_h12_clean_mae05_top3"
+      }
+    },
+    {
+      "config": "configs/ct123-asymmetric-clean-win-base.json",
+      "overrides": {
+        "experiment_name": "ct123_h12_clean_mae05_top5",
+        "risk_controls": {
+          "max_trades_per_symbol": 600,
+          "max_trades_per_decision_time": 5,
+          "loss_cooldown_signals": 2
+        },
+        "output_dir": "data/generated/ct123_h12_clean_mae05_top5"
+      }
+    },
+    {
+      "config": "configs/ct123-asymmetric-clean-win-base.json",
+      "overrides": {
+        "experiment_name": "ct123_h12_positive_r_top1",
+        "training_target": {
+          "mode": "positive_r_after_costs",
+          "min_realized_r": 0.0
+        },
+        "output_dir": "data/generated/ct123_h12_positive_r_top1"
+      }
+    },
+    {
+      "config": "configs/ct123-asymmetric-clean-win-base.json",
+      "overrides": {
+        "experiment_name": "ct123_h12_clean_mae05_btc_eth_above_ma_top1",
+        "candidate_setup": {
+          "name": "h12_strict_btc_eth_both_above_ma",
+          "filters": [
+            {
+              "feature": "volatility_expansion_20",
+              "operator": ">=",
+              "value": 1.3
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.7
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.5
+            },
+            {
+              "feature": "btc_trend_above_ma_20",
+              "operator": "==",
+              "value": 1
+            },
+            {
+              "feature": "eth_trend_above_ma_20",
+              "operator": "==",
+              "value": 1
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct123_h12_clean_mae05_btc_eth_above_ma_top1"
+      }
+    },
+    {
+      "config": "configs/ct123-asymmetric-clean-win-base.json",
+      "overrides": {
+        "experiment_name": "ct123_h12_clean_mae05_vol_normal_top1",
+        "candidate_setup": {
+          "name": "h12_strict_volatility_normal",
+          "filters": [
+            {
+              "feature": "volatility_expansion_20",
+              "operator": ">=",
+              "value": 1.3
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.7
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.5
+            },
+            {
+              "feature": "volatility_bucket_20",
+              "operator": "==",
+              "value": 1
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct123_h12_clean_mae05_vol_normal_top1"
+      }
+    },
+    {
+      "config": "configs/ct123-asymmetric-clean-win-base.json",
+      "overrides": {
+        "experiment_name": "ct123_h12_clean_mae05_vol_disorderly_top1",
+        "candidate_setup": {
+          "name": "h12_strict_volatility_disorderly",
+          "filters": [
+            {
+              "feature": "volatility_expansion_20",
+              "operator": ">=",
+              "value": 1.3
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.7
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.5
+            },
+            {
+              "feature": "volatility_bucket_20",
+              "operator": "==",
+              "value": 3
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct123_h12_clean_mae05_vol_disorderly_top1"
+      }
+    },
+    {
+      "config": "configs/ct123-asymmetric-clean-win-base.json",
+      "overrides": {
+        "experiment_name": "ct123_h12_clean_mae05_btc_eth_above_ma_vol_disorderly_top1",
+        "candidate_setup": {
+          "name": "h12_strict_btc_eth_above_ma_volatility_disorderly",
+          "filters": [
+            {
+              "feature": "volatility_expansion_20",
+              "operator": ">=",
+              "value": 1.3
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.7
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.5
+            },
+            {
+              "feature": "btc_trend_above_ma_20",
+              "operator": "==",
+              "value": 1
+            },
+            {
+              "feature": "eth_trend_above_ma_20",
+              "operator": "==",
+              "value": 1
+            },
+            {
+              "feature": "volatility_bucket_20",
+              "operator": "==",
+              "value": 3
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct123_h12_clean_mae05_btc_eth_above_ma_vol_disorderly_top1"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct123_asymmetric_clean_win_matrix/leaderboard.json",
+  "markdown_path": "data/generated/ct123_asymmetric_clean_win_matrix/leaderboard.md"
+}
