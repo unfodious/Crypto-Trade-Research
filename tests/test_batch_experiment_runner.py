@@ -143,3 +143,96 @@ def test_batch_runner_keeps_successful_rows_when_one_config_fails(tmp_path: Path
     assert payload["rows"][1]["run_status"] == "failed"
     assert payload["rows"][1]["error"] == "dataset filters produced no market rows"
     assert "candidate_b" in markdown_path.read_text(encoding="utf-8")
+
+
+def test_batch_runner_applies_matrix_overrides_before_running(tmp_path: Path) -> None:
+    config_path = tmp_path / "base.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "experiment_name": "base_candidate",
+                "symbols": ["BTCUSDT"],
+                "baseline": {
+                    "probability_threshold": 0.50,
+                },
+                "candidate_setup": {
+                    "name": "base_setup",
+                    "filters": [
+                        {
+                            "feature": "range_position_20",
+                            "operator": ">=",
+                            "value": 0.70,
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry_record_path = tmp_path / "registry" / "candidate_override" / "v1" / "record.json"
+    registry_record_path.parent.mkdir(parents=True)
+    registry_record_path.write_text(
+        json.dumps(
+            {
+                "model": {
+                    "model_id": "candidate_override",
+                    "version": "v1",
+                    "model_type": "linear_probability_threshold",
+                },
+                "metrics": {
+                    "average_r": 0.01,
+                    "rule_only_average_r": 0.02,
+                    "trade_count": 9,
+                    "max_drawdown_pct": 0.04,
+                    "artifact_hash": "c" * 64,
+                },
+                "decision": {
+                    "status": "reject",
+                    "gates": [
+                        {"name": "beats_rule_only_and_naive_oos", "passed": False},
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    seen_configs = []
+
+    def fake_runner(config: object) -> object:
+        seen_configs.append(config)
+        return SimpleNamespace(registry_record_path=registry_record_path)
+
+    run_experiment_batch(
+        BatchExperimentMatrix.from_dict(
+            {
+                "experiments": [
+                    {
+                        "config": str(config_path),
+                        "overrides": {
+                            "experiment_name": "candidate_override",
+                            "baseline": {
+                                "probability_threshold": 0.60,
+                            },
+                            "candidate_setup": {
+                                "name": "range_high_short_fade_ge_0_80",
+                                "filters": [
+                                    {
+                                        "feature": "range_position_20",
+                                        "operator": ">=",
+                                        "value": 0.80,
+                                    }
+                                ],
+                            },
+                        },
+                    }
+                ],
+                "leaderboard_path": str(tmp_path / "leaderboard.json"),
+            }
+        ),
+        runner=fake_runner,
+    )
+
+    assert seen_configs[0].experiment_name == "candidate_override"
+    assert seen_configs[0].baseline["probability_threshold"] == 0.60
+    assert seen_configs[0].candidate_setup["name"] == "range_high_short_fade_ge_0_80"
+    assert seen_configs[0].candidate_setup["filters"][0]["value"] == 0.80

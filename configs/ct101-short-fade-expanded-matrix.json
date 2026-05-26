@@ -1,0 +1,200 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct101-short-fade-expanded-base.json"
+    },
+    {
+      "config": "configs/ct101-short-fade-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct101_short_fade_rp070_p055",
+        "baseline": {
+          "probability_threshold": 0.55
+        },
+        "output_dir": "data/generated/ct101_short_fade_rp070_p055"
+      }
+    },
+    {
+      "config": "configs/ct101-short-fade-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct101_short_fade_rp070_p060",
+        "baseline": {
+          "probability_threshold": 0.6
+        },
+        "output_dir": "data/generated/ct101_short_fade_rp070_p060"
+      }
+    },
+    {
+      "config": "configs/ct101-short-fade-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct101_short_fade_rp075_p050",
+        "candidate_setup": {
+          "name": "range_high_short_fade_ge_0_75",
+          "filters": [
+            {
+              "feature": "range_position_20",
+              "operator": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct101_short_fade_rp075_p050"
+      }
+    },
+    {
+      "config": "configs/ct101-short-fade-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct101_short_fade_rp075_p055",
+        "candidate_setup": {
+          "name": "range_high_short_fade_ge_0_75",
+          "filters": [
+            {
+              "feature": "range_position_20",
+              "operator": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "baseline": {
+          "probability_threshold": 0.55
+        },
+        "output_dir": "data/generated/ct101_short_fade_rp075_p055"
+      }
+    },
+    {
+      "config": "configs/ct101-short-fade-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct101_short_fade_rp075_p060",
+        "candidate_setup": {
+          "name": "range_high_short_fade_ge_0_75",
+          "filters": [
+            {
+              "feature": "range_position_20",
+              "operator": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "baseline": {
+          "probability_threshold": 0.6
+        },
+        "output_dir": "data/generated/ct101_short_fade_rp075_p060"
+      }
+    },
+    {
+      "config": "configs/ct101-short-fade-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct101_short_fade_rp080_p050",
+        "candidate_setup": {
+          "name": "range_high_short_fade_ge_0_80",
+          "filters": [
+            {
+              "feature": "range_position_20",
+              "operator": ">=",
+              "value": 0.8
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct101_short_fade_rp080_p050"
+      }
+    },
+    {
+      "config": "configs/ct101-short-fade-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct101_short_fade_rp080_p055",
+        "candidate_setup": {
+          "name": "range_high_short_fade_ge_0_80",
+          "filters": [
+            {
+              "feature": "range_position_20",
+              "operator": ">=",
+              "value": 0.8
+            }
+          ]
+        },
+        "baseline": {
+          "probability_threshold": 0.55
+        },
+        "output_dir": "data/generated/ct101_short_fade_rp080_p055"
+      }
+    },
+    {
+      "config": "configs/ct101-short-fade-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct101_short_fade_rp080_p060",
+        "candidate_setup": {
+          "name": "range_high_short_fade_ge_0_80",
+          "filters": [
+            {
+              "feature": "range_position_20",
+              "operator": ">=",
+              "value": 0.8
+            }
+          ]
+        },
+        "baseline": {
+          "probability_threshold": 0.6
+        },
+        "output_dir": "data/generated/ct101_short_fade_rp080_p060"
+      }
+    },
+    {
+      "config": "configs/ct101-short-fade-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct101_short_fade_rp085_p050",
+        "candidate_setup": {
+          "name": "range_high_short_fade_ge_0_85",
+          "filters": [
+            {
+              "feature": "range_position_20",
+              "operator": ">=",
+              "value": 0.85
+            }
+          ]
+        },
+        "output_dir": "data/generated/ct101_short_fade_rp085_p050"
+      }
+    },
+    {
+      "config": "configs/ct101-short-fade-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct101_short_fade_rp085_p055",
+        "candidate_setup": {
+          "name": "range_high_short_fade_ge_0_85",
+          "filters": [
+            {
+              "feature": "range_position_20",
+              "operator": ">=",
+              "value": 0.85
+            }
+          ]
+        },
+        "baseline": {
+          "probability_threshold": 0.55
+        },
+        "output_dir": "data/generated/ct101_short_fade_rp085_p055"
+      }
+    },
+    {
+      "config": "configs/ct101-short-fade-expanded-base.json",
+      "overrides": {
+        "experiment_name": "ct101_short_fade_rp085_p060",
+        "candidate_setup": {
+          "name": "range_high_short_fade_ge_0_85",
+          "filters": [
+            {
+              "feature": "range_position_20",
+              "operator": ">=",
+              "value": 0.85
+            }
+          ]
+        },
+        "baseline": {
+          "probability_threshold": 0.6
+        },
+        "output_dir": "data/generated/ct101_short_fade_rp085_p060"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct101_short_fade_expanded_matrix/leaderboard.json",
+  "markdown_path": "data/generated/ct101_short_fade_expanded_matrix/leaderboard.md"
+}

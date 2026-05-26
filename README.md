@@ -181,8 +181,9 @@ make sample-batch-experiments
 
 The sample command uses `configs/sample-batch-experiments.json` and writes ignored outputs under
 `data/generated/sample_batch_experiments/`. Each matrix item points at a normal baseline experiment
-config. One failed experiment is recorded as a failed leaderboard row without deleting completed
-registry outputs from other configs.
+config. Matrix items may also include nested `overrides` for fields such as `experiment_name`,
+`baseline.probability_threshold`, and `candidate_setup`. One failed experiment is recorded as a
+failed leaderboard row without deleting completed registry outputs from other configs.
 
 Direct command:
 

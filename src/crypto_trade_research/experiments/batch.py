@@ -21,6 +21,7 @@ from crypto_trade_research.experiments.runner import (
 @dataclass(frozen=True, slots=True)
 class BatchExperimentSpec:
     config_path: Path
+    overrides: dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,7 +78,10 @@ def run_experiment_batch(
     for spec in matrix.experiments:
         raw_config: dict[str, object] = {}
         try:
-            raw_config = json.loads(spec.config_path.read_text(encoding="utf-8"))
+            raw_config = _merged_config(
+                json.loads(spec.config_path.read_text(encoding="utf-8")),
+                spec.overrides,
+            )
             config = _runner_config(raw_config, runner)
             result = runner(config)
             rows.append(
@@ -143,9 +147,25 @@ def leaderboard_row_from_record(
 
 def _experiment_spec(item: object) -> BatchExperimentSpec:
     if isinstance(item, str):
-        return BatchExperimentSpec(Path(item))
+        return BatchExperimentSpec(Path(item), {})
     payload = dict(item)
-    return BatchExperimentSpec(Path(str(payload["config"])))
+    return BatchExperimentSpec(
+        config_path=Path(str(payload["config"])),
+        overrides=dict(payload.get("overrides", {})),
+    )
+
+
+def _merged_config(
+    base: dict[str, object],
+    overrides: dict[str, object],
+) -> dict[str, object]:
+    merged = dict(base)
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merged_config(dict(merged[key]), value)
+        else:
+            merged[key] = value
+    return merged
 
 
 def _runner_config(config: dict[str, object], runner: Callable[[object], object]) -> object:
