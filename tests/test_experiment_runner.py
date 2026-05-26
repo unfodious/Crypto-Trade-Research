@@ -9,6 +9,7 @@ from crypto_trade_research.experiments.runner import (
     BaselineExperimentConfig,
     run_baseline_experiment,
 )
+from crypto_trade_research.models import load_model_artifact
 
 
 def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -> None:
@@ -69,6 +70,7 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     assert result.features_path.exists()
     assert result.labels_path.exists()
     assert result.baseline_report_path.exists()
+    assert result.model_artifact_path.exists()
     assert result.registry_record_path.exists()
 
     features = pq.read_table(result.features_path).to_pylist()
@@ -80,6 +82,8 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     report = json.loads(result.baseline_report_path.read_text(encoding="utf-8"))
     assert report["metadata"]["experiment_name"] == "unit_real_baseline"
     assert report["metadata"]["dataset_manifest_path"] == str(result.dataset_manifest_path)
+    assert report["metadata"]["model_artifact_path"] == str(result.model_artifact_path)
+    assert len(report["metadata"]["model_artifact_hash"]) == 64
     assert report["metadata"]["sample_count"] == 6
     assert report["splits"][0]["name"] == "train"
     assert report["strategies"]["rule_only_oos"]["sample_scope"] == "validation_test"
@@ -89,8 +93,19 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     assert record["model"]["model_id"] == "unit_real_baseline"
     assert record["research_git_commit"] == "unitcommit"
     assert record["dataset_manifest_path"] == str(result.dataset_manifest_path)
+    assert record["metrics"]["artifact_hash"] == report["metadata"]["model_artifact_hash"]
     assert record["feature_names"]
     assert record["decision"]["status"] == "reject"
+
+    loaded_artifact = load_model_artifact(
+        result.model_artifact_path,
+        expected_feature_set_version="features.unit.v1",
+        expected_feature_names=tuple(record["feature_names"]),
+    )
+    assert loaded_artifact.predict({"return_1": 0.05, "ma_2": 100.0}).recommended_action in {
+        "take",
+        "skip",
+    }
 
 
 def test_runner_refuses_shuffled_splits_for_performance_claims(tmp_path: Path) -> None:

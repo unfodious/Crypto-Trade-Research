@@ -1,0 +1,48 @@
+{
+  "experiment_name": "ct91_first_real_futures_baseline",
+  "dataset_manifest_path": "data/generated/ct88_real_market_dataset/manifest.json",
+  "dataset_name": "ct88_real_market_dataset",
+  "generator_version": "ct91.real.baseline.v1",
+  "generated_at": "2026-05-26T07:50:00Z",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "timeframes": [
+    "1m"
+  ],
+  "feature": {
+    "feature_set_version": "features.ct91.real.v1",
+    "rolling_window": 20,
+    "decision_feature": "return_1"
+  },
+  "label": {
+    "label_set_version": "labels.ct91.real.v1",
+    "horizon_bars": 12,
+    "side": "long",
+    "stop_loss_pct": 0.004,
+    "target_pct": 0.008,
+    "cost_pct": 0.0007,
+    "flat_threshold_pct": 0.0002,
+    "target_stop_tie_breaker": "stop_first"
+  },
+  "splits": {
+    "strategy": "chronological",
+    "train_end": "2025-07-01T12:00:00Z",
+    "validation_end": "2025-07-01T18:00:00Z",
+    "test_end": "2025-07-02T00:00:00Z"
+  },
+  "baseline": {
+    "probability_threshold": 0.55,
+    "initial_equity": 10000,
+    "risk_per_trade_pct": 0.01
+  },
+  "cost_assumptions": {
+    "fee_bps": 4.0,
+    "slippage_bps": 2.0,
+    "funding_bps": 0.0,
+    "notes": "CT-91 first real futures baseline: label cost_pct=0.0007 covers taker fee, spread, slippage, and zero funding for the one-day smoke window."
+  },
+  "output_dir": "data/generated/ct91_first_real_futures_baseline",
+  "registry_dir": "data/generated/experiment_registry"
+}

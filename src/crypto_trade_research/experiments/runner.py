@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import subprocess
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -21,8 +23,12 @@ from crypto_trade_research.features import FeatureConfig, generate_ohlcv_feature
 from crypto_trade_research.labels import LabelConfig, generate_trade_labels
 from crypto_trade_research.models import (
     BaselineConfig,
+    FeatureSchema,
+    LinearProbabilityArtifact,
+    ModelArtifact,
     ModelSample,
     train_and_evaluate_baselines,
+    write_model_artifact,
 )
 from crypto_trade_research.tracking import (
     CostAssumptions,
@@ -120,6 +126,7 @@ class BaselineExperimentResult:
     labels_path: Path
     baseline_report_path: Path
     baseline_markdown_path: Path
+    model_artifact_path: Path
     registry_record_path: Path
 
 
@@ -167,17 +174,29 @@ def run_baseline_experiment(config: BaselineExperimentConfig) -> BaselineExperim
     label_manifest_path = config.output_dir / "label_manifest.json"
     baseline_report_path = config.output_dir / "baseline_report.json"
     baseline_markdown_path = config.output_dir / "baseline_report.md"
+    model_artifact_path = config.output_dir / "model_artifact.json"
     pq.write_table(pa.Table.from_pylist(features.rows), features_path)
     pq.write_table(pa.Table.from_pylist(labels.rows), labels_path)
     _write_json(feature_manifest_path, asdict(features.manifest))
     _write_json(label_manifest_path, asdict(labels.manifest))
 
+    model_artifact_hash = write_model_artifact(
+        model_artifact_path,
+        _model_artifact(
+            config=config,
+            samples=samples,
+            feature_names=feature_names,
+            dataset_manifest_path=dataset_manifest_path,
+        ),
+    )
     baseline_payload = baseline_report.to_report_dict()
     baseline_payload["metadata"] = {
         "experiment_name": config.experiment_name,
         "dataset_manifest_path": str(dataset_manifest_path),
         "feature_manifest_path": str(feature_manifest_path),
         "label_manifest_path": str(label_manifest_path),
+        "model_artifact_path": str(model_artifact_path),
+        "model_artifact_hash": model_artifact_hash,
         "sample_count": len(samples),
         "split_strategy": config.split_strategy,
         "research_git_commit": config.research_git_commit,
@@ -195,6 +214,7 @@ def run_baseline_experiment(config: BaselineExperimentConfig) -> BaselineExperim
         labels_path=labels_path,
         baseline_report_path=baseline_report_path,
         baseline_markdown_path=baseline_markdown_path,
+        model_artifact_path=model_artifact_path,
         registry_record_path=registry_record_path,
     )
 
@@ -309,6 +329,73 @@ def _feature_names(feature_rows: list[dict[str, object]]) -> tuple[str, ...]:
     return tuple(sorted(names))
 
 
+def _model_artifact(
+    config: BaselineExperimentConfig,
+    samples: list[ModelSample],
+    feature_names: tuple[str, ...],
+    dataset_manifest_path: Path,
+) -> ModelArtifact:
+    train_samples = [sample for sample in samples if sample.decision_time <= config.train_end]
+    if not train_samples:
+        raise ValueError("training split must not be empty")
+    return ModelArtifact(
+        model_id=config.experiment_name,
+        model_version=_version(config.generated_at),
+        model=_linear_probability_artifact(train_samples, config),
+        feature_schema=FeatureSchema(
+            feature_set_version=config.feature_set_version,
+            feature_names=feature_names,
+        ),
+        preprocessing={
+            "missing_value_policy": "fail_closed",
+            "warmup_rows": "excluded_when_decision_feature_missing",
+        },
+        calibration={
+            "method": "logistic_margin_v1",
+            "probability_threshold": config.probability_threshold,
+        },
+        dataset_manifest_path=str(dataset_manifest_path),
+        training_data_hash=_file_sha256(dataset_manifest_path),
+        research_git_commit=config.research_git_commit,
+        dependency_versions={
+            "python": ">=3.11",
+            "pyarrow": pa.__version__,
+        },
+        created_at=_format_timestamp(config.generated_at or datetime.now(UTC)),
+    )
+
+
+def _linear_probability_artifact(
+    samples: list[ModelSample],
+    config: BaselineExperimentConfig,
+) -> LinearProbabilityArtifact:
+    winners = [
+        sample.features[config.decision_feature] for sample in samples if sample.target_before_stop
+    ]
+    losers = [
+        sample.features[config.decision_feature]
+        for sample in samples
+        if not sample.target_before_stop
+    ]
+    if not winners or not losers:
+        values = [sample.features[config.decision_feature] for sample in samples]
+        threshold = sum(values) / len(values)
+        positive_direction = 1
+    else:
+        winner_mean = sum(winners) / len(winners)
+        loser_mean = sum(losers) / len(losers)
+        threshold = (winner_mean + loser_mean) / 2
+        positive_direction = 1 if winner_mean >= loser_mean else -1
+    if math.isnan(threshold):
+        raise ValueError("model threshold must be finite")
+    return LinearProbabilityArtifact(
+        feature_name=config.decision_feature,
+        threshold=threshold,
+        positive_direction=positive_direction,
+        probability_threshold=config.probability_threshold,
+    )
+
+
 def _experiment_record(
     config: BaselineExperimentConfig,
     dataset_manifest_path: Path,
@@ -365,6 +452,7 @@ def _experiment_record(
             "max_drawdown_pct": float(model_metrics["max_drawdown_pct"]),
             "max_drawdown_duration_bars": int(model_metrics["max_drawdown_duration"]),
             "trade_count": int(model_metrics["trade_count"]),
+            "artifact_hash": str(baseline_payload["metadata"]["model_artifact_hash"]),
         },
         walk_forward_report_path=str(Path(config.output_dir) / "baseline_report.json"),
         decision=evaluate_promotion_gates(gate_inputs),
@@ -412,6 +500,10 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
         json.dumps(payload, indent=2, sort_keys=True, default=_json_default) + "\n",
         encoding="utf-8",
     )
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _json_default(value: object) -> str:
