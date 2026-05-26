@@ -12,6 +12,9 @@ class BacktestConfig:
     spread_r: float = 0.0
     slippage_r: float = 0.0
     funding_r: float = 0.0
+    max_trades_per_symbol: int | None = None
+    max_trades_per_decision_time: int | None = None
+    loss_cooldown_signals: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,11 +138,20 @@ def evaluate_signal_strategy(
     trades: list[TradeEvent] = []
     equity_curve: list[EquityPoint] = []
 
-    for signal in sorted(signals, key=lambda item: item.decision_time):
+    accepted_by_symbol: dict[str, int] = {}
+    cooldown_by_symbol: dict[str, int] = {}
+    for signal in _ranked_signals(signals, config):
         if signal.side == "flat" or signal.confidence <= 0:
             continue
         if signal.side not in {"long", "short"}:
             raise ValueError("signal side must be long, short, or flat")
+        if _skip_for_risk_controls(
+            signal,
+            config,
+            accepted_by_symbol,
+            cooldown_by_symbol,
+        ):
+            continue
         exit_time = signal.exit_time or signal.decision_time
         if exit_time < signal.decision_time:
             raise ValueError("signal exit_time must be at or after decision_time")
@@ -170,6 +182,9 @@ def evaluate_signal_strategy(
             exit_reason="signal_outcome",
         )
         trades.append(trade)
+        accepted_by_symbol[signal.symbol] = accepted_by_symbol.get(signal.symbol, 0) + 1
+        if config.loss_cooldown_signals and net_r < 0:
+            cooldown_by_symbol[signal.symbol] = config.loss_cooldown_signals
         equity_curve.append(
             EquityPoint(
                 decision_time=signal.decision_time,
@@ -185,6 +200,39 @@ def evaluate_signal_strategy(
         equity_curve=equity_curve,
         metrics=_metrics(config.initial_equity, trades, equity_curve),
     )
+
+
+def _ranked_signals(signals: list[SignalRow], config: BacktestConfig) -> list[SignalRow]:
+    ordered = sorted(signals, key=lambda item: (item.decision_time, -item.confidence, item.symbol))
+    if config.max_trades_per_decision_time is None:
+        return ordered
+    selected: list[SignalRow] = []
+    counts_by_time: dict[datetime, int] = {}
+    for signal in ordered:
+        count = counts_by_time.get(signal.decision_time, 0)
+        if count >= config.max_trades_per_decision_time:
+            continue
+        selected.append(signal)
+        counts_by_time[signal.decision_time] = count + 1
+    return selected
+
+
+def _skip_for_risk_controls(
+    signal: SignalRow,
+    config: BacktestConfig,
+    accepted_by_symbol: dict[str, int],
+    cooldown_by_symbol: dict[str, int],
+) -> bool:
+    if (
+        config.max_trades_per_symbol is not None
+        and accepted_by_symbol.get(signal.symbol, 0) >= config.max_trades_per_symbol
+    ):
+        return True
+    cooldown_remaining = cooldown_by_symbol.get(signal.symbol, 0)
+    if cooldown_remaining > 0:
+        cooldown_by_symbol[signal.symbol] = cooldown_remaining - 1
+        return True
+    return False
 
 
 def walk_forward_splits(
@@ -302,6 +350,12 @@ def _validate_config(config: BacktestConfig) -> None:
         raise ValueError("risk_per_trade_pct must be positive")
     if min(config.fee_r, config.spread_r, config.slippage_r) < 0:
         raise ValueError("costs must be non-negative")
+    if config.max_trades_per_symbol is not None and config.max_trades_per_symbol <= 0:
+        raise ValueError("max_trades_per_symbol must be positive when set")
+    if config.max_trades_per_decision_time is not None and config.max_trades_per_decision_time <= 0:
+        raise ValueError("max_trades_per_decision_time must be positive when set")
+    if config.loss_cooldown_signals < 0:
+        raise ValueError("loss_cooldown_signals must be non-negative")
 
 
 def _serialize_dataclass(value: object) -> dict[str, object]:

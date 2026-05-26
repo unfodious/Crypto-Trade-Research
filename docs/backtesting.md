@@ -12,8 +12,18 @@ The first backtest layer evaluates precomputed research signals and model outcom
 - Optional signal `exit_time` for holding-window diagnostics.
 - Equity curve with drawdown.
 - Metrics: total return, average R, expectancy, win rate, average win/loss, profit factor, max drawdown, drawdown duration, exposure, turnover, worst trade, max concurrent positions, and max concurrent risk percentage.
+- Research risk controls:
+  - `max_trades_per_symbol` limits repeated entries in one symbol.
+  - `max_trades_per_decision_time` ranks same-timestamp signals by confidence and keeps only the
+    top candidates.
+  - `loss_cooldown_signals` skips the next N candidate signals for a symbol after an accepted
+    losing trade.
 
 If `exit_time` is omitted, a signal is treated as an immediate realized R event for backward-compatible fixture tests. Use explicit `exit_time` before relying on concurrent exposure metrics.
+
+Risk controls are research diagnostics, not live execution logic. They must be recomputed from
+prior accepted trades or same-timestamp rankings only; do not use future PnL or labels to decide
+whether a historical signal would have been eligible.
 
 ## Reports
 

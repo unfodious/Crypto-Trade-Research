@@ -20,11 +20,12 @@ def _signal(
     gross_r: float,
     confidence: float = 1.0,
     exit_day: int | None = None,
+    symbol: str = "BTCUSDT",
 ) -> SignalRow:
     return SignalRow(
         decision_time=_ts(day),
         exit_time=_ts(exit_day) if exit_day else None,
-        symbol="BTCUSDT",
+        symbol=symbol,
         timeframe="1d",
         side=side,
         gross_r=gross_r,
@@ -125,3 +126,27 @@ def test_walk_forward_splits_are_time_ordered_and_compare_strategies() -> None:
 
     assert momentum.metrics.average_r > mean_reversion.metrics.average_r
     assert momentum.to_report_dict()["metrics"]["trade_count"] == 3
+
+
+def test_backtest_risk_controls_limit_rank_and_cool_down_signals() -> None:
+    report = evaluate_signal_strategy(
+        "risk_controls",
+        [
+            _signal(1, "long", -1.0, confidence=0.90, symbol="BTCUSDT"),
+            _signal(1, "long", 1.0, confidence=0.80, symbol="ETHUSDT"),
+            _signal(2, "long", 1.0, confidence=0.95, symbol="BTCUSDT"),
+            _signal(3, "long", 1.0, confidence=0.95, symbol="BTCUSDT"),
+            _signal(4, "long", 1.0, confidence=0.95, symbol="BTCUSDT"),
+        ],
+        BacktestConfig(
+            initial_equity=10_000,
+            risk_per_trade_pct=0.01,
+            max_trades_per_decision_time=1,
+            max_trades_per_symbol=2,
+            loss_cooldown_signals=1,
+        ),
+    )
+
+    assert [trade.symbol for trade in report.trades] == ["BTCUSDT", "BTCUSDT"]
+    assert [trade.decision_time for trade in report.trades] == [_ts(1), _ts(3)]
+    assert [trade.net_r for trade in report.trades] == [-1.0, 1.0]
