@@ -84,6 +84,9 @@ def test_generate_market_dataset_writes_sorted_parquet_and_manifest(tmp_path: Pa
     assert manifest.raw_path.exists()
     assert manifest.cleaned_path.exists()
     assert manifest.manifest_path.exists()
+    assert len(manifest.source_sha256) == 64
+    assert len(manifest.raw_sha256) == 64
+    assert len(manifest.cleaned_sha256) == 64
 
     clean_table = pq.read_table(manifest.cleaned_path)
     assert clean_table.column("symbol").to_pylist() == ["BTCUSDT", "BTCUSDT", "BTCUSDT"]
@@ -99,6 +102,9 @@ def test_generate_market_dataset_writes_sorted_parquet_and_manifest(tmp_path: Pa
     assert manifest_json["schema_version"] == "research.dataset.v1"
     assert manifest_json["source"]["format"] == "csv"
     assert manifest_json["generated_at"] == "2026-05-25T12:00:00Z"
+    assert manifest_json["source_sha256"] == manifest.source_sha256
+    assert manifest_json["raw_sha256"] == manifest.raw_sha256
+    assert manifest_json["cleaned_sha256"] == manifest.cleaned_sha256
 
 
 def test_generate_market_dataset_rejects_duplicate_candles(tmp_path: Path) -> None:

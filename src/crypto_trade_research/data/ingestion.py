@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import hashlib
 import json
 import re
 from collections.abc import Iterable, Sequence
@@ -85,6 +86,9 @@ class DatasetManifest:
     raw_path: Path
     cleaned_path: Path
     manifest_path: Path
+    source_sha256: str
+    raw_sha256: str
+    cleaned_sha256: str
     warnings: tuple[str, ...]
 
 
@@ -119,6 +123,9 @@ def generate_market_dataset(config: MarketDatasetConfig) -> DatasetManifest:
         raw_path=raw_path,
         cleaned_path=cleaned_path,
         manifest_path=manifest_path,
+        source_sha256=_file_sha256(config.source_csv),
+        raw_sha256=_file_sha256(raw_path),
+        cleaned_sha256=_file_sha256(cleaned_path),
         warnings=tuple(warnings),
     )
     _write_manifest(manifest, config.source_csv)
@@ -292,6 +299,14 @@ def _write_manifest(manifest: DatasetManifest, source_csv: Path) -> None:
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _required_text(row: dict[str, str], field_name: str) -> str:
