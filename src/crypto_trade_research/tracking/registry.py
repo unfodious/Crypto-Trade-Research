@@ -2,7 +2,7 @@
 
 import argparse
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -43,8 +43,20 @@ class PromotionDecision:
     status: PromotionStatus
     reason: str
     gates: tuple[PromotionGateResult, ...]
+    thresholds: dict[str, float | int | bool] = field(default_factory=dict)
     reviewed_by: str | None = None
     reviewed_at: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PromotionGateThresholds:
+    min_walk_forward_average_r: float = 0.0
+    min_oos_trade_count: int = 10
+    max_drawdown_pct: float = 0.0
+    max_drawdown_duration_bars: int = 0
+    require_leakage_checks: bool = True
+    require_stability_checks: bool = True
+    require_paper_trading_plan: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,13 +65,13 @@ class PromotionGateInputs:
     rule_only_average_r: float
     naive_average_r: float
     walk_forward_average_r: float
+    model_oos_trade_count: int
     max_drawdown_pct: float
     max_drawdown_duration_bars: int
-    max_allowed_drawdown_pct: float
-    max_allowed_drawdown_duration_bars: int
     leakage_checks_passed: bool
     stability_checks_passed: bool
     paper_trading_plan_path: str
+    thresholds: PromotionGateThresholds = field(default_factory=PromotionGateThresholds)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +118,7 @@ class ExperimentRecord:
                 status=decision["status"],
                 reason=str(decision["reason"]),
                 gates=tuple(PromotionGateResult(**gate) for gate in decision["gates"]),
+                thresholds=dict(decision.get("thresholds", {})),
                 reviewed_by=decision.get("reviewed_by"),
                 reviewed_at=decision.get("reviewed_at"),
             ),
@@ -114,6 +127,7 @@ class ExperimentRecord:
 
 
 def evaluate_promotion_gates(inputs: PromotionGateInputs) -> PromotionDecision:
+    thresholds = inputs.thresholds
     gates = (
         PromotionGateResult(
             name="beats_rule_only_and_naive_oos",
@@ -127,31 +141,46 @@ def evaluate_promotion_gates(inputs: PromotionGateInputs) -> PromotionDecision:
         ),
         PromotionGateResult(
             name="walk_forward_metrics_acceptable",
-            passed=inputs.walk_forward_average_r > 0,
-            detail=f"walk-forward average R must be positive ({inputs.walk_forward_average_r:.4f})",
+            passed=inputs.walk_forward_average_r >= thresholds.min_walk_forward_average_r,
+            detail=(
+                "walk-forward average R must meet the configured threshold "
+                f"({inputs.walk_forward_average_r:.4f} >= "
+                f"{thresholds.min_walk_forward_average_r:.4f})"
+            ),
+        ),
+        PromotionGateResult(
+            name="minimum_oos_trade_count",
+            passed=inputs.model_oos_trade_count >= thresholds.min_oos_trade_count,
+            detail=(
+                "model OOS trade count must meet the configured threshold "
+                f"({inputs.model_oos_trade_count} >= {thresholds.min_oos_trade_count})"
+            ),
         ),
         PromotionGateResult(
             name="drawdown_within_limits",
-            passed=inputs.max_drawdown_pct <= inputs.max_allowed_drawdown_pct
-            and inputs.max_drawdown_duration_bars <= inputs.max_allowed_drawdown_duration_bars,
+            passed=inputs.max_drawdown_pct <= thresholds.max_drawdown_pct
+            and inputs.max_drawdown_duration_bars <= thresholds.max_drawdown_duration_bars,
             detail=(
                 "drawdown must stay within depth/duration limits "
-                f"({inputs.max_drawdown_pct:.4%}/{inputs.max_drawdown_duration_bars} bars)"
+                f"({inputs.max_drawdown_pct:.4%}/{inputs.max_drawdown_duration_bars} bars "
+                f"<= {thresholds.max_drawdown_pct:.4%}/"
+                f"{thresholds.max_drawdown_duration_bars} bars)"
             ),
         ),
         PromotionGateResult(
             name="feature_leakage_checks_pass",
-            passed=inputs.leakage_checks_passed,
+            passed=inputs.leakage_checks_passed or not thresholds.require_leakage_checks,
             detail="feature leakage checks must pass",
         ),
         PromotionGateResult(
             name="stability_checks_pass",
-            passed=inputs.stability_checks_passed,
+            passed=inputs.stability_checks_passed or not thresholds.require_stability_checks,
             detail="stability checks must avoid a single fragile parameter optimum",
         ),
         PromotionGateResult(
             name="paper_trading_plan_exists",
-            passed=bool(inputs.paper_trading_plan_path.strip()),
+            passed=bool(inputs.paper_trading_plan_path.strip())
+            or not thresholds.require_paper_trading_plan,
             detail="paper-trading plan path must be attached before promotion",
         ),
     )
@@ -161,12 +190,46 @@ def evaluate_promotion_gates(inputs: PromotionGateInputs) -> PromotionDecision:
             status="reject",
             reason="failed gates: " + ", ".join(failed_gate_names),
             gates=gates,
+            thresholds=asdict(thresholds),
         )
     return PromotionDecision(
         status="promote_to_paper_trading",
         reason="all promotion gates passed",
         gates=gates,
+        thresholds=asdict(thresholds),
     )
+
+
+def promotion_checklist_dict(record: ExperimentRecord) -> dict[str, object]:
+    return {
+        "model_id": record.model.model_id,
+        "model_version": record.model.version,
+        "model_type": record.model.model_type,
+        "status": record.decision.status,
+        "reason": record.decision.reason,
+        "research_git_commit": record.research_git_commit,
+        "dataset_manifest_path": record.dataset_manifest_path,
+        "dataset_manifest_version": record.dataset_manifest_version,
+        "feature_code_version": record.feature_code_version,
+        "feature_names": list(record.feature_names),
+        "train_window": asdict(record.train_window),
+        "validation_window": asdict(record.validation_window),
+        "test_window": asdict(record.test_window),
+        "cost_assumptions": asdict(record.cost_assumptions),
+        "metrics": record.metrics,
+        "thresholds": record.decision.thresholds,
+        "gates": [asdict(gate) for gate in record.decision.gates],
+        "created_at": _format_timestamp(record.created_at),
+    }
+
+
+def write_promotion_checklist(path: Path, record: ExperimentRecord) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(promotion_checklist_dict(record), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 def write_experiment_record(registry_dir: Path, record: ExperimentRecord) -> Path:

@@ -7,11 +7,14 @@ from crypto_trade_research.tracking.registry import (
     PromotionDecision,
     PromotionGateInputs,
     PromotionGateResult,
+    PromotionGateThresholds,
     TimeWindow,
     evaluate_promotion_gates,
     format_experiment_list,
     list_experiments,
+    promotion_checklist_dict,
     write_experiment_record,
+    write_promotion_checklist,
 )
 
 __all__ = [
@@ -21,9 +24,12 @@ __all__ = [
     "PromotionDecision",
     "PromotionGateInputs",
     "PromotionGateResult",
+    "PromotionGateThresholds",
     "TimeWindow",
     "evaluate_promotion_gates",
     "format_experiment_list",
     "list_experiments",
+    "promotion_checklist_dict",
     "write_experiment_record",
+    "write_promotion_checklist",
 ]

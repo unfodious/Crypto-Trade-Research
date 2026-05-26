@@ -35,9 +35,11 @@ from crypto_trade_research.tracking import (
     ExperimentRecord,
     ModelVersion,
     PromotionGateInputs,
+    PromotionGateThresholds,
     TimeWindow,
     evaluate_promotion_gates,
     write_experiment_record,
+    write_promotion_checklist,
 )
 
 
@@ -66,6 +68,7 @@ class BaselineExperimentConfig:
     initial_equity: float = 10_000
     risk_per_trade_pct: float = 0.01
     research_git_commit: str = "unknown"
+    promotion_gate_thresholds: PromotionGateThresholds = PromotionGateThresholds()
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> BaselineExperimentConfig:
@@ -74,6 +77,7 @@ class BaselineExperimentConfig:
         splits = dict(payload["splits"])
         baseline = dict(payload.get("baseline", {}))
         costs = dict(payload.get("cost_assumptions", {}))
+        promotion_gates = dict(payload.get("promotion_gates", {}))
         source_csv = payload.get("source_csv")
         dataset_manifest_path = payload.get("dataset_manifest_path")
         return cls(
@@ -116,6 +120,23 @@ class BaselineExperimentConfig:
                 notes=str(costs.get("notes", "")),
             ),
             research_git_commit=str(payload.get("research_git_commit") or _git_commit()),
+            promotion_gate_thresholds=PromotionGateThresholds(
+                min_walk_forward_average_r=float(
+                    promotion_gates.get("min_walk_forward_average_r", 0.0)
+                ),
+                min_oos_trade_count=int(promotion_gates.get("min_oos_trade_count", 10)),
+                max_drawdown_pct=float(promotion_gates.get("max_drawdown_pct", 0.0)),
+                max_drawdown_duration_bars=int(
+                    promotion_gates.get("max_drawdown_duration_bars", 0)
+                ),
+                require_leakage_checks=bool(promotion_gates.get("require_leakage_checks", True)),
+                require_stability_checks=bool(
+                    promotion_gates.get("require_stability_checks", True)
+                ),
+                require_paper_trading_plan=bool(
+                    promotion_gates.get("require_paper_trading_plan", True)
+                ),
+            ),
         )
 
 
@@ -127,6 +148,7 @@ class BaselineExperimentResult:
     baseline_report_path: Path
     baseline_markdown_path: Path
     model_artifact_path: Path
+    promotion_checklist_path: Path
     registry_record_path: Path
 
 
@@ -175,6 +197,7 @@ def run_baseline_experiment(config: BaselineExperimentConfig) -> BaselineExperim
     baseline_report_path = config.output_dir / "baseline_report.json"
     baseline_markdown_path = config.output_dir / "baseline_report.md"
     model_artifact_path = config.output_dir / "model_artifact.json"
+    promotion_checklist_path = config.output_dir / "promotion_checklist.json"
     pq.write_table(pa.Table.from_pylist(features.rows), features_path)
     pq.write_table(pa.Table.from_pylist(labels.rows), labels_path)
     _write_json(feature_manifest_path, asdict(features.manifest))
@@ -197,6 +220,7 @@ def run_baseline_experiment(config: BaselineExperimentConfig) -> BaselineExperim
         "label_manifest_path": str(label_manifest_path),
         "model_artifact_path": str(model_artifact_path),
         "model_artifact_hash": model_artifact_hash,
+        "promotion_checklist_path": str(promotion_checklist_path),
         "sample_count": len(samples),
         "split_strategy": config.split_strategy,
         "research_git_commit": config.research_git_commit,
@@ -204,9 +228,17 @@ def run_baseline_experiment(config: BaselineExperimentConfig) -> BaselineExperim
     _write_json(baseline_report_path, baseline_payload)
     baseline_markdown_path.write_text(_markdown_report(baseline_payload), encoding="utf-8")
 
+    experiment_record = _experiment_record(
+        config,
+        dataset_manifest_path,
+        feature_names,
+        baseline_payload,
+        promotion_checklist_path,
+    )
+    write_promotion_checklist(promotion_checklist_path, experiment_record)
     registry_record_path = write_experiment_record(
         config.registry_dir,
-        _experiment_record(config, dataset_manifest_path, feature_names, baseline_payload),
+        experiment_record,
     )
     return BaselineExperimentResult(
         dataset_manifest_path=dataset_manifest_path,
@@ -215,6 +247,7 @@ def run_baseline_experiment(config: BaselineExperimentConfig) -> BaselineExperim
         baseline_report_path=baseline_report_path,
         baseline_markdown_path=baseline_markdown_path,
         model_artifact_path=model_artifact_path,
+        promotion_checklist_path=promotion_checklist_path,
         registry_record_path=registry_record_path,
     )
 
@@ -401,6 +434,7 @@ def _experiment_record(
     dataset_manifest_path: Path,
     feature_names: tuple[str, ...],
     baseline_payload: dict[str, Any],
+    promotion_checklist_path: Path,
 ) -> ExperimentRecord:
     strategies = baseline_payload["strategies"]
     model_metrics = strategies["linear_probability_oos"]["metrics"]
@@ -411,13 +445,13 @@ def _experiment_record(
         rule_only_average_r=float(rule_metrics["average_r"]),
         naive_average_r=float(naive_metrics["average_r"]),
         walk_forward_average_r=float(model_metrics["average_r"]),
+        model_oos_trade_count=int(model_metrics["trade_count"]),
         max_drawdown_pct=float(model_metrics["max_drawdown_pct"]),
         max_drawdown_duration_bars=int(model_metrics["max_drawdown_duration"]),
-        max_allowed_drawdown_pct=0.0,
-        max_allowed_drawdown_duration_bars=0,
         leakage_checks_passed=True,
         stability_checks_passed=False,
         paper_trading_plan_path="",
+        thresholds=config.promotion_gate_thresholds,
     )
     return ExperimentRecord(
         model=ModelVersion(
@@ -453,6 +487,7 @@ def _experiment_record(
             "max_drawdown_duration_bars": int(model_metrics["max_drawdown_duration"]),
             "trade_count": int(model_metrics["trade_count"]),
             "artifact_hash": str(baseline_payload["metadata"]["model_artifact_hash"]),
+            "promotion_checklist_path": str(promotion_checklist_path),
         },
         walk_forward_report_path=str(Path(config.output_dir) / "baseline_report.json"),
         decision=evaluate_promotion_gates(gate_inputs),

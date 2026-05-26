@@ -43,6 +43,15 @@
     "funding_bps": 0.0,
     "notes": "CT-91 first real futures baseline: label cost_pct=0.0007 covers taker fee, spread, slippage, and zero funding for the one-day smoke window."
   },
+  "promotion_gates": {
+    "min_walk_forward_average_r": 0.0,
+    "min_oos_trade_count": 30,
+    "max_drawdown_pct": 0.08,
+    "max_drawdown_duration_bars": 240,
+    "require_leakage_checks": true,
+    "require_stability_checks": true,
+    "require_paper_trading_plan": true
+  },
   "output_dir": "data/generated/ct91_first_real_futures_baseline",
   "registry_dir": "data/generated/experiment_registry"
 }

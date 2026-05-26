@@ -21,20 +21,27 @@ The record must include:
 - fee, slippage, and funding assumptions
 - model, baseline, walk-forward, and drawdown metrics
 - walk-forward report path
-- explicit promotion or rejection decision with gate results
+- explicit promotion or rejection decision with gate results and configured thresholds
+- promotion checklist path bound to the registry metrics
 
 ## Promotion Gates
 
 A model can only be marked `promote_to_paper_trading` when all gates pass:
 
 - model average R beats rule-only and naive baselines out of sample after costs
-- walk-forward average R is positive
+- walk-forward average R meets the configured threshold
+- out-of-sample trade count meets the configured minimum
 - drawdown depth and duration are within configured limits
 - feature leakage checks pass
 - stability checks do not show a single fragile parameter optimum
 - paper-trading plan path is attached
 
-Failed gates produce a `reject` decision with reviewable reasons.
+Gate thresholds are supplied by the experiment config under `promotion_gates` and serialized into
+the registry decision. Failed gates produce a `reject` decision with reviewable reasons.
+
+Each runner execution also writes `promotion_checklist.json` beside the baseline report. The
+checklist is self-contained: model identity, commit, dataset, feature version, split windows, cost
+assumptions, metrics, thresholds, and every gate result are readable without chat context.
 
 ## Commands
 

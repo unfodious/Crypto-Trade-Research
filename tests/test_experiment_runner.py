@@ -71,6 +71,7 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     assert result.labels_path.exists()
     assert result.baseline_report_path.exists()
     assert result.model_artifact_path.exists()
+    assert result.promotion_checklist_path.exists()
     assert result.registry_record_path.exists()
 
     features = pq.read_table(result.features_path).to_pylist()
@@ -84,6 +85,7 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     assert report["metadata"]["dataset_manifest_path"] == str(result.dataset_manifest_path)
     assert report["metadata"]["model_artifact_path"] == str(result.model_artifact_path)
     assert len(report["metadata"]["model_artifact_hash"]) == 64
+    assert report["metadata"]["promotion_checklist_path"] == str(result.promotion_checklist_path)
     assert report["metadata"]["sample_count"] == 6
     assert report["splits"][0]["name"] == "train"
     assert report["strategies"]["rule_only_oos"]["sample_scope"] == "validation_test"
@@ -94,8 +96,23 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     assert record["research_git_commit"] == "unitcommit"
     assert record["dataset_manifest_path"] == str(result.dataset_manifest_path)
     assert record["metrics"]["artifact_hash"] == report["metadata"]["model_artifact_hash"]
+    assert record["metrics"]["promotion_checklist_path"] == str(result.promotion_checklist_path)
+    assert record["decision"]["thresholds"]["min_oos_trade_count"] == 10
     assert record["feature_names"]
     assert record["decision"]["status"] == "reject"
+
+    checklist = json.loads(result.promotion_checklist_path.read_text(encoding="utf-8"))
+    assert checklist["status"] == "reject"
+    assert checklist["thresholds"]["max_drawdown_pct"] == 0.0
+    assert [gate["name"] for gate in checklist["gates"]] == [
+        "beats_rule_only_and_naive_oos",
+        "walk_forward_metrics_acceptable",
+        "minimum_oos_trade_count",
+        "drawdown_within_limits",
+        "feature_leakage_checks_pass",
+        "stability_checks_pass",
+        "paper_trading_plan_exists",
+    ]
 
     loaded_artifact = load_model_artifact(
         result.model_artifact_path,

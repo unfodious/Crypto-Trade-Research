@@ -5,10 +5,12 @@ from crypto_trade_research.tracking.registry import (
     ExperimentRecord,
     ModelVersion,
     PromotionGateInputs,
+    PromotionGateThresholds,
     TimeWindow,
     evaluate_promotion_gates,
     format_experiment_list,
     list_experiments,
+    promotion_checklist_dict,
     write_experiment_record,
 )
 
@@ -19,13 +21,18 @@ def _record(decision: str = "promote_to_paper_trading") -> ExperimentRecord:
         rule_only_average_r=0.18,
         naive_average_r=0.0,
         walk_forward_average_r=0.31,
+        model_oos_trade_count=24,
         max_drawdown_pct=0.04,
         max_drawdown_duration_bars=3,
-        max_allowed_drawdown_pct=0.08,
-        max_allowed_drawdown_duration_bars=10,
         leakage_checks_passed=True,
         stability_checks_passed=True,
         paper_trading_plan_path="docs/paper-trading-plan.md",
+        thresholds=PromotionGateThresholds(
+            min_walk_forward_average_r=0.05,
+            min_oos_trade_count=10,
+            max_drawdown_pct=0.08,
+            max_drawdown_duration_bars=10,
+        ),
     )
     decision_result = evaluate_promotion_gates(gate_inputs)
     if decision == "reject":
@@ -35,13 +42,13 @@ def _record(decision: str = "promote_to_paper_trading") -> ExperimentRecord:
                 rule_only_average_r=0.18,
                 naive_average_r=0.0,
                 walk_forward_average_r=-0.01,
+                model_oos_trade_count=2,
                 max_drawdown_pct=0.12,
                 max_drawdown_duration_bars=15,
-                max_allowed_drawdown_pct=0.08,
-                max_allowed_drawdown_duration_bars=10,
                 leakage_checks_passed=True,
                 stability_checks_passed=False,
                 paper_trading_plan_path="",
+                thresholds=gate_inputs.thresholds,
             )
         )
 
@@ -106,13 +113,18 @@ def test_promotion_gates_reject_fragile_or_underperforming_model() -> None:
             rule_only_average_r=0.18,
             naive_average_r=0.0,
             walk_forward_average_r=-0.01,
+            model_oos_trade_count=2,
             max_drawdown_pct=0.12,
             max_drawdown_duration_bars=15,
-            max_allowed_drawdown_pct=0.08,
-            max_allowed_drawdown_duration_bars=10,
             leakage_checks_passed=True,
             stability_checks_passed=False,
             paper_trading_plan_path="",
+            thresholds=PromotionGateThresholds(
+                min_walk_forward_average_r=0.05,
+                min_oos_trade_count=10,
+                max_drawdown_pct=0.08,
+                max_drawdown_duration_bars=10,
+            ),
         )
     )
 
@@ -120,10 +132,59 @@ def test_promotion_gates_reject_fragile_or_underperforming_model() -> None:
     assert [gate.name for gate in decision.gates if not gate.passed] == [
         "beats_rule_only_and_naive_oos",
         "walk_forward_metrics_acceptable",
+        "minimum_oos_trade_count",
         "drawdown_within_limits",
         "stability_checks_pass",
         "paper_trading_plan_exists",
     ]
+    assert decision.thresholds["min_oos_trade_count"] == 10
+    assert decision.thresholds["max_drawdown_pct"] == 0.08
+
+
+def test_promotion_gates_promote_only_when_every_configured_gate_passes() -> None:
+    decision = evaluate_promotion_gates(
+        PromotionGateInputs(
+            model_average_r=0.42,
+            rule_only_average_r=0.18,
+            naive_average_r=0.0,
+            walk_forward_average_r=0.07,
+            model_oos_trade_count=12,
+            max_drawdown_pct=0.04,
+            max_drawdown_duration_bars=3,
+            leakage_checks_passed=True,
+            stability_checks_passed=True,
+            paper_trading_plan_path="docs/paper-trading-plan.md",
+            thresholds=PromotionGateThresholds(
+                min_walk_forward_average_r=0.05,
+                min_oos_trade_count=10,
+                max_drawdown_pct=0.08,
+                max_drawdown_duration_bars=10,
+            ),
+        )
+    )
+
+    assert decision.status == "promote_to_paper_trading"
+    assert all(gate.passed for gate in decision.gates)
+    assert decision.thresholds == {
+        "min_walk_forward_average_r": 0.05,
+        "min_oos_trade_count": 10,
+        "max_drawdown_pct": 0.08,
+        "max_drawdown_duration_bars": 10,
+        "require_leakage_checks": True,
+        "require_stability_checks": True,
+        "require_paper_trading_plan": True,
+    }
+
+
+def test_promotion_checklist_is_self_contained_for_registry_records() -> None:
+    record = _record()
+    checklist = promotion_checklist_dict(record)
+
+    assert checklist["model_id"] == "linear_probability_threshold"
+    assert checklist["status"] == "promote_to_paper_trading"
+    assert checklist["thresholds"]["min_oos_trade_count"] == 10
+    assert checklist["gates"][0]["name"] == "beats_rule_only_and_naive_oos"
+    assert checklist["metrics"]["walk_forward_average_r"] == 0.31
 
 
 def test_list_command_highlights_promoted_and_rejected_statuses(tmp_path) -> None:
