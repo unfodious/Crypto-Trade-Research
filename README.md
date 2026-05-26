@@ -52,6 +52,22 @@ docker run --rm -v "$PWD":/app -w /app python:3.12-slim \
   sh -lc 'python -m pip install -e ".[dev]" && python -m pytest && ruff check . && ruff format --check .'
 ```
 
+For repeated research runs, build the reusable local QA image once:
+
+```sh
+make docker-qa-image
+make docker-qa
+```
+
+Then run targeted checks or experiment matrices without paying the cold `apt`/`pip` setup cost:
+
+```sh
+docker run --rm -v "$PWD":/app -w /app crypto-trade-research-qa:py312 \
+  python -m pytest tests/test_baselines.py
+docker run --rm -v "$PWD":/app -w /app crypto-trade-research-qa:py312 \
+  crypto-trade-run-batch-experiments --matrix configs/sample-batch-experiments.json
+```
+
 ## Repository Map
 
 - `schemas/`: canonical dataset schema helpers and fixture validation.

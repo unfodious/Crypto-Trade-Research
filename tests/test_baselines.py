@@ -2,9 +2,11 @@ from datetime import UTC, datetime
 
 from scripts.generate_sample_baselines import _markdown_report
 
+from crypto_trade_research.backtest import BacktestConfig
 from crypto_trade_research.models.baselines import (
     BaselineConfig,
     ModelSample,
+    _calibrate_probability_threshold,
     train_and_evaluate_baselines,
 )
 
@@ -261,6 +263,43 @@ def test_multifeature_ridge_reports_top_n_ranking_and_regime_slices() -> None:
     assert "risk_on_score_band" in regime
     assert "volatility_bucket" in regime
     assert any(row["bucket"] != "missing" for row in regime["btc_eth_trend_regime"])
+
+
+def test_validation_threshold_calibration_ignores_zero_trade_thresholds() -> None:
+    class ProbabilityFeatureModel:
+        def probability(self, sample: ModelSample) -> float:
+            return sample.features["probability"]
+
+    result = _calibrate_probability_threshold(
+        ProbabilityFeatureModel(),
+        [
+            ModelSample(
+                decision_time=_ts(1),
+                symbol="BTCUSDT",
+                timeframe="1d",
+                side="long",
+                features={"probability": 0.5},
+                target_before_stop=False,
+                realized_r_after_costs=-1.0,
+            ),
+            ModelSample(
+                decision_time=_ts(2),
+                symbol="ETHUSDT",
+                timeframe="1d",
+                side="long",
+                features={"probability": 0.5},
+                target_before_stop=False,
+                realized_r_after_costs=-1.0,
+            ),
+        ],
+        BacktestConfig(initial_equity=10_000, risk_per_trade_pct=0.01),
+        fallback=0.55,
+        candidates=(0.4, 0.6),
+    )
+
+    assert result["selected_threshold"] == 0.4
+    assert result["selected_source"] == "validation"
+    assert [row["selected"] for row in result["sweep"]] == [True, False]
 
 
 def test_baseline_report_rejects_in_sample_only_performance() -> None:

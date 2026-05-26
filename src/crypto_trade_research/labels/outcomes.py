@@ -73,6 +73,48 @@ def generate_trade_labels(
     )
 
 
+def generate_trade_labels_for_keys(
+    rows: Sequence[dict[str, object]],
+    config: LabelConfig,
+    include_keys: set[tuple[object, ...]],
+) -> LabelFrame:
+    """Generate trade labels only for requested market-row keys."""
+
+    _validate_config(config)
+    if not include_keys:
+        return LabelFrame(
+            rows=[],
+            manifest=LabelManifest(
+                schema_version=SCHEMA_VERSION,
+                label_set_version=config.label_set_version,
+                generator_name=GENERATOR_NAME,
+                row_count=0,
+                horizon_bars=config.horizon_bars,
+                side=config.side,
+                labels=_label_specs(config.horizon_bars),
+            ),
+        )
+
+    sorted_rows = sorted(rows, key=_sort_key)
+    label_rows: list[dict[str, object]] = []
+    for group_rows in _group_rows(sorted_rows):
+        for index, row in enumerate(group_rows):
+            if _row_label_key(row) in include_keys:
+                label_rows.append(_build_label_row(group_rows, index, config))
+    return LabelFrame(
+        rows=label_rows,
+        manifest=LabelManifest(
+            schema_version=SCHEMA_VERSION,
+            label_set_version=config.label_set_version,
+            generator_name=GENERATOR_NAME,
+            row_count=len(label_rows),
+            horizon_bars=config.horizon_bars,
+            side=config.side,
+            labels=_label_specs(config.horizon_bars),
+        ),
+    )
+
+
 def _build_label_row(
     rows: Sequence[dict[str, object]],
     index: int,
@@ -313,6 +355,16 @@ def _group_key(row: dict[str, object]) -> tuple[object, ...]:
         row["market_type"],
         row["symbol"],
         row["timeframe"],
+    )
+
+
+def _row_label_key(row: dict[str, object]) -> tuple[object, ...]:
+    return (
+        row["venue"],
+        row["market_type"],
+        row["symbol"],
+        row["timeframe"],
+        _as_datetime(row["close_time"]),
     )
 
 

@@ -15,6 +15,7 @@ from crypto_trade_research.experiments.runner import (
     BaselineExperimentConfig,
     BaselineExperimentInputs,
     BaselineExperimentResult,
+    build_baseline_candidate_labels,
     build_baseline_features,
     build_baseline_labels,
     load_baseline_source_rows,
@@ -103,11 +104,23 @@ class _ExperimentInputCache:
             features = build_baseline_features(source.rows, config)
             self._features[feature_key] = features
 
-        label_key = (*source_key, *_label_cache_key(config))
-        labels = self._labels.get(label_key)
-        if labels is None:
-            labels = build_baseline_labels(source.rows, config)
-            self._labels[label_key] = labels
+        if config.label_generation_mode == "candidate_only":
+            label_key = (
+                *feature_key,
+                *_label_cache_key(config),
+                config.decision_feature,
+                _candidate_setup_cache_key(config),
+            )
+            labels = self._labels.get(label_key)
+            if labels is None:
+                labels = build_baseline_candidate_labels(source.rows, features.rows, config)
+                self._labels[label_key] = labels
+        else:
+            label_key = (*source_key, *_label_cache_key(config))
+            labels = self._labels.get(label_key)
+            if labels is None:
+                labels = build_baseline_labels(source.rows, config)
+                self._labels[label_key] = labels
 
         return BaselineExperimentInputs(
             dataset_manifest_path=source.dataset_manifest_path,
@@ -291,6 +304,16 @@ def _label_cache_key(config: BaselineExperimentConfig) -> tuple[object, ...]:
         label.cost_pct,
         label.flat_threshold_pct,
         label.target_stop_tie_breaker,
+    )
+
+
+def _candidate_setup_cache_key(config: BaselineExperimentConfig) -> tuple[object, ...]:
+    setup = config.candidate_setup
+    if setup is None:
+        return ("all_samples", ())
+    return (
+        setup.name,
+        tuple((item.feature, item.operator, item.value) for item in setup.filters),
     )
 
 

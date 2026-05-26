@@ -6,6 +6,7 @@ from crypto_trade_research.labels.outcomes import (
     LabelManifest,
     LabelSpec,
     generate_trade_labels,
+    generate_trade_labels_for_keys,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "LabelManifest",
     "LabelSpec",
     "generate_trade_labels",
+    "generate_trade_labels_for_keys",
 ]

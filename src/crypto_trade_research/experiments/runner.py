@@ -19,7 +19,12 @@ from crypto_trade_research.data.ingestion import (
     generate_market_dataset,
 )
 from crypto_trade_research.features import FeatureConfig, FeatureFrame, generate_ohlcv_features
-from crypto_trade_research.labels import LabelConfig, LabelFrame, generate_trade_labels
+from crypto_trade_research.labels import (
+    LabelConfig,
+    LabelFrame,
+    generate_trade_labels,
+    generate_trade_labels_for_keys,
+)
 from crypto_trade_research.models import (
     BaselineConfig,
     FeatureSchema,
@@ -73,6 +78,7 @@ class BaselineExperimentConfig:
     max_trades_per_symbol: int | None = None
     max_trades_per_decision_time: int | None = None
     loss_cooldown_signals: int = 0
+    label_generation_mode: str = "full"
     probability_threshold_candidates: tuple[float, ...] = (
         0.40,
         0.45,
@@ -93,6 +99,7 @@ class BaselineExperimentConfig:
         costs = dict(payload.get("cost_assumptions", {}))
         promotion_gates = dict(payload.get("promotion_gates", {}))
         risk_controls = dict(payload.get("risk_controls", {}))
+        memory = dict(payload.get("memory", {}))
         source_csv = payload.get("source_csv")
         dataset_manifest_path = payload.get("dataset_manifest_path")
         return cls(
@@ -168,6 +175,7 @@ class BaselineExperimentConfig:
                 risk_controls.get("max_trades_per_decision_time")
             ),
             loss_cooldown_signals=int(risk_controls.get("loss_cooldown_signals", 0)),
+            label_generation_mode=str(memory.get("label_generation_mode", "full")),
         )
 
 
@@ -249,17 +257,37 @@ def build_baseline_labels(
     return labels
 
 
+def build_baseline_candidate_labels(
+    source_rows: list[dict[str, object]],
+    feature_rows: list[dict[str, object]],
+    config: BaselineExperimentConfig,
+) -> LabelFrame:
+    """Build supervised labels only for predeclared candidate feature rows."""
+
+    _log_progress(config, "building candidate-only labels")
+    candidate_keys = _candidate_feature_keys(feature_rows, config)
+    labels = generate_trade_labels_for_keys(source_rows, config.label_config, candidate_keys)
+    _log_progress(config, f"built {len(labels.rows)} candidate-only label rows")
+    return labels
+
+
 def prepare_baseline_experiment_inputs(
     config: BaselineExperimentConfig,
 ) -> BaselineExperimentInputs:
     """Load source rows and generate reusable feature/label frames."""
 
     dataset_manifest_path, source_rows = load_baseline_source_rows(config)
+    features = build_baseline_features(source_rows, config)
+    labels = (
+        build_baseline_candidate_labels(source_rows, features.rows, config)
+        if config.label_generation_mode == "candidate_only"
+        else build_baseline_labels(source_rows, config)
+    )
     return BaselineExperimentInputs(
         dataset_manifest_path=dataset_manifest_path,
         source_rows=source_rows,
-        features=build_baseline_features(source_rows, config),
-        labels=build_baseline_labels(source_rows, config),
+        features=features,
+        labels=labels,
     )
 
 
@@ -311,9 +339,18 @@ def run_baseline_experiment(
     baseline_markdown_path = config.output_dir / "baseline_report.md"
     model_artifact_path = config.output_dir / "model_artifact.json"
     promotion_checklist_path = config.output_dir / "promotion_checklist.json"
-    pq.write_table(pa.Table.from_pylist(features.rows), features_path)
+    feature_artifact_rows = (
+        _candidate_feature_rows(features.rows, config)
+        if config.label_generation_mode == "candidate_only"
+        else features.rows
+    )
+    pq.write_table(pa.Table.from_pylist(feature_artifact_rows), features_path)
     pq.write_table(pa.Table.from_pylist(labels.rows), labels_path)
-    _write_json(feature_manifest_path, asdict(features.manifest))
+    feature_manifest_payload = asdict(features.manifest)
+    if config.label_generation_mode == "candidate_only":
+        feature_manifest_payload["row_count"] = len(feature_artifact_rows)
+        feature_manifest_payload["artifact_scope"] = "candidate_only"
+    _write_json(feature_manifest_path, feature_manifest_payload)
     _write_json(label_manifest_path, asdict(labels.manifest))
 
     baseline_payload = baseline_report.to_report_dict()
@@ -338,6 +375,8 @@ def run_baseline_experiment(
         "candidate_setup": _candidate_setup_payload(config.candidate_setup),
         "sample_count": len(samples),
         "split_strategy": config.split_strategy,
+        "label_generation_mode": config.label_generation_mode,
+        "feature_artifact_row_count": len(feature_artifact_rows),
         "research_git_commit": config.research_git_commit,
         "risk_controls": _risk_controls_payload(config),
     }
@@ -384,6 +423,10 @@ def _validate_config(config: BaselineExperimentConfig) -> None:
         raise ValueError("probability_threshold_candidates must be between 0 and 1")
     if any(top_n <= 0 for top_n in config.ranking_top_n_values):
         raise ValueError("ranking_top_n_values must be positive")
+    if config.label_generation_mode not in {"full", "candidate_only"}:
+        raise ValueError("label_generation_mode must be full or candidate_only")
+    if config.label_generation_mode == "candidate_only" and config.candidate_setup is None:
+        raise ValueError("candidate_only label generation requires candidate_setup")
 
 
 def _log_progress(config: BaselineExperimentConfig, message: str) -> None:
@@ -486,6 +529,43 @@ def _build_samples(
             )
         )
     return samples
+
+
+def _candidate_feature_keys(
+    feature_rows: list[dict[str, object]],
+    config: BaselineExperimentConfig,
+) -> set[tuple[object, ...]]:
+    return {
+        _sample_key(feature_row) for feature_row in _candidate_feature_rows(feature_rows, config)
+    }
+
+
+def _candidate_feature_rows(
+    feature_rows: list[dict[str, object]],
+    config: BaselineExperimentConfig,
+) -> list[dict[str, object]]:
+    keys: set[tuple[object, ...]] = set()
+    rows: list[dict[str, object]] = []
+    for feature_row in feature_rows:
+        if feature_row.get(config.decision_feature) is None:
+            continue
+        if config.candidate_setup is not None:
+            feature_values = {
+                name: float(value)
+                for name, value in feature_row.items()
+                if isinstance(value, int | float) and not isinstance(value, bool)
+            }
+            if not all(
+                _matches_filter(feature_values, condition)
+                for condition in config.candidate_setup.filters
+            ):
+                continue
+        key = _sample_key(feature_row)
+        if key in keys:
+            continue
+        keys.add(key)
+        rows.append(feature_row)
+    return rows
 
 
 def _apply_candidate_setup(

@@ -6,6 +6,7 @@ from crypto_trade_research.features import FeatureConfig, generate_ohlcv_feature
 from crypto_trade_research.labels.outcomes import (
     LabelConfig,
     generate_trade_labels,
+    generate_trade_labels_for_keys,
 )
 
 
@@ -185,6 +186,32 @@ def test_label_rows_join_features_without_leaking_label_fields() -> None:
     assert "target_before_stop" not in features.rows[0]
     assert labels.rows[0]["directional_class"] == "flat"
     assert labels.rows[-1]["no_trade_reason"] == "insufficient_future_window"
+
+
+def test_sparse_label_generation_only_builds_requested_keys() -> None:
+    bars = [
+        _bar(1, 100, 101, 99, 100),
+        _bar(2, 100, 102, 99, 101),
+        _bar(3, 101, 103, 100, 102),
+    ]
+    frame = generate_trade_labels_for_keys(
+        bars,
+        LabelConfig(
+            label_set_version="unit.labels.v1",
+            horizon_bars=1,
+            side="long",
+            stop_loss_pct=0.02,
+            target_pct=0.03,
+            cost_pct=0.001,
+            flat_threshold_pct=0.001,
+        ),
+        {
+            ("binance", "um_futures", "BTCUSDT", "1m", _ts(2)),
+        },
+    )
+
+    assert frame.manifest.row_count == 1
+    assert [row["decision_time"] for row in frame.rows] == [_ts(2)]
 
 
 def test_label_future_windows_do_not_cross_symbol_boundaries() -> None:

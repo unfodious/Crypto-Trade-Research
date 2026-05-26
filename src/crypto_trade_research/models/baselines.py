@@ -430,14 +430,21 @@ def _calibrate_probability_threshold(
                 "selected": False,
             }
         )
-    best_average_r, best_trade_count, best_threshold = max(
-        scored,
-        key=lambda item: (item[0], item[1], item[2]),
-    )
-    if best_trade_count == 0 or math.isnan(best_average_r):
+    scored_with_trades = [item for item in scored if item[1] > 0]
+    if not scored_with_trades:
         return {
             "selected_threshold": fallback,
             "selected_source": "fallback_no_validation_trades",
+            "sweep": sweep,
+        }
+    best_average_r, best_trade_count, best_threshold = max(
+        scored_with_trades,
+        key=lambda item: (item[0], item[1], item[2]),
+    )
+    if math.isnan(best_average_r):
+        return {
+            "selected_threshold": fallback,
+            "selected_source": "fallback_nan_validation_score",
             "sweep": sweep,
         }
     for row in sweep:

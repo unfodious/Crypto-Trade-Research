@@ -1,0 +1,9 @@
+.git
+.pytest_cache
+.ruff_cache
+artifacts
+data
+datasets
+mlruns
+models
+reports

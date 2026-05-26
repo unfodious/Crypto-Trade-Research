@@ -1,4 +1,6 @@
-.PHONY: install test lint format check sample-dataset sample-features sample-labels sample-backtest sample-baselines sample-meta-strategy sample-experiment-registry sample-baseline-experiment sample-batch-experiments
+QA_IMAGE ?= crypto-trade-research-qa:py312
+
+.PHONY: install test lint format check docker-qa-image docker-test docker-lint docker-format-check docker-qa sample-dataset sample-features sample-labels sample-backtest sample-baselines sample-meta-strategy sample-experiment-registry sample-baseline-experiment sample-batch-experiments
 
 install:
 	uv sync --extra dev --extra research
@@ -13,6 +15,21 @@ format:
 	uv run ruff format .
 
 check: lint test
+
+docker-qa-image:
+	docker build -f Dockerfile.research-qa -t $(QA_IMAGE) .
+
+docker-test:
+	docker run --rm -v "$$PWD":/app -w /app $(QA_IMAGE) python -m pytest
+
+docker-lint:
+	docker run --rm -v "$$PWD":/app -w /app $(QA_IMAGE) ruff check .
+
+docker-format-check:
+	docker run --rm -v "$$PWD":/app -w /app $(QA_IMAGE) ruff format --check .
+
+docker-qa:
+	docker run --rm -v "$$PWD":/app -w /app $(QA_IMAGE) sh -lc 'python -m pytest && ruff check . && ruff format --check .'
 
 sample-dataset:
 	uv run crypto-trade-ingest-market-dataset \
