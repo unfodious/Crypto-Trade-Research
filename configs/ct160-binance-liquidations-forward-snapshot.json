@@ -1,0 +1,23 @@
+{
+  "dataset_prefix": "ct160_binance_liquidations_forward",
+  "generator_version": "ct160.binance_liquidations_forward.v1",
+  "output_dir": "data/generated",
+  "stream_url": "wss://fstream.binance.com/market/ws/!forceOrder@arr",
+  "capture_seconds": 70,
+  "connect_timeout_seconds": 15,
+  "message_timeout_seconds": 5,
+  "symbols": [
+    "SOLUSDT",
+    "SUIUSDT",
+    "AVAXUSDT",
+    "ADAUSDT",
+    "ICPUSDT",
+    "ATOMUSDT",
+    "XRPUSDT",
+    "TONUSDT",
+    "DOTUSDT",
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "notes": "Research-only Binance USD-M all-market force liquidation forward snapshot. Public websocket reads only; no live trading or order placement."
+}

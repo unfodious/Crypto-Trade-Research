@@ -104,6 +104,20 @@ def test_build_research_stream_health_report_summarizes_active_streams(tmp_path:
             "warnings": [],
         },
     )
+    _write_json(
+        tmp_path / "data/generated/ct160_binance_liquidations_forward/liquidation_run.json",
+        {
+            "latest_generated_at": "2026-05-27T11:01:20Z",
+            "capture_started_at": "2026-05-27T11:01:20Z",
+            "capture_ended_at": "2026-05-27T11:02:30Z",
+            "generator_version": "ct160.binance_liquidations_forward.v1",
+            "row_count": 0,
+            "event_count_total": 0,
+            "event_count_filtered_out": 0,
+            "symbols": ["BTCUSDT", "ETHUSDT"],
+            "warnings": [],
+        },
+    )
 
     report = build_research_stream_health_report(root=tmp_path, include_systemd=False)
 
@@ -119,6 +133,8 @@ def test_build_research_stream_health_report_summarizes_active_streams(tmp_path:
     assert streams["ct151_binance_crowding"]["symbol_count"] == 2
     assert streams["ct158_binance_order_book"]["row_count"] == 451
     assert streams["ct158_binance_order_book"]["level_row_count"] == 440
+    assert streams["ct160_binance_liquidations"]["row_count"] == 0
+    assert streams["ct160_binance_liquidations"]["event_count_total"] == 0
 
 
 def test_build_research_stream_health_report_warns_on_missing_files_and_bad_crowding_count(

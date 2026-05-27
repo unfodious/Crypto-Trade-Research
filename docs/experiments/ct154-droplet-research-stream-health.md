@@ -14,7 +14,8 @@ Added a unified research-only health summary command for the active CT-113 dropl
 - CT-156 / CT-157 high-beta+DOT shadow forward paper;
 - CT-149 / CT-150 Hyperliquid whale watchlist;
 - CT-151 / CT-152 / CT-153 Binance crowding snapshots;
-- CT-158 / CT-159 Binance order-book depth snapshots.
+- CT-158 / CT-159 Binance order-book depth snapshots;
+- CT-160 / CT-161 Binance force-liquidation snapshots.
 
 The command reads existing generated JSON artifacts and, when available, systemd unit state. It does
 not submit orders, modify collectors, change leverage, change stops, or write runtime trading state.
@@ -53,7 +54,9 @@ Important stream fields:
 - CT-151/153: latest generated time, generator version, period, symbol count, row count, and source
   warnings;
 - CT-158/159: latest generated time, generator version, depth limit, symbol count, summary row
-  count, level row count, total row count, and source warnings.
+  count, level row count, total row count, and source warnings;
+- CT-160/161: latest generated time, capture window, symbol count, liquidation row count, total
+  source event count, filtered event count, and source warnings.
 
 ## Manual Smoke Result
 
@@ -68,6 +71,7 @@ Local artifact-only run after CT-153:
 | CT-149 position count | `0` |
 | CT-151/153 row count | `55` |
 | CT-158/159 row count | `451` |
+| CT-160/161 row count | `0+` |
 
 The one source warning is expected while the watched Hyperliquid wallet has no open perp position.
 
@@ -76,6 +80,6 @@ Droplet run after CT-158 deploy also returned `overall_status=ok`, `ct158` servi
 
 ## Use In Monitoring
 
-Use this command in CT-146, CT-150, CT-152, CT-157, and CT-159 checks before deeper inspection. The
-command is only a health/evidence summarizer; CT-113 still requires separate forward paper evidence
-before any working model claim.
+Use this command in CT-146, CT-150, CT-152, CT-157, CT-159, and CT-161 checks before deeper
+inspection. The command is only a health/evidence summarizer; CT-113 still requires separate forward
+paper evidence before any working model claim.

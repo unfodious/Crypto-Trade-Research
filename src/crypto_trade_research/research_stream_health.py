@@ -29,6 +29,7 @@ def build_research_stream_health_report(
         "ct149_whale_watchlist": _build_ct149_summary(root, include_systemd, reader),
         "ct151_binance_crowding": _build_ct151_summary(root, include_systemd, reader),
         "ct158_binance_order_book": _build_ct158_summary(root, include_systemd, reader),
+        "ct160_binance_liquidations": _build_ct160_summary(root, include_systemd, reader),
     }
     health_warnings = [
         warning
@@ -226,6 +227,40 @@ def _build_ct158_summary(
     }
     if stream["row_count"] != 451:
         stream["health_warnings"].append("expected CT-158 healthy row_count=451")
+    _add_missing_file_warnings(stream, run_path)
+    return stream
+
+
+def _build_ct160_summary(
+    root: Path,
+    include_systemd: bool,
+    systemd_reader: SystemdReader,
+) -> dict[str, object]:
+    run_path = root / "data/generated/ct160_binance_liquidations_forward/liquidation_run.json"
+    run = _read_json(run_path)
+    stream = {
+        "issue_id": "CT-161",
+        "source_issue_id": "CT-160",
+        "service_unit": "ct160-binance-liquidation-snapshot.service",
+        "timer_unit": "ct160-binance-liquidation-snapshot.timer",
+        "liquidation_run_path": str(run_path),
+        "service": _unit_summary(
+            "ct160-binance-liquidation-snapshot.service", include_systemd, systemd_reader
+        ),
+        "timer": _unit_summary(
+            "ct160-binance-liquidation-snapshot.timer", include_systemd, systemd_reader
+        ),
+        "latest_generated_at": _text(run.get("latest_generated_at")),
+        "capture_started_at": _text(run.get("capture_started_at")),
+        "capture_ended_at": _text(run.get("capture_ended_at")),
+        "generator_version": _text(run.get("generator_version")),
+        "row_count": _int(run.get("row_count")),
+        "event_count_total": _int(run.get("event_count_total")),
+        "event_count_filtered_out": _int(run.get("event_count_filtered_out")),
+        "symbol_count": len(_nested_list(run, ("symbols",))),
+        "source_warnings": list(_nested_list(run, ("warnings",))),
+        "health_warnings": [],
+    }
     _add_missing_file_warnings(stream, run_path)
     return stream
 
