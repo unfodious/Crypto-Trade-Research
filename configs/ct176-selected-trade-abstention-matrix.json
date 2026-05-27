@@ -1,0 +1,146 @@
+{
+  "report_name": "ct176_selected_trade_abstention_matrix",
+  "issue_id": "CT-176",
+  "epic_id": "CT-113",
+  "output_json_path": "data/generated/ct176_selected_trade_abstention_matrix/report.json",
+  "output_markdown_path": "data/generated/ct176_selected_trade_abstention_matrix/report.md",
+  "windows": [
+    {
+      "name": "2024H2",
+      "replay_report_path": "data/generated/ct174_2024h2_holdout_base_replay/replay_report.json",
+      "feature_rows_path": "data/generated/ct174_2024h2_holdout_feature_cache/features/d2e8b1cf8493f07e2712908dff1394cc9816713565dfe44689f9cc44da07e22e/rows.parquet"
+    },
+    {
+      "name": "2025H1",
+      "replay_report_path": "data/generated/ct172_pre_july_2025_holdout_replay/replay_report.json",
+      "feature_rows_path": "data/generated/ct172_pre_july_2025_holdout_replay/feature_cache/features/6741dfa00652fa9857f49e5d91306fccb437ee59409bd7aa2c282d1872e8ec78/rows.parquet"
+    },
+    {
+      "name": "2025JulNov",
+      "replay_report_path": "data/generated/ct169_older_holdout_replay/replay_report.json",
+      "feature_rows_path": "data/generated/ct169_older_holdout_replay/feature_cache/features/e8053ef3b26fd90686764c865c41066ed90ceb3e2d8766b61dc96df8d38bdb72/rows.parquet"
+    }
+  ],
+  "rules": [
+    {
+      "name": "ct175_strict_eth_deleveraging",
+      "filters": [
+        {
+          "feature": "eth_trend_above_ma_20",
+          "operator": "<=",
+          "value": 0
+        },
+        {
+          "feature": "mtf_5m_eth_trend_above_ma_20",
+          "operator": "<=",
+          "value": 0
+        },
+        {
+          "feature": "mtf_15m_eth_trend_above_ma_20",
+          "operator": "<=",
+          "value": 0
+        },
+        {
+          "feature": "mtf_15m_eth_return_1",
+          "operator": "<",
+          "value": 0
+        },
+        {
+          "feature": "mtf_15m_market_positive_return_fraction",
+          "operator": "<",
+          "value": 0.5
+        }
+      ]
+    },
+    {
+      "name": "eth_15m_down_breadth_weak",
+      "filters": [
+        {
+          "feature": "mtf_15m_eth_return_1",
+          "operator": "<",
+          "value": 0
+        },
+        {
+          "feature": "mtf_15m_market_positive_return_fraction",
+          "operator": "<",
+          "value": 0.5
+        }
+      ]
+    },
+    {
+      "name": "eth_15m_trend_down_breadth_weak",
+      "filters": [
+        {
+          "feature": "mtf_15m_eth_trend_above_ma_20",
+          "operator": "<=",
+          "value": 0
+        },
+        {
+          "feature": "mtf_15m_market_positive_return_fraction",
+          "operator": "<",
+          "value": 0.5
+        }
+      ]
+    },
+    {
+      "name": "btc_eth_15m_down_breadth_weak",
+      "filters": [
+        {
+          "feature": "mtf_15m_btc_return_1",
+          "operator": "<",
+          "value": 0
+        },
+        {
+          "feature": "mtf_15m_eth_return_1",
+          "operator": "<",
+          "value": 0
+        },
+        {
+          "feature": "mtf_15m_market_positive_return_fraction",
+          "operator": "<",
+          "value": 0.5
+        }
+      ]
+    },
+    {
+      "name": "riskon_15m_weak",
+      "filters": [
+        {
+          "feature": "mtf_15m_risk_on_score_20",
+          "operator": "<",
+          "value": 0.35
+        }
+      ]
+    },
+    {
+      "name": "breadth_15m_weak",
+      "filters": [
+        {
+          "feature": "mtf_15m_market_positive_return_fraction",
+          "operator": "<",
+          "value": 0.4
+        }
+      ]
+    },
+    {
+      "name": "eth_5m15m_down_riskon_weak",
+      "filters": [
+        {
+          "feature": "mtf_5m_eth_return_1",
+          "operator": "<",
+          "value": 0
+        },
+        {
+          "feature": "mtf_15m_eth_return_1",
+          "operator": "<",
+          "value": 0
+        },
+        {
+          "feature": "mtf_15m_risk_on_score_20",
+          "operator": "<",
+          "value": 0.45
+        }
+      ]
+    }
+  ]
+}
