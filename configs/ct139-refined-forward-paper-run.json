@@ -1,0 +1,29 @@
+{
+  "run_name": "ct139_refined_negative_funding_forward_paper",
+  "output_dir": "data/generated/ct139_refined_negative_funding_forward_paper",
+  "issue_id": "CT-139",
+  "epic_id": "CT-113",
+  "pack_manifest_path": "data/generated/ct139_refined_negative_funding_paper_pack/pack_manifest.json",
+  "symbols": [
+    "SOLUSDT",
+    "SUIUSDT",
+    "AVAXUSDT",
+    "ADAUSDT",
+    "ICPUSDT",
+    "ATOMUSDT",
+    "XRPUSDT",
+    "TONUSDT",
+    "DOTUSDT",
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "lookback_minutes": 420,
+  "funding_lookback_hours": 200,
+  "feature": {
+    "feature_set_version": "features.ct138.regime-symbol-refinement.v1",
+    "rolling_window": 20,
+    "higher_timeframes": ["5m", "15m"]
+  },
+  "request_sleep_seconds": 0.05,
+  "mode": "forward_paper"
+}
