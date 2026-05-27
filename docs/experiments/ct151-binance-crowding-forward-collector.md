@@ -80,6 +80,30 @@ Result:
 
 The row count is expected: `11` symbols times `3` source tables.
 
+## Droplet Deployment
+
+Installed on `Paper-trading-test` (`209.38.188.101`):
+
+- service: `ct151-binance-crowding-snapshot.service`
+- timer: `ct151-binance-crowding-snapshot.timer`
+- schedule: every `5` minutes via `OnUnitActiveSec=5min`, with `20s` randomized delay
+- path: `/opt/crypto-trade-research`
+
+First systemd-managed run:
+
+| Field | Value |
+| --- | ---: |
+| latest generated at | `2026-05-27T10:45:17Z` |
+| row count | `33` |
+| symbols | `11` |
+| warnings | `0` |
+| service status | `0/SUCCESS` |
+
+Observed generated size after the first run:
+
+- latest timestamped snapshot directory: about `32K`;
+- summary directory: about `8K`.
+
 ## Safety Boundary
 
 Research-only public REST reads:
