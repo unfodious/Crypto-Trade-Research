@@ -154,6 +154,46 @@ run only the lightweight fresh forward-paper collector:
 - copied `pack_manifest.json` and `model_artifact.json`;
 - `systemd` hourly timer running `scripts/run_ct145_forward_paper_once.sh`.
 
+## Droplet Deployment
+
+Deployment target:
+
+- host: `209.38.188.101`
+- path: `/opt/crypto-trade-research`
+- timer: `ct145-forward-paper.timer`
+- service: `ct145-forward-paper.service`
+- schedule: hourly, persistent, with up to `30s` randomized delay
+- swap: `1GB` `/swapfile`
+
+First systemd-managed run on the droplet completed successfully:
+
+| Field | Value |
+| --- | ---: |
+| created at | `2026-05-27T09:28:58Z` |
+| decision time | `2026-05-27T09:28:00Z` |
+| candle rows | `4,631` |
+| funding rows | `300` |
+| latest feature rows | `11` |
+| candidate count | `0` |
+| signal count | `0` |
+| paper takes | `0` |
+| cumulative trades | `0` |
+| open trades | `0` |
+| closed trades | `0` |
+| monitoring status | `gate_failed` |
+
+The no-trade result is valid for a fresh forward tick. It means the current public market snapshot
+did not pass the entry filters; it is not a rejection of the candidate.
+
+Observed droplet headroom after installation and the first service run:
+
+- memory available: about `298MiB`;
+- swap used: about `5MiB` of `1GB`;
+- root disk used: about `3.2GB` of `8.7GB`.
+
+Deployment note: avoid broad `models/` excludes when syncing the research package. The package source
+contains `src/crypto_trade_research/models/`, which is required by the paper runner.
+
 ## Safety Boundary
 
 Research-only:
