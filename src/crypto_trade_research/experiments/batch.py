@@ -518,7 +518,26 @@ def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
 def _write_parquet_atomic(path: Path, rows: list[dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_name(path.stem + ".tmp" + path.suffix)
-    pq.write_table(pa.Table.from_pylist(rows), temporary_path)
+    if not rows:
+        pq.write_table(pa.Table.from_pylist(rows), temporary_path)
+        temporary_path.replace(path)
+        return
+
+    writer = None
+    try:
+        for start in range(0, len(rows), 50_000):
+            chunk = rows[start : start + 50_000]
+            table = (
+                pa.Table.from_pylist(chunk)
+                if writer is None
+                else pa.Table.from_pylist(chunk, schema=writer.schema)
+            )
+            if writer is None:
+                writer = pq.ParquetWriter(temporary_path, table.schema)
+            writer.write_table(table)
+    finally:
+        if writer is not None:
+            writer.close()
     temporary_path.replace(path)
 
 

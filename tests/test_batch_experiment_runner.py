@@ -2,10 +2,13 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pyarrow.parquet as pq
+
 import crypto_trade_research.experiments.batch as batch_module
 from crypto_trade_research.experiments.batch import (
     BatchExperimentMatrix,
     _ExperimentInputCache,
+    _write_parquet_atomic,
     leaderboard_row_from_record,
     run_experiment_batch,
 )
@@ -352,6 +355,25 @@ def test_experiment_input_cache_key_changes_with_candidate_setup(
     assert first_inputs.labels.rows[0]["symbol"] == "BTCUSDT"
     assert second_inputs.labels.rows[0]["symbol"] == "ETHUSDT"
     assert label_calls["count"] == 2
+
+
+def test_write_parquet_atomic_streams_rows_across_chunks(tmp_path: Path) -> None:
+    path = tmp_path / "rows.parquet"
+    rows = [
+        {
+            "symbol": "BTCUSDT",
+            "decision_time": f"2026-01-01T00:{index % 60:02d}:00Z",
+            "return_1": index / 100_000,
+        }
+        for index in range(50_001)
+    ]
+
+    _write_parquet_atomic(path, rows)
+
+    table = pq.read_table(path)
+    assert table.num_rows == 50_001
+    assert table.to_pylist()[0] == rows[0]
+    assert table.to_pylist()[-1] == rows[-1]
 
 
 def _cache_unit_config(

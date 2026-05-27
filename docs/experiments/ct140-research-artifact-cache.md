@@ -62,6 +62,9 @@ On cache miss:
 - write `rows.parquet`;
 - write `manifest.json` with cache schema, row count, cache key, and source manifest.
 
+Large parquet writes are chunked in `50,000` row batches to avoid a single in-memory pyarrow table
+conversion during six-month feature-cache writes.
+
 On cache hit:
 
 - read cached parquet rows and manifest;
