@@ -25,6 +25,7 @@ crypto-trade-run-baseline-experiment = "crypto_trade_research.experiments.runner
 crypto-trade-write-stability-report = "crypto_trade_research.evaluation.stability:main"
 crypto-trade-build-paper-pack = "crypto_trade_research.paper_trading:main"
 crypto-trade-build-paper-monitoring-report = "crypto_trade_research.paper_monitoring:main"
+crypto-trade-run-paper-collector = "crypto_trade_research.paper_collector:main"
 
 [project.optional-dependencies]
 dev = [

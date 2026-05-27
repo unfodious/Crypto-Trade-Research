@@ -1,0 +1,11 @@
+{
+  "run_name": "ct136_negative_funding_paper_collector_dry_run",
+  "output_dir": "data/generated/ct136_negative_funding_paper_collector",
+  "issue_id": "CT-136",
+  "epic_id": "CT-113",
+  "pack_manifest_path": "data/generated/ct132_negative_funding_paper_dry_run_pack/pack_manifest.json",
+  "feature_source_path": "data/generated/ct130_long_negative_funding_h12_base_top3/features.parquet",
+  "label_source_path": "data/generated/ct130_long_negative_funding_h12_base_top3/labels.parquet",
+  "decision_time": null,
+  "mode": "historical_dry_run"
+}
