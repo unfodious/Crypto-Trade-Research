@@ -41,6 +41,36 @@ six-month model without point-in-time historical data. CT-133/CT-134 made the wa
 feasible as forward-collected public evidence. CT-149 turns that collector on so we can build a
 real timestamped history instead of relying on screenshots.
 
+## Deployment Verification
+
+Installed systemd units on the droplet:
+
+- service: `ct149-hyperliquid-whale-watchlist.service`
+- timer: `ct149-hyperliquid-whale-watchlist.timer`
+- schedule: every `5` minutes via `OnUnitActiveSec=5min`, with `20s` randomized delay
+
+First systemd-managed run:
+
+| Field | Value |
+| --- | ---: |
+| generated at | `2026-05-27T10:30:58Z` |
+| include fills | `false` |
+| position rows | `0` |
+| fill rows | `0` |
+| alerts | `0` |
+| warning count | `1` |
+
+Warning:
+
+`0xf3f496c9486be5924a93d67e98298733bb47057c has no open Hyperliquid perp positions at snapshot time`
+
+This is a valid inactive-wallet snapshot, not a collector failure.
+
+Observed generated size after the first run:
+
+- latest timestamped snapshot directory: about `28K`;
+- summary directory: about `8K`.
+
 ## Safety Boundary
 
 Research-only public API reads:
