@@ -1,6 +1,10 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pyarrow as pa
+import pyarrow.parquet as pq
+import pytest
+
 import crypto_trade_research.historical_holdout_replay as replay_module
 from crypto_trade_research.features import (
     FeatureConfig,
@@ -259,6 +263,122 @@ def test_abstention_filters_skip_only_full_pattern_matches(tmp_path: Path) -> No
     filtered = replay_module._apply_trade_filters(rows, config)
 
     assert [row["symbol"] for row in filtered] == ["SUIUSDT", "AVAXUSDT"]
+
+
+def test_external_feature_rows_join_before_abstention_filters(tmp_path: Path) -> None:
+    dataset_manifest = tmp_path / "dataset_manifest.json"
+    funding_manifest = tmp_path / "funding_manifest.json"
+    external_features_path = tmp_path / "external_features.parquet"
+    dataset_manifest.write_text('{"dataset": "unit"}', encoding="utf-8")
+    funding_manifest.write_text('{"funding": "unit"}', encoding="utf-8")
+    pq.write_table(
+        pa.Table.from_pylist(
+            [
+                {
+                    "symbol": "SOLUSDT",
+                    "timeframe": "h12",
+                    "decision_time": datetime(2026, 1, 1, 8, tzinfo=UTC),
+                    "fm_oi_value_change_1h": 0.02,
+                    "fm_metrics_match": 1,
+                },
+                {
+                    "symbol": "SUIUSDT",
+                    "timeframe": "h12",
+                    "decision_time": datetime(2026, 1, 1, 8, tzinfo=UTC),
+                    "fm_oi_value_change_1h": 0.01,
+                    "fm_metrics_match": 1,
+                },
+            ]
+        ),
+        external_features_path,
+    )
+    config = HistoricalHoldoutReplayConfig.from_dict(
+        {
+            "run_name": "unit_replay",
+            "output_dir": str(tmp_path / "out"),
+            "issue_id": "CT-179",
+            "epic_id": "CT-113",
+            "dataset_manifest_path": str(dataset_manifest),
+            "funding_manifest_path": str(funding_manifest),
+            "pack_manifest_paths": [],
+            "feature": {
+                "feature_set_version": "features.unit.v1",
+                "rolling_window": 3,
+                "higher_timeframes": ["5m"],
+            },
+            "external_feature_rows_path": str(external_features_path),
+            "abstention_filters": [
+                {
+                    "feature": "fm_oi_value_change_1h",
+                    "operator": ">",
+                    "value": 0.015,
+                }
+            ],
+            "generated_at": "2026-05-27T16:00:00Z",
+        }
+    )
+
+    rows = [
+        {
+            "symbol": "SOLUSDT",
+            "timeframe": "h12",
+            "decision_time": datetime(2026, 1, 1, 8, tzinfo=UTC),
+        },
+        {
+            "symbol": "SUIUSDT",
+            "timeframe": "h12",
+            "decision_time": datetime(2026, 1, 1, 8, tzinfo=UTC),
+        },
+    ]
+
+    joined = replay_module._join_external_feature_rows(rows, config)
+    filtered = replay_module._apply_trade_filters(joined, config)
+
+    assert [row["symbol"] for row in filtered] == ["SUIUSDT"]
+    assert filtered[0]["fm_oi_value_change_1h"] == 0.01
+
+
+def test_external_feature_abstention_filter_requires_feature_rows_path(tmp_path: Path) -> None:
+    dataset_manifest = tmp_path / "dataset_manifest.json"
+    funding_manifest = tmp_path / "funding_manifest.json"
+    dataset_manifest.write_text('{"dataset": "unit"}', encoding="utf-8")
+    funding_manifest.write_text('{"funding": "unit"}', encoding="utf-8")
+    config = HistoricalHoldoutReplayConfig.from_dict(
+        {
+            "run_name": "unit_replay",
+            "output_dir": str(tmp_path / "out"),
+            "issue_id": "CT-179",
+            "epic_id": "CT-113",
+            "dataset_manifest_path": str(dataset_manifest),
+            "funding_manifest_path": str(funding_manifest),
+            "pack_manifest_paths": [],
+            "feature": {
+                "feature_set_version": "features.unit.v1",
+                "rolling_window": 3,
+                "higher_timeframes": ["5m"],
+            },
+            "abstention_filters": [
+                {
+                    "feature": "fm_oi_value_change_1h",
+                    "operator": ">",
+                    "value": 0.015,
+                }
+            ],
+            "generated_at": "2026-05-27T16:00:00Z",
+        }
+    )
+
+    with pytest.raises(ValueError, match="external_feature_rows_path is required"):
+        replay_module._join_external_feature_rows(
+            [
+                {
+                    "symbol": "SOLUSDT",
+                    "timeframe": "h12",
+                    "decision_time": datetime(2026, 1, 1, 8, tzinfo=UTC),
+                }
+            ],
+            config,
+        )
 
 
 def test_run_historical_holdout_replay_uses_pack_replay_cache_without_loading_rows(

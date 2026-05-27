@@ -46,6 +46,8 @@ class HistoricalHoldoutReplayConfig:
     higher_timeframes: tuple[str, ...]
     accepted_sessions: tuple[str, ...]
     abstention_filters: tuple[dict[str, object], ...]
+    external_feature_rows_path: Path | None
+    external_feature_required: bool
     generated_at: datetime
 
     @classmethod
@@ -71,6 +73,12 @@ class HistoricalHoldoutReplayConfig:
             higher_timeframes=tuple(str(item) for item in feature.get("higher_timeframes", ())),
             accepted_sessions=_accepted_sessions(payload),
             abstention_filters=tuple(dict(item) for item in payload.get("abstention_filters", ())),
+            external_feature_rows_path=(
+                Path(str(payload["external_feature_rows_path"]))
+                if payload.get("external_feature_rows_path")
+                else None
+            ),
+            external_feature_required=bool(payload.get("external_feature_required", True)),
             generated_at=_parse_timestamp(str(payload["generated_at"])),
         )
 
@@ -170,6 +178,10 @@ def _replay_payload(
         "trade_filters": {
             "accepted_sessions": list(config.accepted_sessions),
             "abstention_filters": list(config.abstention_filters),
+            "external_feature_rows_path": str(config.external_feature_rows_path)
+            if config.external_feature_rows_path
+            else None,
+            "external_feature_required": config.external_feature_required,
         },
         "replays": replays,
         "decision": {
@@ -376,6 +388,9 @@ def _pack_replay_cache_key(
         config.epic_id,
         config.accepted_sessions,
         config.abstention_filters,
+        str(config.external_feature_rows_path) if config.external_feature_rows_path else None,
+        _file_digest(config.external_feature_rows_path),
+        config.external_feature_required,
     )
     normalized = json.dumps(key, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
@@ -406,6 +421,10 @@ def _replay_pack(
     candidate_rows = _candidate_rows(feature_rows, strategy)
     scored_rows = _score_and_rank(candidate_rows, artifact, strategy, entry_prices)
     selected_rows_before_trade_filters = [row for row in scored_rows if row["paper_take"]]
+    selected_rows_before_trade_filters = _join_external_feature_rows(
+        selected_rows_before_trade_filters,
+        config,
+    )
     selected_rows = _apply_trade_filters(selected_rows_before_trade_filters, config)
     label_config = _label_config(strategy)
     labels = generate_trade_labels_for_keys(source_rows, label_config, _label_keys(selected_rows))
@@ -436,6 +455,10 @@ def _replay_pack(
         "trade_filters": {
             "accepted_sessions": list(config.accepted_sessions),
             "abstention_filters": list(config.abstention_filters),
+            "external_feature_rows_path": str(config.external_feature_rows_path)
+            if config.external_feature_rows_path
+            else None,
+            "external_feature_required": config.external_feature_required,
         },
         "label_count": len(labels.rows),
         "metrics": asdict(report.metrics),
@@ -484,6 +507,74 @@ def _apply_trade_filters(
             if not all(_filter_passes(row, item) for item in config.abstention_filters)
         ]
     return filtered_rows
+
+
+def _join_external_feature_rows(
+    rows: list[dict[str, object]],
+    config: HistoricalHoldoutReplayConfig,
+) -> list[dict[str, object]]:
+    if not rows:
+        return rows
+    _validate_abstention_feature_sources(rows, config)
+    if config.external_feature_rows_path is None:
+        return rows
+    if not config.external_feature_rows_path.exists():
+        raise ValueError(f"missing external feature rows: {config.external_feature_rows_path}")
+
+    feature_rows = pq.read_table(config.external_feature_rows_path).to_pylist()
+    features_by_key: dict[tuple[object, ...], dict[str, object]] = {}
+    for feature_row in feature_rows:
+        key = _external_feature_key(dict(feature_row))
+        if key in features_by_key:
+            raise ValueError(f"duplicate external feature row: {_key_to_text(key)}")
+        features_by_key[key] = dict(feature_row)
+
+    joined_rows: list[dict[str, object]] = []
+    for row in rows:
+        key = _external_feature_key(row)
+        external_features = features_by_key.get(key)
+        if external_features is None:
+            if config.external_feature_required:
+                raise ValueError(f"missing external feature row: {_key_to_text(key)}")
+            joined_rows.append(dict(row))
+            continue
+        joined_rows.append({**row, **_external_feature_values(external_features)})
+    return joined_rows
+
+
+def _validate_abstention_feature_sources(
+    rows: list[dict[str, object]],
+    config: HistoricalHoldoutReplayConfig,
+) -> None:
+    if config.external_feature_rows_path is not None:
+        return
+    row_keys = set(rows[0])
+    missing_external_features = sorted(
+        str(item["feature"])
+        for item in config.abstention_filters
+        if str(item["feature"]).startswith("fm_") and str(item["feature"]) not in row_keys
+    )
+    if missing_external_features:
+        raise ValueError(
+            "external_feature_rows_path is required for abstention filters: "
+            f"{', '.join(missing_external_features)}"
+        )
+
+
+def _external_feature_values(row: dict[str, object]) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in row.items()
+        if key not in {"symbol", "timeframe", "decision_time"}
+    }
+
+
+def _external_feature_key(row: dict[str, object]) -> tuple[object, ...]:
+    return (
+        str(row["symbol"]),
+        str(row["timeframe"]),
+        _as_datetime(row["decision_time"]),
+    )
 
 
 def _filter_passes(row: dict[str, object], item: dict[str, object]) -> bool:
@@ -708,6 +799,10 @@ def _row_key(row: dict[str, object], time_field: str) -> tuple[object, ...]:
         row["timeframe"],
         _as_datetime(row[time_field]),
     )
+
+
+def _key_to_text(key: tuple[object, ...]) -> str:
+    return "|".join(str(part) for part in key)
 
 
 def _read_manifest_rows(manifest_path: Path) -> list[dict[str, object]]:
