@@ -1,6 +1,6 @@
 {
   "dataset_prefix": "ct151_binance_crowding_forward",
-  "generator_version": "ct151.binance_crowding_forward.v1",
+  "generator_version": "ct153.binance_crowding_forward.v2",
   "output_dir": "data/generated",
   "period": "5m",
   "limit": 1,
@@ -18,5 +18,5 @@
     "BTCUSDT",
     "ETHUSDT"
   ],
-  "notes": "Research-only Binance USD-M open-interest and global long/short forward snapshot. Public REST reads only; no live trading or order placement."
+  "notes": "Research-only Binance USD-M open-interest, global long/short, and top-trader long/short forward snapshot. Public REST reads only; no live trading or order placement."
 }

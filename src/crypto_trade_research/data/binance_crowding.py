@@ -23,6 +23,8 @@ GENERATOR_NAME = "crypto_trade_research.binance_futures_crowding"
 OPEN_INTEREST_URL = "https://fapi.binance.com/fapi/v1/openInterest"
 OPEN_INTEREST_HIST_URL = "https://fapi.binance.com/futures/data/openInterestHist"
 GLOBAL_LONG_SHORT_URL = "https://fapi.binance.com/futures/data/globalLongShortAccountRatio"
+TOP_LONG_SHORT_POSITION_URL = "https://fapi.binance.com/futures/data/topLongShortPositionRatio"
+TOP_LONG_SHORT_ACCOUNT_URL = "https://fapi.binance.com/futures/data/topLongShortAccountRatio"
 
 OpenInterestFetcher = Callable[[str, str], dict[str, object]]
 SeriesFetcher = Callable[[str, str, int, str], list[dict[str, object]]]
@@ -45,6 +47,8 @@ class BinanceCrowdingSnapshotConfig:
     open_interest_url: str = OPEN_INTEREST_URL
     open_interest_hist_url: str = OPEN_INTEREST_HIST_URL
     global_long_short_url: str = GLOBAL_LONG_SHORT_URL
+    top_long_short_position_url: str = TOP_LONG_SHORT_POSITION_URL
+    top_long_short_account_url: str = TOP_LONG_SHORT_ACCOUNT_URL
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> BinanceCrowdingSnapshotConfig:
@@ -62,6 +66,12 @@ class BinanceCrowdingSnapshotConfig:
                 payload.get("open_interest_hist_url", OPEN_INTEREST_HIST_URL)
             ),
             global_long_short_url=str(payload.get("global_long_short_url", GLOBAL_LONG_SHORT_URL)),
+            top_long_short_position_url=str(
+                payload.get("top_long_short_position_url", TOP_LONG_SHORT_POSITION_URL)
+            ),
+            top_long_short_account_url=str(
+                payload.get("top_long_short_account_url", TOP_LONG_SHORT_ACCOUNT_URL)
+            ),
         )
 
     @classmethod
@@ -82,10 +92,14 @@ class BinanceCrowdingSnapshotManifest:
     current_open_interest_path: Path
     open_interest_hist_path: Path
     global_long_short_path: Path
+    top_long_short_position_path: Path
+    top_long_short_account_path: Path
     manifest_path: Path
     current_open_interest_sha256: str
     open_interest_hist_sha256: str
     global_long_short_sha256: str
+    top_long_short_position_sha256: str
+    top_long_short_account_sha256: str
     warnings: tuple[str, ...]
 
 
@@ -95,6 +109,8 @@ def generate_binance_crowding_snapshot(
     fetch_open_interest: OpenInterestFetcher | None = None,
     fetch_open_interest_hist: SeriesFetcher | None = None,
     fetch_global_long_short: SeriesFetcher | None = None,
+    fetch_top_long_short_position: SeriesFetcher | None = None,
+    fetch_top_long_short_account: SeriesFetcher | None = None,
 ) -> BinanceCrowdingSnapshotManifest:
     """Fetch, normalize, and persist a point-in-time Binance futures crowding snapshot."""
 
@@ -105,10 +121,14 @@ def generate_binance_crowding_snapshot(
     open_interest_rows: list[dict[str, object]] = []
     open_interest_hist_rows: list[dict[str, object]] = []
     global_long_short_rows: list[dict[str, object]] = []
+    top_long_short_position_rows: list[dict[str, object]] = []
+    top_long_short_account_rows: list[dict[str, object]] = []
     warnings: list[str] = []
     open_interest_fetcher = fetch_open_interest or _fetch_open_interest
     open_interest_hist_fetcher = fetch_open_interest_hist or _fetch_series
     global_long_short_fetcher = fetch_global_long_short or _fetch_series
+    top_long_short_position_fetcher = fetch_top_long_short_position or _fetch_series
+    top_long_short_account_fetcher = fetch_top_long_short_account or _fetch_series
 
     for symbol in config.symbols:
         try:
@@ -147,21 +167,63 @@ def generate_binance_crowding_snapshot(
         except Exception as exc:  # noqa: BLE001
             warnings.append(f"{symbol} global long/short failed: {exc}")
 
+        try:
+            top_long_short_position_rows.extend(
+                _normalize_top_long_short_position_row(row, generated_at, config.period)
+                for row in top_long_short_position_fetcher(
+                    symbol,
+                    config.period,
+                    config.limit,
+                    config.top_long_short_position_url,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"{symbol} top trader position long/short failed: {exc}")
+
+        try:
+            top_long_short_account_rows.extend(
+                _normalize_top_long_short_account_row(row, generated_at, config.period)
+                for row in top_long_short_account_fetcher(
+                    symbol,
+                    config.period,
+                    config.limit,
+                    config.top_long_short_account_url,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"{symbol} top trader account long/short failed: {exc}")
+
         if config.request_sleep_seconds > 0:
             time.sleep(config.request_sleep_seconds)
 
-    if not open_interest_rows and not open_interest_hist_rows and not global_long_short_rows:
+    if (
+        not open_interest_rows
+        and not open_interest_hist_rows
+        and not global_long_short_rows
+        and not top_long_short_position_rows
+        and not top_long_short_account_rows
+    ):
         raise BinanceCrowdingSnapshotError("all Binance crowding sources returned no rows")
 
     current_open_interest_path = dataset_dir / "clean" / "current_open_interest.parquet"
     open_interest_hist_path = dataset_dir / "clean" / "open_interest_hist.parquet"
     global_long_short_path = dataset_dir / "clean" / "global_long_short_ratio.parquet"
+    top_long_short_position_path = dataset_dir / "clean" / "top_long_short_position_ratio.parquet"
+    top_long_short_account_path = dataset_dir / "clean" / "top_long_short_account_ratio.parquet"
     manifest_path = dataset_dir / "manifest.json"
     _write_rows(current_open_interest_path, open_interest_rows)
     _write_rows(open_interest_hist_path, open_interest_hist_rows)
     _write_rows(global_long_short_path, global_long_short_rows)
+    _write_rows(top_long_short_position_path, top_long_short_position_rows)
+    _write_rows(top_long_short_account_path, top_long_short_account_rows)
 
-    row_count = len(open_interest_rows) + len(open_interest_hist_rows) + len(global_long_short_rows)
+    row_count = (
+        len(open_interest_rows)
+        + len(open_interest_hist_rows)
+        + len(global_long_short_rows)
+        + len(top_long_short_position_rows)
+        + len(top_long_short_account_rows)
+    )
     manifest = BinanceCrowdingSnapshotManifest(
         schema_version=SCHEMA_VERSION,
         dataset_name=dataset_name,
@@ -174,10 +236,14 @@ def generate_binance_crowding_snapshot(
         current_open_interest_path=current_open_interest_path,
         open_interest_hist_path=open_interest_hist_path,
         global_long_short_path=global_long_short_path,
+        top_long_short_position_path=top_long_short_position_path,
+        top_long_short_account_path=top_long_short_account_path,
         manifest_path=manifest_path,
         current_open_interest_sha256=_file_sha256(current_open_interest_path),
         open_interest_hist_sha256=_file_sha256(open_interest_hist_path),
         global_long_short_sha256=_file_sha256(global_long_short_path),
+        top_long_short_position_sha256=_file_sha256(top_long_short_position_path),
+        top_long_short_account_sha256=_file_sha256(top_long_short_account_path),
         warnings=tuple(warnings),
     )
     _write_manifest(manifest, config)
@@ -274,6 +340,48 @@ def _normalize_global_long_short_row(
     }
 
 
+def _normalize_top_long_short_position_row(
+    row: dict[str, object],
+    source_available_at: datetime,
+    period: str,
+) -> dict[str, object]:
+    event_time = _parse_ms_timestamp(row.get("timestamp"), "timestamp")
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "venue": "binance",
+        "market_type": "um_futures",
+        "symbol": _required_text(row, "symbol").upper(),
+        "period": period,
+        "event_time": event_time,
+        "source_available_at": source_available_at,
+        "long_short_ratio": _parse_decimal(row.get("longShortRatio"), "longShortRatio"),
+        "long_position": _parse_decimal(row.get("longAccount"), "longAccount"),
+        "short_position": _parse_decimal(row.get("shortAccount"), "shortAccount"),
+        "data_source": "binance_futures_data_top_trader_long_short_position_ratio",
+    }
+
+
+def _normalize_top_long_short_account_row(
+    row: dict[str, object],
+    source_available_at: datetime,
+    period: str,
+) -> dict[str, object]:
+    event_time = _parse_ms_timestamp(row.get("timestamp"), "timestamp")
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "venue": "binance",
+        "market_type": "um_futures",
+        "symbol": _required_text(row, "symbol").upper(),
+        "period": period,
+        "event_time": event_time,
+        "source_available_at": source_available_at,
+        "long_short_ratio": _parse_decimal(row.get("longShortRatio"), "longShortRatio"),
+        "long_account": _parse_decimal(row.get("longAccount"), "longAccount"),
+        "short_account": _parse_decimal(row.get("shortAccount"), "shortAccount"),
+        "data_source": "binance_futures_data_top_trader_long_short_account_ratio",
+    }
+
+
 def _validate_config(config: BinanceCrowdingSnapshotConfig) -> None:
     if not config.symbols:
         raise BinanceCrowdingSnapshotError("symbols must not be empty")
@@ -304,17 +412,22 @@ def _write_manifest(
     payload["current_open_interest_path"] = str(manifest.current_open_interest_path)
     payload["open_interest_hist_path"] = str(manifest.open_interest_hist_path)
     payload["global_long_short_path"] = str(manifest.global_long_short_path)
+    payload["top_long_short_position_path"] = str(manifest.top_long_short_position_path)
+    payload["top_long_short_account_path"] = str(manifest.top_long_short_account_path)
     payload["manifest_path"] = str(manifest.manifest_path)
     payload["source"] = {
         "current_open_interest_url": config.open_interest_url,
         "open_interest_hist_url": config.open_interest_hist_url,
         "global_long_short_url": config.global_long_short_url,
+        "top_long_short_position_url": config.top_long_short_position_url,
+        "top_long_short_account_url": config.top_long_short_account_url,
         "period": config.period,
         "limit": config.limit,
         "format": "binance_usdm_futures_public_rest",
         "history_limit_note": (
-            "openInterestHist and globalLongShortAccountRatio expose only recent public history; "
-            "this snapshot is forward-collected point-in-time evidence"
+            "openInterestHist, globalLongShortAccountRatio, topLongShortPositionRatio, "
+            "and topLongShortAccountRatio expose only recent public history; this snapshot is "
+            "forward-collected point-in-time evidence"
         ),
     }
     manifest.manifest_path.parent.mkdir(parents=True, exist_ok=True)

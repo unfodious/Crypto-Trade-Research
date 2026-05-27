@@ -61,6 +61,40 @@ def test_generate_binance_crowding_snapshot_writes_manifest_and_run_summary(
             }
         ]
 
+    def fetch_top_long_short_position(
+        symbol: str,
+        period: str,
+        limit: int,
+        base_url: str,
+    ) -> list[dict[str, object]]:
+        calls.append(("top_position", f"{symbol}:{period}:{limit}"))
+        return [
+            {
+                "symbol": symbol,
+                "longShortRatio": "1.75",
+                "longAccount": "0.6364",
+                "shortAccount": "0.3636",
+                "timestamp": _ms(event_time),
+            }
+        ]
+
+    def fetch_top_long_short_account(
+        symbol: str,
+        period: str,
+        limit: int,
+        base_url: str,
+    ) -> list[dict[str, object]]:
+        calls.append(("top_account", f"{symbol}:{period}:{limit}"))
+        return [
+            {
+                "symbol": symbol,
+                "longShortRatio": "2.00",
+                "longAccount": "0.6667",
+                "shortAccount": "0.3333",
+                "timestamp": _ms(event_time),
+            }
+        ]
+
     manifest = generate_binance_crowding_snapshot(
         BinanceCrowdingSnapshotConfig(
             symbols=("BTCUSDT", "ETHUSDT"),
@@ -75,17 +109,23 @@ def test_generate_binance_crowding_snapshot_writes_manifest_and_run_summary(
         fetch_open_interest=fetch_open_interest,
         fetch_open_interest_hist=fetch_open_interest_hist,
         fetch_global_long_short=fetch_global_long_short,
+        fetch_top_long_short_position=fetch_top_long_short_position,
+        fetch_top_long_short_account=fetch_top_long_short_account,
     )
 
-    assert manifest.row_count == 6
+    assert manifest.row_count == 10
     assert manifest.symbols == ("BTCUSDT", "ETHUSDT")
     assert manifest.current_open_interest_path.exists()
     assert manifest.open_interest_hist_path.exists()
     assert manifest.global_long_short_path.exists()
+    assert manifest.top_long_short_position_path.exists()
+    assert manifest.top_long_short_account_path.exists()
     assert manifest.manifest_path.exists()
     assert len(manifest.current_open_interest_sha256) == 64
     assert len(manifest.open_interest_hist_sha256) == 64
     assert len(manifest.global_long_short_sha256) == 64
+    assert len(manifest.top_long_short_position_sha256) == 64
+    assert len(manifest.top_long_short_account_sha256) == 64
 
     oi_rows = pq.read_table(manifest.current_open_interest_path).to_pylist()
     assert oi_rows[0]["source_available_at"] == generated_at
@@ -96,15 +136,27 @@ def test_generate_binance_crowding_snapshot_writes_manifest_and_run_summary(
     assert long_short_rows[0]["long_short_ratio"] == pytest.approx(1.5)
     assert long_short_rows[0]["period"] == "5m"
 
+    top_position_rows = pq.read_table(manifest.top_long_short_position_path).to_pylist()
+    assert top_position_rows[0]["long_short_ratio"] == pytest.approx(1.75)
+    assert top_position_rows[0]["long_position"] == pytest.approx(0.6364)
+
+    top_account_rows = pq.read_table(manifest.top_long_short_account_path).to_pylist()
+    assert top_account_rows[0]["long_short_ratio"] == pytest.approx(2.0)
+    assert top_account_rows[0]["long_account"] == pytest.approx(0.6667)
+
     manifest_json = json.loads(manifest.manifest_path.read_text(encoding="utf-8"))
     assert manifest_json["schema_version"] == "research.binance_futures_crowding_snapshot.v1"
     assert manifest_json["source"]["history_limit_note"]
+    assert manifest_json["top_long_short_position_path"] == str(
+        manifest.top_long_short_position_path
+    )
+    assert manifest_json["top_long_short_account_path"] == str(manifest.top_long_short_account_path)
 
     run_summary = json.loads(
         (tmp_path / "unit_binance_crowding" / "crowding_run.json").read_text(encoding="utf-8")
     )
     assert run_summary["latest_manifest_path"] == str(manifest.manifest_path)
-    assert run_summary["row_count"] == 6
+    assert run_summary["row_count"] == 10
     assert calls[0] == ("oi", "BTCUSDT")
 
 
@@ -137,10 +189,12 @@ def test_generate_binance_crowding_snapshot_preserves_partial_source_warnings(
         fetch_open_interest=fetch_open_interest,
         fetch_open_interest_hist=fail_series,
         fetch_global_long_short=fail_series,
+        fetch_top_long_short_position=fail_series,
+        fetch_top_long_short_account=fail_series,
     )
 
     assert manifest.row_count == 1
-    assert len(manifest.warnings) == 2
+    assert len(manifest.warnings) == 4
     assert "rate limited" in manifest.warnings[0]
 
 
@@ -168,4 +222,6 @@ def test_binance_crowding_snapshot_rejects_empty_source(tmp_path: Path) -> None:
             fetch_open_interest=fail_open_interest,
             fetch_open_interest_hist=fail_series,
             fetch_global_long_short=fail_series,
+            fetch_top_long_short_position=fail_series,
+            fetch_top_long_short_account=fail_series,
         )

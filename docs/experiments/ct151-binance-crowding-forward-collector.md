@@ -2,7 +2,7 @@
 
 Date: 2026-05-27
 
-Issue: CT-151
+Issue: CT-151; extended by CT-153
 
 Epic: CT-113
 
@@ -23,6 +23,8 @@ Official public endpoints checked on 2026-05-27:
 - `GET /fapi/v1/openInterest`
 - `GET /futures/data/openInterestHist`
 - `GET /futures/data/globalLongShortAccountRatio`
+- `GET /futures/data/topLongShortPositionRatio`
+- `GET /futures/data/topLongShortAccountRatio`
 
 ## Implementation
 
@@ -39,6 +41,8 @@ The collector writes timestamped snapshot datasets:
 - `current_open_interest.parquet`
 - `open_interest_hist.parquet`
 - `global_long_short_ratio.parquet`
+- `top_long_short_position_ratio.parquet`
+- `top_long_short_account_ratio.parquet`
 - `manifest.json`
 
 It also writes a latest-run summary:
@@ -78,7 +82,18 @@ Result:
 | symbols | `11` |
 | warnings | `0` |
 
-The row count is expected: `11` symbols times `3` source tables.
+The CT-151 row count was expected: `11` symbols times `3` source tables.
+
+## CT-153 Extension
+
+CT-153 adds two more point-in-time public REST tables:
+
+- top-trader position long/short ratio;
+- top-trader account long/short ratio.
+
+The post-CT-153 expected healthy one-shot row count is `55`: `11` symbols times `5` source
+tables. Like the original CT-151 sources, the top-trader endpoints expose only recent public history,
+so the values are collected forward and must not be backfilled into older decisions.
 
 ## Droplet Deployment
 
@@ -103,6 +118,8 @@ Observed generated size after the first run:
 
 - latest timestamped snapshot directory: about `32K`;
 - summary directory: about `8K`.
+
+After CT-153 deployment, the droplet timer should report `55` rows per healthy run.
 
 ## Safety Boundary
 
