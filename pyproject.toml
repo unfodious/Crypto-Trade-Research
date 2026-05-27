@@ -18,6 +18,7 @@ dependencies = [
 [project.scripts]
 crypto-trade-ingest-market-dataset = "crypto_trade_research.data.ingestion:main"
 crypto-trade-ingest-funding-rates = "crypto_trade_research.data.funding:main"
+crypto-trade-ingest-binance-futures-metrics = "crypto_trade_research.data.binance_futures_metrics:main"
 crypto-trade-collect-binance-crowding = "crypto_trade_research.data.binance_crowding:main"
 crypto-trade-collect-binance-order-book = "crypto_trade_research.data.binance_order_book:main"
 crypto-trade-collect-binance-liquidations = "crypto_trade_research.data.binance_liquidations:main"
@@ -37,6 +38,7 @@ crypto-trade-run-forward-paper = "crypto_trade_research.paper_forward:main"
 crypto-trade-research-stream-health = "crypto_trade_research.research_stream_health:main"
 crypto-trade-run-historical-holdout-replay = "crypto_trade_research.historical_holdout_replay:main"
 crypto-trade-build-selected-trade-abstention = "crypto_trade_research.selected_trade_abstention:main"
+crypto-trade-build-futures-metrics-selected-features = "crypto_trade_research.futures_metrics_selected_features:main"
 
 [project.optional-dependencies]
 dev = [
