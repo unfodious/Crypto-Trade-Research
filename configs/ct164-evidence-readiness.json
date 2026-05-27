@@ -1,0 +1,30 @@
+{
+  "report_name": "ct164_external_forward_evidence_readiness",
+  "issue_id": "CT-164",
+  "epic_id": "CT-113",
+  "output_json_path": "data/generated/ct164_external_forward_evidence_readiness/readiness_report.json",
+  "output_markdown_path": "data/generated/ct164_external_forward_evidence_readiness/readiness_report.md",
+  "external_features_run_path": "data/generated/ct162_external_forward_features/external_forward_features_run.json",
+  "minimum_external_feature_rows": 500,
+  "minimum_crowding_snapshots": 1,
+  "minimum_order_book_snapshots": 1,
+  "minimum_liquidation_snapshots": 1,
+  "minimum_forward_signals": 30,
+  "minimum_closed_trades": 30,
+  "minimum_calendar_days": 7,
+  "forward_paper_streams": [
+    {
+      "name": "ct145_no_ton_negative_funding_forward_paper",
+      "issue_id": "CT-146",
+      "forward_run_path": "data/generated/ct145_no_ton_negative_funding_forward_paper/forward_run.json",
+      "monitoring_report_path": "data/generated/ct145_no_ton_negative_funding_forward_paper/monitoring_report.json"
+    },
+    {
+      "name": "ct156_high_beta_dot_shadow_forward_paper",
+      "issue_id": "CT-157",
+      "forward_run_path": "data/generated/ct156_high_beta_dot_shadow_forward_paper/forward_run.json",
+      "monitoring_report_path": "data/generated/ct156_high_beta_dot_shadow_forward_paper/monitoring_report.json"
+    }
+  ],
+  "notes": "Research-only readiness gate before running an external-feature validation matrix. Does not approve live trading."
+}
