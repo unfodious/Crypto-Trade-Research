@@ -1,0 +1,24 @@
+{
+  "report_name": "ct167_forward_filter_diagnostics",
+  "issue_id": "CT-167",
+  "epic_id": "CT-113",
+  "output_json_path": "data/generated/ct167_forward_filter_diagnostics/filter_diagnostics.json",
+  "output_markdown_path": "data/generated/ct167_forward_filter_diagnostics/filter_diagnostics.md",
+  "streams": [
+    {
+      "name": "ct145_no_ton_negative_funding_forward_paper",
+      "issue_id": "CT-146",
+      "pack_manifest_path": "data/generated/ct145_no_ton_negative_funding_paper_pack/pack_manifest.json",
+      "features_path": "data/generated/ct145_no_ton_negative_funding_forward_paper/features.parquet",
+      "forward_run_path": "data/generated/ct145_no_ton_negative_funding_forward_paper/forward_run.json"
+    },
+    {
+      "name": "ct156_high_beta_dot_shadow_forward_paper",
+      "issue_id": "CT-157",
+      "pack_manifest_path": "data/generated/ct156_high_beta_dot_shadow_paper_pack/pack_manifest.json",
+      "features_path": "data/generated/ct156_high_beta_dot_shadow_forward_paper/features.parquet",
+      "forward_run_path": "data/generated/ct156_high_beta_dot_shadow_forward_paper/forward_run.json"
+    }
+  ],
+  "notes": "Research-only latest-window diagnostics for why CT-145/CT-156 forward paper filters emit or block candidates."
+}
