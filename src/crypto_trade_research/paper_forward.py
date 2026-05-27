@@ -461,6 +461,13 @@ def _resolve_open_trade(
             ),
             gross_r=_gross_r(exit_price, entry_price, side, stop_loss_pct),
             bars_held=offset,
+            telemetry=_exit_path_telemetry(
+                future_rows,
+                entry_price,
+                side,
+                stop_loss_pct,
+                round_trip_cost_pct,
+            ),
         )
 
     if len(future_rows) < horizon_bars:
@@ -476,6 +483,13 @@ def _resolve_open_trade(
         net_r=_net_r(exit_price, entry_price, side, stop_loss_pct, round_trip_cost_pct),
         gross_r=_gross_r(exit_price, entry_price, side, stop_loss_pct),
         bars_held=horizon_bars,
+        telemetry=_exit_path_telemetry(
+            future_rows,
+            entry_price,
+            side,
+            stop_loss_pct,
+            round_trip_cost_pct,
+        ),
     )
 
 
@@ -512,6 +526,7 @@ def _closed_trade(
     net_r: float,
     gross_r: float,
     bars_held: int,
+    telemetry: dict[str, object],
 ) -> dict[str, object]:
     updated = dict(trade)
     updated.update(
@@ -524,9 +539,193 @@ def _closed_trade(
             "gross_r": gross_r,
             "realized_r_after_costs": net_r,
             "bars_held": bars_held,
+            **telemetry,
         }
     )
     return updated
+
+
+def _exit_path_telemetry(
+    future_rows: list[dict[str, object]],
+    entry_price: float,
+    side: str,
+    stop_loss_pct: float,
+    round_trip_cost_pct: float,
+) -> dict[str, object]:
+    risk_per_unit = entry_price * stop_loss_pct
+    mfe_r = _max_favorable_excursion_r(future_rows, entry_price, side, risk_per_unit)
+    mae_r = _max_adverse_excursion_r(future_rows, entry_price, side, risk_per_unit)
+    return {
+        "max_favorable_excursion_r": mfe_r,
+        "max_adverse_excursion_r": mae_r,
+        "reached_0_5r": mfe_r >= 0.5,
+        "reached_1_0r": mfe_r >= 1.0,
+        "reached_1_5r": mfe_r >= 1.5,
+        "reached_2_0r": mfe_r >= 2.0,
+        "counterfactual_exits": {
+            "breakeven_after_1r": _dynamic_exit_counterfactual(
+                future_rows,
+                entry_price,
+                side,
+                risk_per_unit,
+                stop_loss_pct,
+                round_trip_cost_pct,
+                breakeven_activation_r=1.0,
+                breakeven_lock_r=0.0,
+                trailing_stop_r=None,
+            ),
+            "breakeven_lock_0_1r_after_1r": _dynamic_exit_counterfactual(
+                future_rows,
+                entry_price,
+                side,
+                risk_per_unit,
+                stop_loss_pct,
+                round_trip_cost_pct,
+                breakeven_activation_r=1.0,
+                breakeven_lock_r=0.1,
+                trailing_stop_r=None,
+            ),
+            "breakeven_lock_0_1r_trail_1_5r_after_1r": _dynamic_exit_counterfactual(
+                future_rows,
+                entry_price,
+                side,
+                risk_per_unit,
+                stop_loss_pct,
+                round_trip_cost_pct,
+                breakeven_activation_r=1.0,
+                breakeven_lock_r=0.1,
+                trailing_stop_r=1.5,
+            ),
+        },
+    }
+
+
+def _dynamic_exit_counterfactual(
+    future_rows: list[dict[str, object]],
+    entry_price: float,
+    side: str,
+    risk_per_unit: float,
+    stop_loss_pct: float,
+    round_trip_cost_pct: float,
+    *,
+    breakeven_activation_r: float,
+    breakeven_lock_r: float,
+    trailing_stop_r: float | None,
+) -> dict[str, object]:
+    stop_price = (
+        entry_price * (1 - stop_loss_pct) if side == "long" else entry_price * (1 + stop_loss_pct)
+    )
+    time_to_breakeven = None
+    for offset, row in enumerate(future_rows, start=1):
+        high = float(row["high"])
+        low = float(row["low"])
+        if _stop_hit(side, high, low, stop_price):
+            return {
+                "exit_reason": "dynamic_stop",
+                "bars_held": offset,
+                "net_r": _net_r(stop_price, entry_price, side, stop_loss_pct, round_trip_cost_pct),
+                "gross_r": _gross_r(stop_price, entry_price, side, stop_loss_pct),
+                "time_to_breakeven_bars": time_to_breakeven,
+            }
+
+        favorable_price = high if side == "long" else low
+        favorable_r = _price_r(favorable_price, entry_price, side, risk_per_unit)
+        next_stop = stop_price
+        if favorable_r >= breakeven_activation_r:
+            if time_to_breakeven is None:
+                time_to_breakeven = offset
+            lock_stop = _price_at_r(entry_price, side, risk_per_unit, breakeven_lock_r)
+            next_stop = _more_protective_stop(side, next_stop, lock_stop)
+        if trailing_stop_r is not None and favorable_r >= trailing_stop_r:
+            trail_stop = _trailing_stop_price(
+                favorable_price,
+                side,
+                risk_per_unit,
+                trailing_stop_r,
+            )
+            next_stop = _more_protective_stop(side, next_stop, trail_stop)
+        if next_stop != stop_price and _stop_hit(side, high, low, next_stop):
+            stop_price = next_stop
+            return {
+                "exit_reason": "dynamic_stop",
+                "bars_held": offset,
+                "net_r": _net_r(stop_price, entry_price, side, stop_loss_pct, round_trip_cost_pct),
+                "gross_r": _gross_r(stop_price, entry_price, side, stop_loss_pct),
+                "time_to_breakeven_bars": time_to_breakeven,
+            }
+        stop_price = next_stop
+
+    close = float(future_rows[-1]["close"])
+    return {
+        "exit_reason": "horizon_exit",
+        "bars_held": len(future_rows),
+        "net_r": _net_r(close, entry_price, side, stop_loss_pct, round_trip_cost_pct),
+        "gross_r": _gross_r(close, entry_price, side, stop_loss_pct),
+        "time_to_breakeven_bars": time_to_breakeven,
+    }
+
+
+def _max_favorable_excursion_r(
+    future_rows: list[dict[str, object]],
+    entry_price: float,
+    side: str,
+    risk_per_unit: float,
+) -> float:
+    if side == "long":
+        return max(
+            _price_r(float(row["high"]), entry_price, side, risk_per_unit) for row in future_rows
+        )
+    return max(_price_r(float(row["low"]), entry_price, side, risk_per_unit) for row in future_rows)
+
+
+def _max_adverse_excursion_r(
+    future_rows: list[dict[str, object]],
+    entry_price: float,
+    side: str,
+    risk_per_unit: float,
+) -> float:
+    if side == "long":
+        return min(
+            _price_r(float(row["low"]), entry_price, side, risk_per_unit) for row in future_rows
+        )
+    return min(
+        _price_r(float(row["high"]), entry_price, side, risk_per_unit) for row in future_rows
+    )
+
+
+def _stop_hit(side: str, high: float, low: float, stop_price: float) -> bool:
+    if side == "long":
+        return low <= stop_price
+    return high >= stop_price
+
+
+def _price_r(price: float, entry_price: float, side: str, risk_per_unit: float) -> float:
+    if side == "long":
+        return (price - entry_price) / risk_per_unit
+    return (entry_price - price) / risk_per_unit
+
+
+def _price_at_r(entry_price: float, side: str, risk_per_unit: float, r_multiple: float) -> float:
+    if side == "long":
+        return entry_price + r_multiple * risk_per_unit
+    return entry_price - r_multiple * risk_per_unit
+
+
+def _trailing_stop_price(
+    favorable_price: float,
+    side: str,
+    risk_per_unit: float,
+    trailing_stop_r: float,
+) -> float:
+    if side == "long":
+        return favorable_price - trailing_stop_r * risk_per_unit
+    return favorable_price + trailing_stop_r * risk_per_unit
+
+
+def _more_protective_stop(side: str, current_stop: float, candidate_stop: float) -> float:
+    if side == "long":
+        return max(current_stop, candidate_stop)
+    return min(current_stop, candidate_stop)
 
 
 def _gross_r(exit_price: float, entry_price: float, side: str, stop_loss_pct: float) -> float:

@@ -91,6 +91,25 @@ def test_run_forward_paper_collection_uses_fresh_public_data_without_live_author
     closed = [trade for trade in forward_ledger["trades"] if trade["paper_status"] == "closed"]
     assert closed[0]["exit_reason"] in {"stop", "target", "horizon_exit"}
     assert closed[0]["live_order_authority"] is False
+    assert closed[0]["max_favorable_excursion_r"] >= 0
+    assert closed[0]["max_adverse_excursion_r"] <= 0
+    assert closed[0]["reached_0_5r"] in {True, False}
+    assert closed[0]["reached_1_0r"] in {True, False}
+    assert closed[0]["reached_1_5r"] in {True, False}
+    assert closed[0]["reached_2_0r"] in {True, False}
+    counterfactuals = closed[0]["counterfactual_exits"]
+    assert set(counterfactuals) == {
+        "breakeven_after_1r",
+        "breakeven_lock_0_1r_after_1r",
+        "breakeven_lock_0_1r_trail_1_5r_after_1r",
+    }
+    assert counterfactuals["breakeven_after_1r"]["exit_reason"] in {
+        "dynamic_stop",
+        "horizon_exit",
+    }
+    monitoring = json.loads((config.output_dir / "monitoring_report.json").read_text())
+    assert "reached_1_0r_then_lost_count" in monitoring["metrics"]
+    assert "counterfactual_exit_metrics" in monitoring["metrics"]
 
 
 def _write_pack(tmp_path: Path) -> Path:

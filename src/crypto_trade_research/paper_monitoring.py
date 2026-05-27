@@ -130,6 +130,14 @@ def _paper_metrics(
         "single_day_positive_r_share": _top_positive_day_share(closed_trades),
         "positive_symbol_breadth": _positive_group_fraction(closed_trades, "symbol"),
         "positive_session_breadth": _positive_session_fraction(closed_trades),
+        "reached_0_5r_count": _reached_count(closed_trades, "reached_0_5r"),
+        "reached_1_0r_count": _reached_count(closed_trades, "reached_1_0r"),
+        "reached_1_5r_count": _reached_count(closed_trades, "reached_1_5r"),
+        "reached_2_0r_count": _reached_count(closed_trades, "reached_2_0r"),
+        "reached_0_5r_then_lost_count": _reached_then_lost_count(closed_trades, "reached_0_5r"),
+        "reached_1_0r_then_lost_count": _reached_then_lost_count(closed_trades, "reached_1_0r"),
+        "reached_1_5r_then_lost_count": _reached_then_lost_count(closed_trades, "reached_1_5r"),
+        "counterfactual_exit_metrics": _counterfactual_exit_metrics(closed_trades),
         "rejection_reasons": dict(
             Counter(
                 str(trade.get("rejection_reason", ""))
@@ -289,6 +297,38 @@ def _top_positive_day_share(trades: list[dict[str, object]]) -> float:
         groups[day] += max(0.0, _float(trade.get("net_r")))
     total = sum(groups.values())
     return max(groups.values()) / total if total > 0 else 0.0
+
+
+def _reached_count(trades: list[dict[str, object]], field: str) -> int:
+    return sum(1 for trade in trades if bool(trade.get(field, False)))
+
+
+def _reached_then_lost_count(trades: list[dict[str, object]], field: str) -> int:
+    return sum(
+        1 for trade in trades if bool(trade.get(field, False)) and _float(trade.get("net_r")) < 0
+    )
+
+
+def _counterfactual_exit_metrics(trades: list[dict[str, object]]) -> dict[str, object]:
+    by_policy: dict[str, list[float]] = defaultdict(list)
+    reasons: dict[str, Counter[str]] = defaultdict(Counter)
+    for trade in trades:
+        counterfactuals = dict(trade.get("counterfactual_exits", {}))
+        for name, raw_outcome in counterfactuals.items():
+            outcome = dict(raw_outcome)
+            if outcome.get("net_r") is None:
+                continue
+            by_policy[str(name)].append(_float(outcome["net_r"]))
+            reasons[str(name)][str(outcome.get("exit_reason", ""))] += 1
+    return {
+        name: {
+            "average_r_after_costs": _mean(values),
+            "trade_count": len(values),
+            "positive_count": sum(1 for value in values if value > 0),
+            "exit_reasons": dict(reasons[name]),
+        }
+        for name, values in sorted(by_policy.items())
+    }
 
 
 def _calendar_days(days: list[str]) -> int:

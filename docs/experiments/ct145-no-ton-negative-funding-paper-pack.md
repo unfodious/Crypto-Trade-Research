@@ -135,6 +135,18 @@ Fresh public Binance USD-M run result:
 
 This is a valid no-trade state, not a model rejection.
 
+## Forward Telemetry
+
+After CT-148, closed forward-paper trades include observation-only counterfactual exit telemetry:
+
+- `max_favorable_excursion_r`
+- `max_adverse_excursion_r`
+- `reached_0_5r`, `reached_1_0r`, `reached_1_5r`, `reached_2_0r`
+- `counterfactual_exits`
+
+The monitoring report aggregates reached-R and reached-then-lost counts. These fields are for
+review only and do not change the CT-145 fixed stop/target/horizon paper fill rules.
+
 ## Droplet Runner Plan
 
 Target droplet:
