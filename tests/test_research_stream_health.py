@@ -132,6 +132,29 @@ def test_build_research_stream_health_report_summarizes_active_streams(tmp_path:
             "warnings": [],
         },
     )
+    _write_json(
+        tmp_path / "data/generated/ct164_external_forward_evidence_readiness/readiness_report.json",
+        {
+            "created_at": "2026-05-27T11:10:20Z",
+            "readiness_status": "not_ready",
+            "decision": {
+                "ready_for_external_validation_matrix": False,
+                "working_model": False,
+                "live_trading_approved": False,
+            },
+            "external_features": {
+                "row_count": 572,
+                "crowding_snapshot_count": 42,
+                "order_book_snapshot_count": 7,
+                "liquidation_snapshot_count": 3,
+            },
+            "aggregate_forward_paper": {
+                "calendar_days": 0,
+                "total_cumulative_signals": 0,
+                "total_closed_trades": 0,
+            },
+        },
+    )
 
     report = build_research_stream_health_report(root=tmp_path, include_systemd=False)
 
@@ -151,6 +174,8 @@ def test_build_research_stream_health_report_summarizes_active_streams(tmp_path:
     assert streams["ct160_binance_liquidations"]["event_count_total"] == 0
     assert streams["ct162_external_forward_features"]["row_count"] == 44
     assert streams["ct162_external_forward_features"]["crowding_snapshot_count"] == 2
+    assert streams["ct164_evidence_readiness"]["readiness_status"] == "not_ready"
+    assert streams["ct164_evidence_readiness"]["external_feature_rows"] == 572
 
 
 def test_build_research_stream_health_report_warns_on_missing_files_and_bad_crowding_count(

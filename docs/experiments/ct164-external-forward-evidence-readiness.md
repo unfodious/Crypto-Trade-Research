@@ -91,3 +91,19 @@ Droplet smoke on 2026-05-27:
 Interpretation: the external feature pipeline is now populated enough for the feature-data gate, but
 the forward-paper exposure gate is still blocked. Do not run an external-feature validation matrix
 until CT-145/CT-156 produce enough forward signals/trades and days.
+
+## Monitoring
+
+CT-165 adds droplet monitoring for this readiness gate:
+
+- service: `ct164-evidence-readiness.service`
+- timer: `ct164-evidence-readiness.timer`
+- unified health stream: `ct164_evidence_readiness`
+
+Expected current health status is operationally healthy but research-not-ready:
+
+- readiness: `not_ready`
+- external feature rows: `>=500` on the droplet
+- cumulative forward signals/trades/days: still below gate
+- working model: false
+- live trading approved: false

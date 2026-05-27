@@ -31,6 +31,7 @@ def build_research_stream_health_report(
         "ct158_binance_order_book": _build_ct158_summary(root, include_systemd, reader),
         "ct160_binance_liquidations": _build_ct160_summary(root, include_systemd, reader),
         "ct162_external_forward_features": _build_ct162_summary(root, include_systemd, reader),
+        "ct164_evidence_readiness": _build_ct164_summary(root, include_systemd, reader),
     }
     health_warnings = [
         warning
@@ -299,6 +300,46 @@ def _build_ct162_summary(
     }
     if stream["row_count"] <= 0:
         stream["health_warnings"].append("expected CT-162 row_count > 0")
+    _add_missing_file_warnings(stream, run_path)
+    return stream
+
+
+def _build_ct164_summary(
+    root: Path,
+    include_systemd: bool,
+    systemd_reader: SystemdReader,
+) -> dict[str, object]:
+    run_path = (
+        root / "data/generated/ct164_external_forward_evidence_readiness/readiness_report.json"
+    )
+    report = _read_json(run_path)
+    external = _nested_dict(report, ("external_features",))
+    aggregate = _nested_dict(report, ("aggregate_forward_paper",))
+    stream = {
+        "issue_id": "CT-165",
+        "source_issue_id": "CT-164",
+        "service_unit": "ct164-evidence-readiness.service",
+        "timer_unit": "ct164-evidence-readiness.timer",
+        "readiness_report_path": str(run_path),
+        "service": _unit_summary(
+            "ct164-evidence-readiness.service", include_systemd, systemd_reader
+        ),
+        "timer": _unit_summary("ct164-evidence-readiness.timer", include_systemd, systemd_reader),
+        "created_at": _text(report.get("created_at")),
+        "readiness_status": _text(report.get("readiness_status")),
+        "ready_for_external_validation_matrix": bool(
+            _nested_dict(report, ("decision",)).get("ready_for_external_validation_matrix", False)
+        ),
+        "external_feature_rows": _int(external.get("row_count")),
+        "crowding_snapshot_count": _int(external.get("crowding_snapshot_count")),
+        "order_book_snapshot_count": _int(external.get("order_book_snapshot_count")),
+        "liquidation_snapshot_count": _int(external.get("liquidation_snapshot_count")),
+        "calendar_days": _int(aggregate.get("calendar_days")),
+        "total_cumulative_signals": _int(aggregate.get("total_cumulative_signals")),
+        "total_closed_trades": _int(aggregate.get("total_closed_trades")),
+        "source_warnings": [],
+        "health_warnings": [],
+    }
     _add_missing_file_warnings(stream, run_path)
     return stream
 
