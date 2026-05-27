@@ -1,0 +1,10 @@
+{
+  "report_name": "ct142_no_dot_negative_funding_paper_monitoring_dry_run",
+  "output_path": "data/generated/ct142_no_dot_negative_funding_paper_collector/monitoring_report.json",
+  "issue_id": "CT-142",
+  "epic_id": "CT-113",
+  "pack_manifest_path": "data/generated/ct142_no_dot_negative_funding_paper_pack/pack_manifest.json",
+  "ledger_source_path": "data/generated/ct142_no_dot_negative_funding_paper_collector/ledger.json",
+  "ledger_strategy_name": "ct142_no_dot_negative_funding_paper_collector_dry_run",
+  "evidence_type": "historical_replay_seed"
+}
