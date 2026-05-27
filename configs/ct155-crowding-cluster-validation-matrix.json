@@ -1,0 +1,264 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct155_high_beta_l1_no_ton",
+        "candidate_setup": {
+          "name": "h12_negative_funding_high_beta_l1_no_ton",
+          "symbols": ["SOLUSDT", "SUIUSDT", "AVAXUSDT", "ADAUSDT", "ICPUSDT"],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct155_high_beta_l1_no_ton"
+      }
+    },
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct155_clean_momentum_core",
+        "candidate_setup": {
+          "name": "h12_negative_funding_clean_momentum_core",
+          "symbols": ["SOLUSDT", "AVAXUSDT", "ADAUSDT"],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct155_clean_momentum_core"
+      }
+    },
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct155_high_beta_plus_dot",
+        "candidate_setup": {
+          "name": "h12_negative_funding_high_beta_plus_dot",
+          "symbols": ["SOLUSDT", "SUIUSDT", "AVAXUSDT", "ADAUSDT", "ICPUSDT", "DOTUSDT"],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct155_high_beta_plus_dot"
+      }
+    },
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct155_majors_btc_eth",
+        "candidate_setup": {
+          "name": "h12_negative_funding_majors_btc_eth",
+          "symbols": ["BTCUSDT", "ETHUSDT"],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct155_majors_btc_eth"
+      }
+    },
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct155_laggard_old_alts",
+        "candidate_setup": {
+          "name": "h12_negative_funding_laggard_old_alts",
+          "symbols": ["ATOMUSDT", "XRPUSDT", "TONUSDT", "DOTUSDT"],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct155_laggard_old_alts"
+      }
+    },
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct155_all_symbols_same_filters",
+        "candidate_setup": {
+          "name": "h12_negative_funding_all_symbols_same_filters",
+          "symbols": [
+            "SOLUSDT",
+            "SUIUSDT",
+            "AVAXUSDT",
+            "ADAUSDT",
+            "ICPUSDT",
+            "ATOMUSDT",
+            "XRPUSDT",
+            "TONUSDT",
+            "DOTUSDT",
+            "BTCUSDT",
+            "ETHUSDT"
+          ],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct155_all_symbols_same_filters"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct155_crowding_cluster_validation/leaderboard.json",
+  "markdown_path": "data/generated/ct155_crowding_cluster_validation/leaderboard.md"
+}

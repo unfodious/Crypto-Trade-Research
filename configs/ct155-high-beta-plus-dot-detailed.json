@@ -1,0 +1,47 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct155_high_beta_plus_dot_detailed",
+        "candidate_setup": {
+          "name": "h12_negative_funding_high_beta_plus_dot",
+          "symbols": ["SOLUSDT", "SUIUSDT", "AVAXUSDT", "ADAUSDT", "ICPUSDT", "DOTUSDT"],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": true
+        },
+        "output_dir": "data/generated/ct155_high_beta_plus_dot_detailed"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct155_high_beta_plus_dot_detailed/leaderboard.json",
+  "markdown_path": "data/generated/ct155_high_beta_plus_dot_detailed/leaderboard.md"
+}
