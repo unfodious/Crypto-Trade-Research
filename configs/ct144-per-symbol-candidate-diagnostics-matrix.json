@@ -1,0 +1,293 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct144_symbol_sol",
+        "candidate_setup": {
+          "name": "h12_negative_funding_symbol_sol",
+          "symbols": ["SOLUSDT"],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct144_symbol_sol"
+      }
+    },
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct144_symbol_sui",
+        "candidate_setup": {
+          "name": "h12_negative_funding_symbol_sui",
+          "symbols": ["SUIUSDT"],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct144_symbol_sui"
+      }
+    },
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct144_symbol_avax",
+        "candidate_setup": {
+          "name": "h12_negative_funding_symbol_avax",
+          "symbols": ["AVAXUSDT"],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct144_symbol_avax"
+      }
+    },
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct144_symbol_ada",
+        "candidate_setup": {
+          "name": "h12_negative_funding_symbol_ada",
+          "symbols": ["ADAUSDT"],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct144_symbol_ada"
+      }
+    },
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct144_symbol_icp",
+        "candidate_setup": {
+          "name": "h12_negative_funding_symbol_icp",
+          "symbols": ["ICPUSDT"],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct144_symbol_icp"
+      }
+    },
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct144_symbol_ton",
+        "candidate_setup": {
+          "name": "h12_negative_funding_symbol_ton",
+          "symbols": ["TONUSDT"],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct144_symbol_ton"
+      }
+    },
+    {
+      "config": "configs/ct138-no-weak-symbols-no-riskoff-base.json",
+      "overrides": {
+        "experiment_name": "ct144_symbol_dot",
+        "candidate_setup": {
+          "name": "h12_negative_funding_symbol_dot",
+          "symbols": ["DOTUSDT"],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct144_symbol_dot"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct144_per_symbol_candidate_diagnostics/leaderboard.json",
+  "markdown_path": "data/generated/ct144_per_symbol_candidate_diagnostics/leaderboard.md"
+}
