@@ -41,6 +41,7 @@ MARKET_CANDLE_COLUMNS: tuple[str, ...] = (
     "source_file",
     "checksum",
 )
+MAX_CANDLE_RANGE_TO_OPEN_RATIO = Decimal("1.0")
 
 FUTURE_LABEL_COLUMNS = frozenset(
     {
@@ -255,8 +256,8 @@ def _validate_market_candle(row: dict[str, object]) -> None:
 
     candle_range = high - low
     body_reference = max(abs(open_price), Decimal("1"))
-    if candle_range / body_reference > Decimal("0.5"):
-        raise DatasetValidationError("abnormal wick exceeds 50% of reference price")
+    if candle_range / body_reference > MAX_CANDLE_RANGE_TO_OPEN_RATIO:
+        raise DatasetValidationError("abnormal wick exceeds 100% of reference price")
 
 
 def _validate_missing_candles(rows: Sequence[dict[str, object]]) -> None:

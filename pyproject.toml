@@ -35,6 +35,7 @@ crypto-trade-build-paper-monitoring-report = "crypto_trade_research.paper_monito
 crypto-trade-run-paper-collector = "crypto_trade_research.paper_collector:main"
 crypto-trade-run-forward-paper = "crypto_trade_research.paper_forward:main"
 crypto-trade-research-stream-health = "crypto_trade_research.research_stream_health:main"
+crypto-trade-run-historical-holdout-replay = "crypto_trade_research.historical_holdout_replay:main"
 
 [project.optional-dependencies]
 dev = [

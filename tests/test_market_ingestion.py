@@ -145,3 +145,37 @@ def test_raw_signal_rows_do_not_include_future_label_fields(tmp_path: Path) -> N
     assert "forward_return_1" not in raw_columns
     assert "target_before_stop" not in raw_columns
     assert "expected_r_after_costs" not in raw_columns
+
+
+def test_generate_market_dataset_accepts_crypto_flash_crash_candle(tmp_path: Path) -> None:
+    source_csv = tmp_path / "market_candles.csv"
+    row = _base_row("2025-10-10T21:22:00Z", "2025-10-10T21:23:00Z")
+    row.update(
+        {
+            "symbol": "avaxusdt",
+            "base_asset": "AVAX",
+            "open": "11.729",
+            "high": "18.164",
+            "low": "11.703",
+            "close": "17.935",
+            "volume": "526716",
+            "quote_volume": "7818849.472",
+            "number_of_trades": "11982",
+            "taker_buy_base_volume": "310000",
+            "taker_buy_quote_volume": "4600000",
+            "source_file": "AVAXUSDT-1m-2025-10-10.csv",
+        }
+    )
+    _write_csv(source_csv, [row])
+
+    manifest = generate_market_dataset(
+        MarketDatasetConfig(
+            source_csv=source_csv,
+            output_dir=tmp_path / "dataset",
+            dataset_name="flash_crash_dataset",
+            generator_version="test.v1",
+            generated_at=datetime(2026, 5, 25, 12, 0, tzinfo=UTC),
+        )
+    )
+
+    assert manifest.row_count == 1

@@ -1,0 +1,21 @@
+{
+  "run_name": "ct169_older_holdout_replay",
+  "output_dir": "data/generated/ct169_older_holdout_replay",
+  "issue_id": "CT-169",
+  "epic_id": "CT-113",
+  "dataset_manifest_path": "data/generated/ct169_older_holdout_core_futures_dataset/manifest.json",
+  "funding_manifest_path": "data/generated/ct169_older_holdout_funding_rate_dataset/manifest.json",
+  "pack_manifest_paths": [
+    "data/generated/ct145_no_ton_negative_funding_paper_pack/pack_manifest.json",
+    "data/generated/ct156_high_beta_dot_shadow_paper_pack/pack_manifest.json"
+  ],
+  "feature": {
+    "feature_set_version": "features.ct138.regime-symbol-refinement.v1",
+    "rolling_window": 20,
+    "higher_timeframes": [
+      "5m",
+      "15m"
+    ]
+  },
+  "generated_at": "2026-05-27T16:00:00Z"
+}
