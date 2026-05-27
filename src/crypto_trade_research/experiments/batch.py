@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from crypto_trade_research.experiments.runner import (
     BaselineExperimentConfig,
@@ -22,8 +26,10 @@ from crypto_trade_research.experiments.runner import (
     load_baseline_source_rows,
     run_baseline_experiment,
 )
-from crypto_trade_research.features import FeatureFrame
-from crypto_trade_research.labels import LabelFrame
+from crypto_trade_research.features import FeatureFrame, FeatureManifest, FeatureSpec
+from crypto_trade_research.labels import LabelFrame, LabelManifest, LabelSpec
+
+CACHE_SCHEMA_VERSION = "research.batch-artifact-cache.v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +43,7 @@ class BatchExperimentMatrix:
     experiments: tuple[BatchExperimentSpec, ...]
     leaderboard_path: Path
     markdown_path: Path
+    cache_dir: Path
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> BatchExperimentMatrix:
@@ -52,10 +59,12 @@ class BatchExperimentMatrix:
             )
         )
         markdown_path = Path(str(payload.get("markdown_path", leaderboard_path.with_suffix(".md"))))
+        cache_dir = Path(str(payload.get("cache_dir", "data/generated/research_cache")))
         return cls(
             experiments=experiments,
             leaderboard_path=leaderboard_path,
             markdown_path=markdown_path,
+            cache_dir=cache_dir,
         )
 
     @classmethod
@@ -83,10 +92,11 @@ class _CachedSourceRows:
 
 
 class _ExperimentInputCache:
-    def __init__(self) -> None:
+    def __init__(self, cache_dir: Path) -> None:
         self._sources: dict[tuple[object, ...], _CachedSourceRows] = {}
         self._features: dict[tuple[object, ...], FeatureFrame] = {}
         self._labels: dict[tuple[object, ...], LabelFrame] = {}
+        self._cache_dir = cache_dir
 
     def inputs_for(self, config: BaselineExperimentConfig) -> BaselineExperimentInputs:
         source_key = _source_cache_key(config)
@@ -105,11 +115,36 @@ class _ExperimentInputCache:
         )
         features = self._features.get(feature_key)
         if features is None:
-            features = build_baseline_features(source.rows, config, source.funding_rows)
+            features = self._read_feature_cache(feature_key)
+            if features is None:
+                features = build_baseline_features(source.rows, config, source.funding_rows)
+                self._write_feature_cache(feature_key, config, features)
+            else:
+                print(
+                    f"[{config.experiment_name}] feature cache hit ({len(features.rows)} rows)",
+                    flush=True,
+                )
             self._features[feature_key] = features
 
         if config.label_generation_mode == "candidate_only":
-            labels = build_baseline_candidate_labels(source.rows, features.rows, config)
+            label_key = (
+                *feature_key,
+                *_label_cache_key(config),
+                _candidate_setup_cache_key(config),
+            )
+            labels = self._labels.get(label_key)
+            if labels is None:
+                labels = self._read_label_cache(label_key)
+                if labels is None:
+                    labels = build_baseline_candidate_labels(source.rows, features.rows, config)
+                    self._write_label_cache(label_key, config, labels)
+                else:
+                    print(
+                        f"[{config.experiment_name}] candidate label cache hit "
+                        f"({len(labels.rows)} rows)",
+                        flush=True,
+                    )
+                self._labels[label_key] = labels
         else:
             label_key = (*source_key, *_label_cache_key(config))
             labels = self._labels.get(label_key)
@@ -125,6 +160,86 @@ class _ExperimentInputCache:
             labels=labels,
         )
 
+    def _read_feature_cache(
+        self,
+        key: tuple[object, ...],
+    ) -> FeatureFrame | None:
+        cache_path = _cache_artifact_path(self._cache_dir, "features", key)
+        rows_path = cache_path / "rows.parquet"
+        manifest_path = cache_path / "manifest.json"
+        if not rows_path.exists() or not manifest_path.exists():
+            return None
+        payload = _read_json(manifest_path)
+        if payload.get("schema_version") != CACHE_SCHEMA_VERSION:
+            return None
+        return FeatureFrame(
+            rows=[dict(row) for row in pq.read_table(rows_path).to_pylist()],
+            manifest=_feature_manifest_from_payload(dict(payload["feature_manifest"])),
+        )
+
+    def _write_feature_cache(
+        self,
+        key: tuple[object, ...],
+        config: BaselineExperimentConfig,
+        features: FeatureFrame,
+    ) -> None:
+        cache_path = _cache_artifact_path(self._cache_dir, "features", key)
+        rows_path = cache_path / "rows.parquet"
+        manifest_path = cache_path / "manifest.json"
+        _write_parquet_atomic(rows_path, features.rows)
+        _write_json_atomic(
+            manifest_path,
+            {
+                "schema_version": CACHE_SCHEMA_VERSION,
+                "kind": "features",
+                "experiment_name": config.experiment_name,
+                "created_at": _format_timestamp(datetime.now(UTC)),
+                "cache_key": _cache_key(key),
+                "row_count": len(features.rows),
+                "feature_manifest": asdict(features.manifest),
+            },
+        )
+
+    def _read_label_cache(
+        self,
+        key: tuple[object, ...],
+    ) -> LabelFrame | None:
+        cache_path = _cache_artifact_path(self._cache_dir, "candidate_labels", key)
+        rows_path = cache_path / "rows.parquet"
+        manifest_path = cache_path / "manifest.json"
+        if not rows_path.exists() or not manifest_path.exists():
+            return None
+        payload = _read_json(manifest_path)
+        if payload.get("schema_version") != CACHE_SCHEMA_VERSION:
+            return None
+        return LabelFrame(
+            rows=[dict(row) for row in pq.read_table(rows_path).to_pylist()],
+            manifest=_label_manifest_from_payload(dict(payload["label_manifest"])),
+        )
+
+    def _write_label_cache(
+        self,
+        key: tuple[object, ...],
+        config: BaselineExperimentConfig,
+        labels: LabelFrame,
+    ) -> None:
+        cache_path = _cache_artifact_path(self._cache_dir, "candidate_labels", key)
+        rows_path = cache_path / "rows.parquet"
+        manifest_path = cache_path / "manifest.json"
+        _write_parquet_atomic(rows_path, labels.rows)
+        _write_json_atomic(
+            manifest_path,
+            {
+                "schema_version": CACHE_SCHEMA_VERSION,
+                "kind": "candidate_labels",
+                "experiment_name": config.experiment_name,
+                "created_at": _format_timestamp(datetime.now(UTC)),
+                "cache_key": _cache_key(key),
+                "row_count": len(labels.rows),
+                "label_manifest": asdict(labels.manifest),
+            },
+        )
+
 
 def run_experiment_batch(
     matrix: BatchExperimentMatrix,
@@ -134,7 +249,7 @@ def run_experiment_batch(
     """Run each experiment config and write a failure-safe leaderboard."""
 
     rows: list[dict[str, object]] = []
-    input_cache = _ExperimentInputCache()
+    input_cache = _ExperimentInputCache(matrix.cache_dir)
     for index, spec in enumerate(matrix.experiments, start=1):
         raw_config: dict[str, object] = {}
         try:
@@ -291,8 +406,11 @@ def _symbol_coverage(config: dict[str, object]) -> str:
 def _source_cache_key(config: BaselineExperimentConfig) -> tuple[object, ...]:
     return (
         str(config.source_csv) if config.source_csv else None,
+        _file_digest(config.source_csv) if config.source_csv else None,
         str(config.dataset_manifest_path) if config.dataset_manifest_path else None,
+        _file_digest(config.dataset_manifest_path) if config.dataset_manifest_path else None,
         str(config.funding_manifest_path) if config.funding_manifest_path else None,
+        _file_digest(config.funding_manifest_path) if config.funding_manifest_path else None,
         config.dataset_name,
         config.generator_version,
         config.symbols,
@@ -318,6 +436,58 @@ def _label_cache_key(config: BaselineExperimentConfig) -> tuple[object, ...]:
     )
 
 
+def _candidate_setup_cache_key(config: BaselineExperimentConfig) -> tuple[object, ...]:
+    setup = config.candidate_setup
+    if setup is None:
+        return ("all_samples", (), ())
+    return (
+        setup.name,
+        setup.symbols,
+        tuple((item.feature, item.operator, item.value) for item in setup.filters),
+    )
+
+
+def _cache_artifact_path(cache_dir: Path, kind: str, key: tuple[object, ...]) -> Path:
+    return cache_dir / kind / _cache_key(key)
+
+
+def _cache_key(key: tuple[object, ...]) -> str:
+    normalized = json.dumps(key, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _file_digest(path: Path | None) -> str | None:
+    if path is None or not path.exists():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _feature_manifest_from_payload(payload: dict[str, object]) -> FeatureManifest:
+    return FeatureManifest(
+        schema_version=str(payload["schema_version"]),
+        feature_set_version=str(payload["feature_set_version"]),
+        generator_name=str(payload["generator_name"]),
+        row_count=int(payload["row_count"]),
+        features=tuple(FeatureSpec(**dict(item)) for item in payload.get("features", ())),
+    )
+
+
+def _label_manifest_from_payload(payload: dict[str, object]) -> LabelManifest:
+    return LabelManifest(
+        schema_version=str(payload["schema_version"]),
+        label_set_version=str(payload["label_set_version"]),
+        generator_name=str(payload["generator_name"]),
+        row_count=int(payload["row_count"]),
+        horizon_bars=int(payload["horizon_bars"]),
+        side=str(payload["side"]),
+        labels=tuple(LabelSpec(**dict(item)) for item in payload.get("labels", ())),
+    )
+
+
 def _optional_float(value: object) -> float | None:
     return float(value) if value is not None else None
 
@@ -329,6 +499,27 @@ def _optional_int(value: object) -> int | None:
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _read_json(path: Path) -> dict[str, object]:
+    return dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    temporary_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
+
+
+def _write_parquet_atomic(path: Path, rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(path.stem + ".tmp" + path.suffix)
+    pq.write_table(pa.Table.from_pylist(rows), temporary_path)
+    temporary_path.replace(path)
 
 
 def _markdown_leaderboard(rows: list[dict[str, object]]) -> str:

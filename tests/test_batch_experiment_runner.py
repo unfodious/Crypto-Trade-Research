@@ -2,11 +2,15 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import crypto_trade_research.experiments.batch as batch_module
 from crypto_trade_research.experiments.batch import (
     BatchExperimentMatrix,
+    _ExperimentInputCache,
     leaderboard_row_from_record,
     run_experiment_batch,
 )
+from crypto_trade_research.features import FeatureFrame, FeatureManifest
+from crypto_trade_research.labels import LabelFrame, LabelManifest
 
 
 def test_leaderboard_row_from_record_aggregates_failed_gates(tmp_path: Path) -> None:
@@ -236,3 +240,178 @@ def test_batch_runner_applies_matrix_overrides_before_running(tmp_path: Path) ->
     assert seen_configs[0].baseline["probability_threshold"] == 0.60
     assert seen_configs[0].candidate_setup["name"] == "range_high_short_fade_ge_0_80"
     assert seen_configs[0].candidate_setup["filters"][0]["value"] == 0.80
+
+
+def test_experiment_input_cache_reuses_disk_artifacts_between_instances(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    manifest_path = tmp_path / "dataset_manifest.json"
+    funding_manifest_path = tmp_path / "funding_manifest.json"
+    manifest_path.write_text('{"dataset": "unit"}', encoding="utf-8")
+    funding_manifest_path.write_text('{"funding": "unit"}', encoding="utf-8")
+    source_rows = [{"symbol": "BTCUSDT", "timeframe": "1m"}]
+    funding_rows = [{"symbol": "BTCUSDT"}]
+    feature_frame = FeatureFrame(
+        rows=[{"symbol": "BTCUSDT", "decision_time": "2026-01-01T00:01:00Z", "return_1": 0.1}],
+        manifest=FeatureManifest(
+            schema_version="research.dataset.v1",
+            feature_set_version="features.unit.v1",
+            generator_name="unit",
+            row_count=1,
+            features=(),
+        ),
+    )
+    label_frame = LabelFrame(
+        rows=[
+            {
+                "symbol": "BTCUSDT",
+                "decision_time": "2026-01-01T00:01:00Z",
+                "target_before_stop": True,
+                "realized_r_after_costs": 1.0,
+            }
+        ],
+        manifest=LabelManifest(
+            schema_version="research.dataset.v1",
+            label_set_version="labels.unit.v1",
+            generator_name="unit",
+            row_count=1,
+            horizon_bars=1,
+            side="long",
+            labels=(),
+        ),
+    )
+    config = _cache_unit_config(manifest_path, funding_manifest_path)
+
+    monkeypatch.setattr(
+        batch_module,
+        "load_baseline_source_rows",
+        lambda _: (manifest_path, source_rows),
+    )
+    monkeypatch.setattr(batch_module, "load_baseline_funding_rows", lambda _: funding_rows)
+    monkeypatch.setattr(batch_module, "build_baseline_features", lambda *_: feature_frame)
+    monkeypatch.setattr(batch_module, "build_baseline_candidate_labels", lambda *_: label_frame)
+
+    first_inputs = _ExperimentInputCache(tmp_path / "cache").inputs_for(config)
+    assert first_inputs.features.rows == feature_frame.rows
+    assert first_inputs.labels.rows == label_frame.rows
+
+    def fail_build(*_: object) -> object:
+        raise AssertionError("cache miss")
+
+    monkeypatch.setattr(batch_module, "build_baseline_features", fail_build)
+    monkeypatch.setattr(batch_module, "build_baseline_candidate_labels", fail_build)
+
+    second_inputs = _ExperimentInputCache(tmp_path / "cache").inputs_for(config)
+    assert second_inputs.features.rows == feature_frame.rows
+    assert second_inputs.labels.rows == label_frame.rows
+
+
+def test_experiment_input_cache_key_changes_with_candidate_setup(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    manifest_path = tmp_path / "dataset_manifest.json"
+    funding_manifest_path = tmp_path / "funding_manifest.json"
+    manifest_path.write_text('{"dataset": "unit"}', encoding="utf-8")
+    funding_manifest_path.write_text('{"funding": "unit"}', encoding="utf-8")
+    source_rows = [{"symbol": "BTCUSDT", "timeframe": "1m"}]
+    feature_frame = FeatureFrame(
+        rows=[{"symbol": "BTCUSDT", "decision_time": "2026-01-01T00:01:00Z", "return_1": 0.1}],
+        manifest=FeatureManifest(
+            schema_version="research.dataset.v1",
+            feature_set_version="features.unit.v1",
+            generator_name="unit",
+            row_count=1,
+            features=(),
+        ),
+    )
+    first_label_frame = _label_frame("BTCUSDT")
+    second_label_frame = _label_frame("ETHUSDT")
+    label_calls = {"count": 0}
+
+    def fake_labels(*_: object) -> LabelFrame:
+        label_calls["count"] += 1
+        return first_label_frame if label_calls["count"] == 1 else second_label_frame
+
+    monkeypatch.setattr(
+        batch_module,
+        "load_baseline_source_rows",
+        lambda _: (manifest_path, source_rows),
+    )
+    monkeypatch.setattr(batch_module, "load_baseline_funding_rows", lambda _: [])
+    monkeypatch.setattr(batch_module, "build_baseline_features", lambda *_: feature_frame)
+    monkeypatch.setattr(batch_module, "build_baseline_candidate_labels", fake_labels)
+
+    cache = _ExperimentInputCache(tmp_path / "cache")
+    first_inputs = cache.inputs_for(_cache_unit_config(manifest_path, funding_manifest_path))
+    second_inputs = cache.inputs_for(
+        _cache_unit_config(manifest_path, funding_manifest_path, candidate_symbols=("ETHUSDT",))
+    )
+
+    assert first_inputs.labels.rows[0]["symbol"] == "BTCUSDT"
+    assert second_inputs.labels.rows[0]["symbol"] == "ETHUSDT"
+    assert label_calls["count"] == 2
+
+
+def _cache_unit_config(
+    manifest_path: Path,
+    funding_manifest_path: Path,
+    *,
+    candidate_symbols: tuple[str, ...] = ("BTCUSDT",),
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        experiment_name="unit_cache",
+        source_csv=None,
+        dataset_manifest_path=manifest_path,
+        funding_manifest_path=funding_manifest_path,
+        dataset_name="unit_dataset",
+        generator_version="unit.v1",
+        symbols=("BTCUSDT", "ETHUSDT"),
+        timeframes=("1m",),
+        feature_set_version="features.unit.v1",
+        rolling_window=2,
+        higher_timeframes=(),
+        label_generation_mode="candidate_only",
+        label_config=SimpleNamespace(
+            label_set_version="labels.unit.v1",
+            horizon_bars=1,
+            side="long",
+            stop_loss_pct=0.01,
+            target_pct=0.02,
+            cost_pct=0.001,
+            flat_threshold_pct=0.0,
+            target_stop_tie_breaker="stop_first",
+            exit_model="fixed_target_stop",
+            breakeven_activation_r=None,
+            breakeven_lock_r=0.0,
+            trailing_stop_r=None,
+        ),
+        candidate_setup=SimpleNamespace(
+            name="unit_setup",
+            symbols=candidate_symbols,
+            filters=(SimpleNamespace(feature="return_1", operator=">=", value=0.0),),
+        ),
+    )
+
+
+def _label_frame(symbol: str) -> LabelFrame:
+    return LabelFrame(
+        rows=[
+            {
+                "symbol": symbol,
+                "decision_time": "2026-01-01T00:01:00Z",
+                "target_before_stop": True,
+                "realized_r_after_costs": 1.0,
+            }
+        ],
+        manifest=LabelManifest(
+            schema_version="research.dataset.v1",
+            label_set_version="labels.unit.v1",
+            generator_name="unit",
+            row_count=1,
+            horizon_bars=1,
+            side="long",
+            labels=(),
+        ),
+    )
