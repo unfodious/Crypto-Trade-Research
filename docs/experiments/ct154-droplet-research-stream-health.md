@@ -11,6 +11,7 @@ Epic: CT-113
 Added a unified research-only health summary command for the active CT-113 droplet streams:
 
 - CT-145 / CT-146 no-TON forward paper;
+- CT-156 / CT-157 high-beta+DOT shadow forward paper;
 - CT-149 / CT-150 Hyperliquid whale watchlist;
 - CT-151 / CT-152 / CT-153 Binance crowding snapshots.
 
@@ -46,6 +47,7 @@ Important stream fields:
 
 - CT-145: latest decision time, candidate/signal/take counts, trade counts, monitoring gate status,
   average R, drawdown, and exit telemetry counters;
+- CT-156: the same forward-paper fields for the high-beta+DOT shadow stream;
 - CT-149: latest snapshot time, position count, fill count, alert count, and wallet warnings;
 - CT-151/153: latest generated time, generator version, period, symbol count, row count, and source
   warnings.

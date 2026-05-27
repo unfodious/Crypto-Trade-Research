@@ -1,0 +1,11 @@
+{
+  "run_name": "ct156_high_beta_dot_shadow_paper_collector_dry_run",
+  "output_dir": "data/generated/ct156_high_beta_dot_shadow_paper_collector",
+  "issue_id": "CT-156",
+  "epic_id": "CT-113",
+  "pack_manifest_path": "data/generated/ct156_high_beta_dot_shadow_paper_pack/pack_manifest.json",
+  "feature_source_path": "data/generated/ct155_high_beta_plus_dot_detailed/features.parquet",
+  "label_source_path": "data/generated/ct155_high_beta_plus_dot_detailed/labels.parquet",
+  "decision_time": null,
+  "mode": "historical_dry_run"
+}

@@ -25,6 +25,7 @@ def build_research_stream_health_report(
     reader = systemd_reader or _read_systemd_unit
     streams = {
         "ct145_forward_paper": _build_ct145_summary(root, include_systemd, reader),
+        "ct156_shadow_forward_paper": _build_ct156_summary(root, include_systemd, reader),
         "ct149_whale_watchlist": _build_ct149_summary(root, include_systemd, reader),
         "ct151_binance_crowding": _build_ct151_summary(root, include_systemd, reader),
     }
@@ -57,29 +58,65 @@ def _build_ct145_summary(
     include_systemd: bool,
     systemd_reader: SystemdReader,
 ) -> dict[str, object]:
-    forward_run_path = (
-        root / "data/generated/ct145_no_ton_negative_funding_forward_paper/forward_run.json"
+    return _build_forward_paper_summary(
+        root=root,
+        issue_id="CT-146",
+        source_issue_id="CT-145",
+        service_unit="ct145-forward-paper.service",
+        timer_unit="ct145-forward-paper.timer",
+        output_path=Path("data/generated/ct145_no_ton_negative_funding_forward_paper"),
+        include_systemd=include_systemd,
+        systemd_reader=systemd_reader,
     )
-    monitoring_path = (
-        root / "data/generated/ct145_no_ton_negative_funding_forward_paper/monitoring_report.json"
+
+
+def _build_ct156_summary(
+    root: Path,
+    include_systemd: bool,
+    systemd_reader: SystemdReader,
+) -> dict[str, object]:
+    return _build_forward_paper_summary(
+        root=root,
+        issue_id="CT-156",
+        source_issue_id="CT-155",
+        service_unit="ct156-forward-paper.service",
+        timer_unit="ct156-forward-paper.timer",
+        output_path=Path("data/generated/ct156_high_beta_dot_shadow_forward_paper"),
+        include_systemd=include_systemd,
+        systemd_reader=systemd_reader,
     )
+
+
+def _build_forward_paper_summary(
+    *,
+    root: Path,
+    issue_id: str,
+    source_issue_id: str,
+    service_unit: str,
+    timer_unit: str,
+    output_path: Path,
+    include_systemd: bool,
+    systemd_reader: SystemdReader,
+) -> dict[str, object]:
+    forward_run_path = root / output_path / "forward_run.json"
+    monitoring_path = root / output_path / "monitoring_report.json"
     forward_run = _read_json(forward_run_path)
     monitoring = _read_json(monitoring_path)
     stream = {
-        "issue_id": "CT-146",
-        "source_issue_id": "CT-145",
-        "service_unit": "ct145-forward-paper.service",
-        "timer_unit": "ct145-forward-paper.timer",
+        "issue_id": issue_id,
+        "source_issue_id": source_issue_id,
+        "service_unit": service_unit,
+        "timer_unit": timer_unit,
         "forward_run_path": str(forward_run_path),
         "monitoring_report_path": str(monitoring_path),
-        "service": _unit_summary("ct145-forward-paper.service", include_systemd, systemd_reader),
-        "timer": _unit_summary("ct145-forward-paper.timer", include_systemd, systemd_reader),
+        "service": _unit_summary(service_unit, include_systemd, systemd_reader),
+        "timer": _unit_summary(timer_unit, include_systemd, systemd_reader),
         "latest_decision_time": _nested_text(forward_run, ("collector_summary", "decision_time")),
         "collector_summary": _nested_dict(forward_run, ("collector_summary",)),
         "row_counts": _nested_dict(forward_run, ("row_counts",)),
         "monitoring_status": _text(monitoring.get("monitoring_status")),
         "decision": _nested_dict(monitoring, ("decision",)),
-        "metrics": _ct145_metrics(monitoring),
+        "metrics": _forward_paper_metrics(monitoring),
         "source_warnings": list(_nested_list(monitoring, ("warnings",))),
         "health_warnings": [],
     }
@@ -254,7 +291,7 @@ def _latest_snapshot(run: dict[str, object]) -> dict[str, object]:
     return {}
 
 
-def _ct145_metrics(monitoring: dict[str, object]) -> dict[str, object]:
+def _forward_paper_metrics(monitoring: dict[str, object]) -> dict[str, object]:
     metrics = _nested_dict(monitoring, ("metrics",))
     return {
         "trade_count": _int(metrics.get("trade_count")),
