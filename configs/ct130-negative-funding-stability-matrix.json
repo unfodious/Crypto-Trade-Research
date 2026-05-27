@@ -1,0 +1,359 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json"
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct130_long_negative_funding_h12_loose_funding_top3",
+        "candidate_setup": {
+          "name": "h12_long_negative_funding_loose_funding",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": 0.0
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct130_long_negative_funding_h12_loose_funding_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct130_long_negative_funding_h12_strict_funding_top3",
+        "candidate_setup": {
+          "name": "h12_long_negative_funding_strict_funding",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00005
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct130_long_negative_funding_h12_strict_funding_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct130_long_negative_funding_h12_loose_zscore_top3",
+        "candidate_setup": {
+          "name": "h12_long_negative_funding_loose_zscore",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": 0.0
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct130_long_negative_funding_h12_loose_zscore_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct130_long_negative_funding_h12_strict_zscore_top3",
+        "candidate_setup": {
+          "name": "h12_long_negative_funding_strict_zscore",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.5
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct130_long_negative_funding_h12_strict_zscore_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct130_long_negative_funding_h12_close40_top3",
+        "candidate_setup": {
+          "name": "h12_long_negative_funding_close40",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.4
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct130_long_negative_funding_h12_close40_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct130_long_negative_funding_h12_close50_top3",
+        "candidate_setup": {
+          "name": "h12_long_negative_funding_close50",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct130_long_negative_funding_h12_close50_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct130_long_negative_funding_h18_base_top3",
+        "label": {
+          "label_set_version": "labels.ct130.long-18bar-2r.v1",
+          "horizon_bars": 18,
+          "side": "long",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.008,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first"
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct130_long_negative_funding_h18_base_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct130_long_negative_funding_h24_base_top3",
+        "label": {
+          "label_set_version": "labels.ct130.long-24bar-2r.v1",
+          "horizon_bars": 24,
+          "side": "long",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.008,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first"
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct130_long_negative_funding_h24_base_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct130_long_negative_funding_h12_tight_stop_2r_top3",
+        "label": {
+          "label_set_version": "labels.ct130.long-12bar-tightstop-2r.v1",
+          "horizon_bars": 12,
+          "side": "long",
+          "stop_loss_pct": 0.003,
+          "target_pct": 0.006,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first"
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct130_long_negative_funding_h12_tight_stop_2r_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct130_long_negative_funding_h12_wide_stop_2r_top3",
+        "label": {
+          "label_set_version": "labels.ct130.long-12bar-widestop-2r.v1",
+          "horizon_bars": 12,
+          "side": "long",
+          "stop_loss_pct": 0.005,
+          "target_pct": 0.01,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first"
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct130_long_negative_funding_h12_wide_stop_2r_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct130_long_negative_funding_h12_target15r_top3",
+        "label": {
+          "label_set_version": "labels.ct130.long-12bar-15r.v1",
+          "horizon_bars": 12,
+          "side": "long",
+          "stop_loss_pct": 0.004,
+          "target_pct": 0.006,
+          "cost_pct": 0.0007,
+          "flat_threshold_pct": 0.0002,
+          "target_stop_tie_breaker": "stop_first"
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct130_long_negative_funding_h12_target15r_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct130_long_negative_funding_h12_riskon_top3",
+        "candidate_setup": {
+          "name": "h12_long_negative_funding_riskon",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.5
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct130_long_negative_funding_h12_riskon_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct130_long_negative_funding_h12_riskoff_top3",
+        "candidate_setup": {
+          "name": "h12_long_negative_funding_riskoff",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": "<=",
+              "value": 0.5
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": "<=",
+              "value": 0.5
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct130_long_negative_funding_h12_riskoff_top3"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct130_negative_funding_stability_matrix/leaderboard.json",
+  "markdown_path": "data/generated/ct130_negative_funding_stability_matrix/leaderboard.md"
+}

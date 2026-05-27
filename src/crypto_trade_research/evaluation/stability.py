@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
+import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
 
@@ -42,6 +46,67 @@ class StabilityReport:
             "thresholds": asdict(self.thresholds),
             "created_at": self.created_at,
         }
+
+
+def evaluate_candidate_stability_from_files(
+    *,
+    leaderboard_path: Path,
+    baseline_report_path: Path,
+    candidate_name: str,
+    strategy_name: str,
+    output_path: Path | None = None,
+    thresholds: StabilityThresholds | None = None,
+) -> dict[str, object]:
+    """Evaluate a candidate stability report from persisted experiment artifacts."""
+
+    leaderboard = json.loads(leaderboard_path.read_text(encoding="utf-8"))
+    baseline_report = json.loads(baseline_report_path.read_text(encoding="utf-8"))
+    rows = [dict(row) for row in leaderboard.get("rows", ())]
+    candidate_row = _candidate_row(rows, candidate_name)
+    strategy_report = dict(dict(baseline_report["strategies"])[strategy_name])
+    segment_breakdown = segment_breakdown_from_strategy_report(strategy_report)
+    report = evaluate_candidate_stability(
+        candidate_row=candidate_row,
+        leaderboard_rows=rows,
+        segment_breakdown=segment_breakdown,
+        thresholds=thresholds,
+    )
+    payload = {
+        "schema_version": "research.candidate-stability-artifact.v1",
+        "candidate_name": candidate_name,
+        "strategy_name": strategy_name,
+        "leaderboard_path": str(leaderboard_path),
+        "baseline_report_path": str(baseline_report_path),
+        "candidate_row": candidate_row,
+        "segment_breakdown": segment_breakdown,
+        "stability_report": report.to_report_dict(),
+    }
+    if output_path is not None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    return payload
+
+
+def segment_breakdown_from_strategy_report(
+    strategy_report: dict[str, object],
+) -> dict[str, dict[str, dict[str, object]]]:
+    """Build stability segments from serialized backtest trade details."""
+
+    trades = [dict(trade) for trade in strategy_report.get("trades", ())]
+    return {
+        "model_by_symbol": _group_trade_metrics(trades, lambda trade: str(trade["symbol"])),
+        "model_by_session": _group_trade_metrics(
+            trades,
+            lambda trade: _session_name(_parse_timestamp(str(trade["decision_time"]))),
+        ),
+        "model_by_day": _group_trade_metrics(
+            trades,
+            lambda trade: _parse_timestamp(str(trade["decision_time"])).date().isoformat(),
+        ),
+    }
 
 
 def evaluate_candidate_stability(
@@ -179,6 +244,47 @@ def _segment(
     return {str(key): dict(value) for key, value in dict(raw).items()}
 
 
+def _candidate_row(rows: list[dict[str, object]], candidate_name: str) -> dict[str, object]:
+    for row in rows:
+        if row.get("experiment_name") == candidate_name:
+            return row
+    raise ValueError(f"candidate not found in leaderboard: {candidate_name}")
+
+
+def _group_trade_metrics(
+    trades: list[dict[str, object]],
+    key_fn: Callable[[dict[str, object]], str],
+) -> dict[str, dict[str, object]]:
+    groups: dict[str, list[float]] = {}
+    for trade in trades:
+        key = key_fn(trade)
+        groups.setdefault(key, []).append(_float(trade.get("net_r")))
+    return {
+        key: {
+            "average_r": _mean(values),
+            "trade_count": len(values),
+            "win_rate": len([value for value in values if value > 0]) / len(values)
+            if values
+            else 0.0,
+            "total_r": sum(values),
+        }
+        for key, values in sorted(groups.items())
+    }
+
+
+def _session_name(value: datetime) -> str:
+    hour = value.astimezone(UTC).hour
+    if hour < 8:
+        return "asia"
+    if hour < 16:
+        return "europe"
+    return "us"
+
+
+def _mean(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
 def _float(value: object) -> float:
     return float(value) if value is not None else 0.0
 
@@ -189,3 +295,33 @@ def _int(value: object) -> int:
 
 def _format_timestamp(value: datetime) -> str:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _parse_timestamp(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--leaderboard", type=Path, required=True)
+    parser.add_argument("--baseline-report", type=Path, required=True)
+    parser.add_argument("--candidate-name", required=True)
+    parser.add_argument("--strategy-name", required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = _parse_args()
+    evaluate_candidate_stability_from_files(
+        leaderboard_path=args.leaderboard,
+        baseline_report_path=args.baseline_report,
+        candidate_name=args.candidate_name,
+        strategy_name=args.strategy_name,
+        output_path=args.output,
+    )
+    print(args.output)
+
+
+if __name__ == "__main__":
+    main()

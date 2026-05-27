@@ -1,6 +1,11 @@
+import json
+from pathlib import Path
+
 from crypto_trade_research.evaluation.stability import (
     StabilityThresholds,
     evaluate_candidate_stability,
+    evaluate_candidate_stability_from_files,
+    segment_breakdown_from_strategy_report,
 )
 
 
@@ -109,3 +114,117 @@ def test_stability_report_passes_broad_positive_candidate() -> None:
 
     assert report.status == "pass"
     assert all(gate.passed for gate in report.gates)
+
+
+def test_segment_breakdown_from_strategy_report_groups_symbol_session_and_day() -> None:
+    breakdown = segment_breakdown_from_strategy_report(
+        {
+            "trades": [
+                {
+                    "decision_time": "2026-05-01T01:00:00Z",
+                    "symbol": "BTCUSDT",
+                    "net_r": 1.0,
+                },
+                {
+                    "decision_time": "2026-05-01T09:00:00Z",
+                    "symbol": "ETHUSDT",
+                    "net_r": -1.0,
+                },
+                {
+                    "decision_time": "2026-05-02T17:00:00Z",
+                    "symbol": "BTCUSDT",
+                    "net_r": 2.0,
+                },
+            ]
+        }
+    )
+
+    assert breakdown["model_by_symbol"]["BTCUSDT"]["trade_count"] == 2
+    assert breakdown["model_by_symbol"]["BTCUSDT"]["average_r"] == 1.5
+    assert breakdown["model_by_session"]["asia"]["trade_count"] == 1
+    assert breakdown["model_by_session"]["europe"]["average_r"] == -1.0
+    assert breakdown["model_by_session"]["us"]["win_rate"] == 1.0
+    assert breakdown["model_by_day"]["2026-05-01"]["trade_count"] == 2
+
+
+def test_evaluate_candidate_stability_from_files_writes_artifact(tmp_path: Path) -> None:
+    leaderboard_path = tmp_path / "leaderboard.json"
+    baseline_report_path = tmp_path / "baseline_report.json"
+    output_path = tmp_path / "stability.json"
+    leaderboard_path.write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {
+                        "experiment_name": "candidate",
+                        "oos_model_average_r": 0.18,
+                        "oos_rule_only_average_r": 0.04,
+                        "trade_count": 6,
+                        "max_drawdown_pct": 0.02,
+                    },
+                    {
+                        "experiment_name": "nearby",
+                        "oos_model_average_r": 0.05,
+                        "trade_count": 5,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    baseline_report_path.write_text(
+        json.dumps(
+            {
+                "strategies": {
+                    "expected_r_ridge_top3_oos": {
+                        "trades": [
+                            {
+                                "decision_time": "2026-05-01T01:00:00Z",
+                                "symbol": "BTCUSDT",
+                                "net_r": 1.0,
+                            },
+                            {
+                                "decision_time": "2026-05-01T09:00:00Z",
+                                "symbol": "ETHUSDT",
+                                "net_r": 1.0,
+                            },
+                            {
+                                "decision_time": "2026-05-01T17:00:00Z",
+                                "symbol": "SOLUSDT",
+                                "net_r": 1.0,
+                            },
+                            {
+                                "decision_time": "2026-05-02T01:00:00Z",
+                                "symbol": "BTCUSDT",
+                                "net_r": 1.0,
+                            },
+                            {
+                                "decision_time": "2026-05-02T09:00:00Z",
+                                "symbol": "ETHUSDT",
+                                "net_r": 1.0,
+                            },
+                            {
+                                "decision_time": "2026-05-02T17:00:00Z",
+                                "symbol": "SOLUSDT",
+                                "net_r": -1.0,
+                            },
+                        ]
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = evaluate_candidate_stability_from_files(
+        leaderboard_path=leaderboard_path,
+        baseline_report_path=baseline_report_path,
+        candidate_name="candidate",
+        strategy_name="expected_r_ridge_top3_oos",
+        output_path=output_path,
+        thresholds=StabilityThresholds(min_trade_count=5),
+    )
+
+    assert output_path.exists()
+    assert payload["stability_report"]["status"] == "pass"
+    assert payload["segment_breakdown"]["model_by_session"]["us"]["trade_count"] == 2

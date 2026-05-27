@@ -109,16 +109,7 @@ class _ExperimentInputCache:
             self._features[feature_key] = features
 
         if config.label_generation_mode == "candidate_only":
-            label_key = (
-                *feature_key,
-                *_label_cache_key(config),
-                config.decision_feature,
-                _candidate_setup_cache_key(config),
-            )
-            labels = self._labels.get(label_key)
-            if labels is None:
-                labels = build_baseline_candidate_labels(source.rows, features.rows, config)
-                self._labels[label_key] = labels
+            labels = build_baseline_candidate_labels(source.rows, features.rows, config)
         else:
             label_key = (*source_key, *_label_cache_key(config))
             labels = self._labels.get(label_key)
@@ -320,16 +311,6 @@ def _label_cache_key(config: BaselineExperimentConfig) -> tuple[object, ...]:
         label.breakeven_activation_r,
         label.breakeven_lock_r,
         label.trailing_stop_r,
-    )
-
-
-def _candidate_setup_cache_key(config: BaselineExperimentConfig) -> tuple[object, ...]:
-    setup = config.candidate_setup
-    if setup is None:
-        return ("all_samples", ())
-    return (
-        setup.name,
-        tuple((item.feature, item.operator, item.value) for item in setup.filters),
     )
 
 
