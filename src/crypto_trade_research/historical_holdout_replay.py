@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections import defaultdict
 from dataclasses import asdict, dataclass
@@ -14,11 +15,18 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from crypto_trade_research.backtest import BacktestConfig, SignalRow, evaluate_signal_strategy
-from crypto_trade_research.features import FeatureConfig, generate_ohlcv_features
+from crypto_trade_research.features import (
+    FeatureConfig,
+    FeatureFrame,
+    FeatureManifest,
+    FeatureSpec,
+    generate_ohlcv_features,
+)
 from crypto_trade_research.labels import LabelConfig, generate_trade_labels_for_keys
 from crypto_trade_research.models.artifacts import ModelArtifact, load_model_artifact
 
 SCHEMA_VERSION = "research.historical-holdout-replay.v1"
+FEATURE_CACHE_SCHEMA_VERSION = "research.historical-holdout-feature-cache.v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +37,7 @@ class HistoricalHoldoutReplayConfig:
     epic_id: str
     dataset_manifest_path: Path
     funding_manifest_path: Path
+    feature_cache_dir: Path
     pack_manifest_paths: tuple[Path, ...]
     feature_set_version: str
     rolling_window: int
@@ -38,13 +47,17 @@ class HistoricalHoldoutReplayConfig:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> HistoricalHoldoutReplayConfig:
         feature = dict(payload["feature"])
+        output_dir = Path(str(payload["output_dir"]))
         return cls(
             run_name=str(payload["run_name"]),
-            output_dir=Path(str(payload["output_dir"])),
+            output_dir=output_dir,
             issue_id=str(payload["issue_id"]),
             epic_id=str(payload["epic_id"]),
             dataset_manifest_path=Path(str(payload["dataset_manifest_path"])),
             funding_manifest_path=Path(str(payload["funding_manifest_path"])),
+            feature_cache_dir=Path(
+                str(payload.get("feature_cache_dir", output_dir / "feature_cache"))
+            ),
             pack_manifest_paths=tuple(Path(str(path)) for path in payload["pack_manifest_paths"]),
             feature_set_version=str(feature["feature_set_version"]),
             rolling_window=int(feature.get("rolling_window", 20)),
@@ -62,14 +75,16 @@ def run_historical_holdout_replay(config: HistoricalHoldoutReplayConfig) -> dict
 
     source_rows = _read_manifest_rows(config.dataset_manifest_path)
     funding_rows = _read_manifest_rows(config.funding_manifest_path)
-    features = generate_ohlcv_features(
+    feature_config = FeatureConfig(
+        feature_set_version=config.feature_set_version,
+        rolling_window=config.rolling_window,
+        higher_timeframes=config.higher_timeframes,
+    )
+    features, feature_cache = _load_or_build_features(
+        config,
         source_rows,
-        FeatureConfig(
-            feature_set_version=config.feature_set_version,
-            rolling_window=config.rolling_window,
-            higher_timeframes=config.higher_timeframes,
-        ),
-        funding_rate_rows=funding_rows,
+        funding_rows,
+        feature_config,
     )
     entry_prices = _entry_prices(source_rows)
     replays = [
@@ -90,6 +105,7 @@ def run_historical_holdout_replay(config: HistoricalHoldoutReplayConfig) -> dict
             "funding_rows": len(funding_rows),
             "feature_rows": len(features.rows),
         },
+        "feature_cache": feature_cache,
         "replays": replays,
         "decision": {
             "live_trading_approved": False,
@@ -101,6 +117,92 @@ def run_historical_holdout_replay(config: HistoricalHoldoutReplayConfig) -> dict
     _write_json(config.output_dir / "replay_report.json", payload)
     _write_markdown(config.output_dir / "replay_report.md", payload)
     return payload
+
+
+def _load_or_build_features(
+    config: HistoricalHoldoutReplayConfig,
+    source_rows: list[dict[str, object]],
+    funding_rows: list[dict[str, object]],
+    feature_config: FeatureConfig,
+) -> tuple[FeatureFrame, dict[str, object]]:
+    cache_key = _feature_cache_key(config)
+    cache_path = config.feature_cache_dir / "features" / cache_key
+    rows_path = cache_path / "rows.parquet"
+    manifest_path = cache_path / "manifest.json"
+    cached = _read_feature_cache(rows_path, manifest_path)
+    if cached is not None:
+        return cached, {
+            "status": "hit",
+            "cache_key": cache_key,
+            "rows_path": str(rows_path),
+            "manifest_path": str(manifest_path),
+        }
+
+    features = generate_ohlcv_features(
+        source_rows,
+        feature_config,
+        funding_rate_rows=funding_rows,
+    )
+    _write_feature_cache(cache_key, rows_path, manifest_path, config, features)
+    return features, {
+        "status": "miss",
+        "cache_key": cache_key,
+        "rows_path": str(rows_path),
+        "manifest_path": str(manifest_path),
+    }
+
+
+def _read_feature_cache(rows_path: Path, manifest_path: Path) -> FeatureFrame | None:
+    if not rows_path.exists() or not manifest_path.exists():
+        return None
+    payload = _read_json(manifest_path)
+    if payload.get("schema_version") != FEATURE_CACHE_SCHEMA_VERSION:
+        return None
+    return FeatureFrame(
+        rows=[dict(row) for row in pq.read_table(rows_path).to_pylist()],
+        manifest=_feature_manifest_from_payload(dict(payload["feature_manifest"])),
+    )
+
+
+def _write_feature_cache(
+    cache_key: str,
+    rows_path: Path,
+    manifest_path: Path,
+    config: HistoricalHoldoutReplayConfig,
+    features: FeatureFrame,
+) -> None:
+    _write_parquet_atomic(rows_path, features.rows)
+    _write_json_atomic(
+        manifest_path,
+        {
+            "schema_version": FEATURE_CACHE_SCHEMA_VERSION,
+            "kind": "features",
+            "run_name": config.run_name,
+            "created_at": _format_timestamp(datetime.now(UTC)),
+            "cache_key": cache_key,
+            "row_count": len(features.rows),
+            "dataset_manifest_path": str(config.dataset_manifest_path),
+            "funding_manifest_path": str(config.funding_manifest_path),
+            "feature_set_version": config.feature_set_version,
+            "rolling_window": config.rolling_window,
+            "higher_timeframes": list(config.higher_timeframes),
+            "feature_manifest": asdict(features.manifest),
+        },
+    )
+
+
+def _feature_cache_key(config: HistoricalHoldoutReplayConfig) -> str:
+    key = (
+        str(config.dataset_manifest_path),
+        _file_digest(config.dataset_manifest_path),
+        str(config.funding_manifest_path),
+        _file_digest(config.funding_manifest_path),
+        config.feature_set_version,
+        config.rolling_window,
+        config.higher_timeframes,
+    )
+    normalized = json.dumps(key, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _replay_pack(
@@ -440,6 +542,62 @@ def _write_trade_parquets(output_dir: Path, payload: dict[str, object]) -> None:
 
 def _read_json(path: Path) -> dict[str, object]:
     return dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    temporary_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
+
+
+def _write_parquet_atomic(path: Path, rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(path.stem + ".tmp" + path.suffix)
+    if not rows:
+        pq.write_table(pa.Table.from_pylist(rows), temporary_path)
+        temporary_path.replace(path)
+        return
+
+    writer = None
+    try:
+        for start in range(0, len(rows), 50_000):
+            chunk = rows[start : start + 50_000]
+            table = (
+                pa.Table.from_pylist(chunk)
+                if writer is None
+                else pa.Table.from_pylist(chunk, schema=writer.schema)
+            )
+            if writer is None:
+                writer = pq.ParquetWriter(temporary_path, table.schema)
+            writer.write_table(table)
+    finally:
+        if writer is not None:
+            writer.close()
+    temporary_path.replace(path)
+
+
+def _feature_manifest_from_payload(payload: dict[str, object]) -> FeatureManifest:
+    return FeatureManifest(
+        schema_version=str(payload["schema_version"]),
+        feature_set_version=str(payload["feature_set_version"]),
+        generator_name=str(payload["generator_name"]),
+        row_count=int(payload["row_count"]),
+        features=tuple(FeatureSpec(**dict(item)) for item in payload.get("features", ())),
+    )
+
+
+def _file_digest(path: Path | None) -> str | None:
+    if path is None or not path.exists():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
