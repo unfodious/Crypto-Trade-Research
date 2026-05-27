@@ -4,6 +4,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
 SCHEMA_VERSION = "research.dataset.v1"
 GENERATOR_NAME = "crypto_trade_research.ohlcv_features"
@@ -1637,6 +1638,8 @@ def _mean(values: Sequence[float]) -> float:
 
 def _number(value: object) -> float | None:
     if isinstance(value, int | float) and not isinstance(value, bool):
+        return float(value)
+    if isinstance(value, Decimal):
         return float(value)
     return None
 

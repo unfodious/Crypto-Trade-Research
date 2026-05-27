@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -403,6 +404,26 @@ def test_funding_features_use_only_available_funding_events() -> None:
     assert last_row["decision_time"] == _ts(3)
     assert last_row["funding_rate"] == pytest.approx(0.0004)
     assert last_row["hours_since_funding"] == pytest.approx(2 / 60)
+
+
+def test_funding_features_accept_decimal_forward_rows() -> None:
+    rows = [_bar(1, close=10, symbol="ADAUSDT"), _bar(2, close=11, symbol="ADAUSDT")]
+    funding_rows = [
+        _funding(0, "ADAUSDT", Decimal("-0.00004")),
+        _funding(1, "ADAUSDT", Decimal("-0.00002")),
+    ]
+
+    frame = generate_ohlcv_features(
+        rows,
+        FeatureConfig(feature_set_version="unit.features.v1", rolling_window=2),
+        funding_rate_rows=funding_rows,
+    )
+
+    first_row = frame.rows[0]
+    assert first_row["funding_rate"] == pytest.approx(-0.00002)
+    assert first_row["funding_rate_zscore_2"] == pytest.approx(1.0)
+    assert first_row["funding_rate_abs"] == pytest.approx(0.00002)
+    assert first_row["funding_rate_positive"] == 0.0
 
 
 def test_derived_multi_timeframe_features_use_only_closed_candles() -> None:
