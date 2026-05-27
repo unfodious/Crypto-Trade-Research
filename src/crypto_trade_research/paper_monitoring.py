@@ -102,24 +102,34 @@ def _paper_metrics(
     trades: list[dict[str, object]],
     source_metrics: dict[str, object],
 ) -> dict[str, object]:
-    net_r_values = [_float(trade.get("net_r")) for trade in trades]
+    closed_trades = [
+        trade
+        for trade in trades
+        if trade.get("paper_status", "closed") == "closed" and trade.get("net_r") is not None
+    ]
+    net_r_values = [_float(trade.get("net_r")) for trade in closed_trades]
     positive = [value for value in net_r_values if value > 0]
     negative = [value for value in net_r_values if value < 0]
     days = sorted(
-        {_parse_timestamp(str(trade["decision_time"])).date().isoformat() for trade in trades}
+        {
+            _parse_timestamp(str(trade["decision_time"])).date().isoformat()
+            for trade in closed_trades
+        }
     )
     return {
         "calendar_days": _calendar_days(days),
-        "trade_count": len(trades),
+        "trade_count": len(closed_trades),
+        "ledger_entry_count": len(trades),
+        "open_trade_count": sum(1 for trade in trades if trade.get("paper_status") == "open"),
         "average_r_after_costs": _mean(net_r_values),
-        "profit_factor": sum(positive) / abs(sum(negative)) if negative else float("inf"),
+        "profit_factor": _profit_factor(net_r_values, positive, negative),
         "max_drawdown_pct": _metric_or_computed_drawdown(source_metrics, net_r_values),
         "max_drawdown_duration": _int(source_metrics.get("max_drawdown_duration"))
         if source_metrics
         else None,
-        "single_day_positive_r_share": _top_positive_day_share(trades),
-        "positive_symbol_breadth": _positive_group_fraction(trades, "symbol"),
-        "positive_session_breadth": _positive_session_fraction(trades),
+        "single_day_positive_r_share": _top_positive_day_share(closed_trades),
+        "positive_symbol_breadth": _positive_group_fraction(closed_trades, "symbol"),
+        "positive_session_breadth": _positive_session_fraction(closed_trades),
         "rejection_reasons": dict(
             Counter(
                 str(trade.get("rejection_reason", ""))
@@ -311,6 +321,12 @@ def _format_timestamp(value: datetime) -> str:
 
 def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
+
+
+def _profit_factor(values: list[float], positive: list[float], negative: list[float]) -> float:
+    if not values:
+        return 0.0
+    return sum(positive) / abs(sum(negative)) if negative else float("inf")
 
 
 def _float(value: object) -> float:

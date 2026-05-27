@@ -137,7 +137,10 @@ def _candidate_rows(
 
 
 def _filter_passes(row: dict[str, object], item: dict[str, object]) -> bool:
-    value = float(row[str(item["feature"])])
+    raw_value = row.get(str(item["feature"]))
+    if raw_value is None:
+        return False
+    value = float(raw_value)
     threshold = float(item["value"])
     operator = str(item["operator"])
     if operator == "<=":
@@ -176,7 +179,7 @@ def _score_rows(
         scored["expected_r"] = prediction.expected_r
         scored["target_before_stop_probability"] = prediction.target_before_stop_probability
         scored["expected_r_threshold_passed"] = prediction.expected_r >= threshold
-        by_time[str(row["decision_time"])].append(scored)
+        by_time[str(scored["decision_time"])].append(scored)
 
     ranked: list[dict[str, object]] = []
     for _, group in by_time.items():
@@ -232,6 +235,9 @@ def _signals(
                 "confidence": max(0.01, min(1.0, float(row["expected_r"]))),
                 "rank": int(row["rank"]),
                 "top_n": _top_n(pack),
+                "entry_price": _optional_float(row.get("entry_price")),
+                "stop_price": _stop_price(row, pack),
+                "target_price": _target_price(row, pack),
                 "recommended_action": "take" if row["paper_take"] else "skip",
                 "reason_codes": reason_codes,
                 "hard_risk_blocks": hard_blocks,
@@ -278,6 +284,9 @@ def _ledger_entries(
             "rank": signal["rank"],
             "feature_freshness_seconds": signal["feature_freshness_seconds"],
             "funding_source_latency_seconds": signal["funding_source_latency_seconds"],
+            "entry_price": signal.get("entry_price"),
+            "stop_price": signal.get("stop_price"),
+            "target_price": signal.get("target_price"),
             "paper_status": "open",
             "live_order_authority": False,
         }
@@ -324,6 +333,30 @@ def _top_n(pack: dict[str, object]) -> int:
     return int(ranking.get("top_n_per_decision_time", 1))
 
 
+def _stop_price(row: dict[str, object], pack: dict[str, object]) -> float | None:
+    entry_price = _optional_float(row.get("entry_price"))
+    if entry_price is None:
+        return None
+    strategy = dict(pack["strategy"])
+    exits = dict(strategy.get("exits", {}))
+    stop_loss_pct = float(exits.get("stop_loss_pct", 0.0))
+    if str(strategy.get("side", "long")) == "short":
+        return entry_price * (1 + stop_loss_pct)
+    return entry_price * (1 - stop_loss_pct)
+
+
+def _target_price(row: dict[str, object], pack: dict[str, object]) -> float | None:
+    entry_price = _optional_float(row.get("entry_price"))
+    if entry_price is None:
+        return None
+    strategy = dict(pack["strategy"])
+    exits = dict(strategy.get("exits", {}))
+    target_pct = float(exits.get("target_pct", 0.0))
+    if str(strategy.get("side", "long")) == "short":
+        return entry_price * (1 - target_pct)
+    return entry_price * (1 + target_pct)
+
+
 def _regime_label(row: dict[str, object]) -> str:
     risk_score = float(row.get("risk_on_score_20", 0.0))
     if risk_score > 0.55:
@@ -337,6 +370,12 @@ def _funding_latency_seconds(row: dict[str, object]) -> float:
     if row.get("hours_since_funding") is None:
         return 0.0
     return float(row["hours_since_funding"]) * 3600
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 def _seconds_between(start: str, end: str) -> float:
