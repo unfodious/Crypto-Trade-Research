@@ -203,6 +203,64 @@ def test_trade_session_filter_keeps_requested_sessions(tmp_path: Path) -> None:
     assert [row["symbol"] for row in filtered] == ["SUIUSDT", "AVAXUSDT"]
 
 
+def test_abstention_filters_skip_only_full_pattern_matches(tmp_path: Path) -> None:
+    dataset_manifest = tmp_path / "dataset_manifest.json"
+    funding_manifest = tmp_path / "funding_manifest.json"
+    dataset_manifest.write_text('{"dataset": "unit"}', encoding="utf-8")
+    funding_manifest.write_text('{"funding": "unit"}', encoding="utf-8")
+    config = HistoricalHoldoutReplayConfig.from_dict(
+        {
+            "run_name": "unit_replay",
+            "output_dir": str(tmp_path / "out"),
+            "issue_id": "CT-175",
+            "epic_id": "CT-113",
+            "dataset_manifest_path": str(dataset_manifest),
+            "funding_manifest_path": str(funding_manifest),
+            "pack_manifest_paths": [],
+            "feature": {
+                "feature_set_version": "features.unit.v1",
+                "rolling_window": 3,
+                "higher_timeframes": ["5m"],
+            },
+            "abstention_filters": [
+                {
+                    "feature": "eth_trend_above_ma_20",
+                    "operator": "<=",
+                    "value": 0,
+                },
+                {
+                    "feature": "mtf_15m_market_positive_return_fraction",
+                    "operator": "<",
+                    "value": 0.5,
+                },
+            ],
+            "generated_at": "2026-05-27T16:00:00Z",
+        }
+    )
+
+    rows = [
+        {
+            "symbol": "SOLUSDT",
+            "eth_trend_above_ma_20": 0,
+            "mtf_15m_market_positive_return_fraction": 0.25,
+        },
+        {
+            "symbol": "SUIUSDT",
+            "eth_trend_above_ma_20": 0,
+            "mtf_15m_market_positive_return_fraction": 0.75,
+        },
+        {
+            "symbol": "AVAXUSDT",
+            "eth_trend_above_ma_20": 1,
+            "mtf_15m_market_positive_return_fraction": 0.25,
+        },
+    ]
+
+    filtered = replay_module._apply_trade_filters(rows, config)
+
+    assert [row["symbol"] for row in filtered] == ["SUIUSDT", "AVAXUSDT"]
+
+
 def test_run_historical_holdout_replay_uses_pack_replay_cache_without_loading_rows(
     tmp_path: Path,
     monkeypatch,

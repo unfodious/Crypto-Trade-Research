@@ -45,6 +45,7 @@ class HistoricalHoldoutReplayConfig:
     rolling_window: int
     higher_timeframes: tuple[str, ...]
     accepted_sessions: tuple[str, ...]
+    abstention_filters: tuple[dict[str, object], ...]
     generated_at: datetime
 
     @classmethod
@@ -69,6 +70,7 @@ class HistoricalHoldoutReplayConfig:
             rolling_window=int(feature.get("rolling_window", 20)),
             higher_timeframes=tuple(str(item) for item in feature.get("higher_timeframes", ())),
             accepted_sessions=_accepted_sessions(payload),
+            abstention_filters=tuple(dict(item) for item in payload.get("abstention_filters", ())),
             generated_at=_parse_timestamp(str(payload["generated_at"])),
         )
 
@@ -167,6 +169,7 @@ def _replay_payload(
         "replay_cache": replay_cache,
         "trade_filters": {
             "accepted_sessions": list(config.accepted_sessions),
+            "abstention_filters": list(config.abstention_filters),
         },
         "replays": replays,
         "decision": {
@@ -372,6 +375,7 @@ def _pack_replay_cache_key(
         config.issue_id,
         config.epic_id,
         config.accepted_sessions,
+        config.abstention_filters,
     )
     normalized = json.dumps(key, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
@@ -431,6 +435,7 @@ def _replay_pack(
         "selected_count": len(selected_rows),
         "trade_filters": {
             "accepted_sessions": list(config.accepted_sessions),
+            "abstention_filters": list(config.abstention_filters),
         },
         "label_count": len(labels.rows),
         "metrics": asdict(report.metrics),
@@ -466,10 +471,19 @@ def _apply_trade_filters(
     rows: list[dict[str, object]],
     config: HistoricalHoldoutReplayConfig,
 ) -> list[dict[str, object]]:
-    if not config.accepted_sessions:
-        return rows
-    accepted_sessions = set(config.accepted_sessions)
-    return [row for row in rows if _session(row["decision_time"]) in accepted_sessions]
+    filtered_rows = rows
+    if config.accepted_sessions:
+        accepted_sessions = set(config.accepted_sessions)
+        filtered_rows = [
+            row for row in filtered_rows if _session(row["decision_time"]) in accepted_sessions
+        ]
+    if config.abstention_filters:
+        filtered_rows = [
+            row
+            for row in filtered_rows
+            if not all(_filter_passes(row, item) for item in config.abstention_filters)
+        ]
+    return filtered_rows
 
 
 def _filter_passes(row: dict[str, object], item: dict[str, object]) -> bool:
