@@ -13,7 +13,8 @@ Added a unified research-only health summary command for the active CT-113 dropl
 - CT-145 / CT-146 no-TON forward paper;
 - CT-156 / CT-157 high-beta+DOT shadow forward paper;
 - CT-149 / CT-150 Hyperliquid whale watchlist;
-- CT-151 / CT-152 / CT-153 Binance crowding snapshots.
+- CT-151 / CT-152 / CT-153 Binance crowding snapshots;
+- CT-158 / CT-159 Binance order-book depth snapshots.
 
 The command reads existing generated JSON artifacts and, when available, systemd unit state. It does
 not submit orders, modify collectors, change leverage, change stops, or write runtime trading state.
@@ -50,7 +51,9 @@ Important stream fields:
 - CT-156: the same forward-paper fields for the high-beta+DOT shadow stream;
 - CT-149: latest snapshot time, position count, fill count, alert count, and wallet warnings;
 - CT-151/153: latest generated time, generator version, period, symbol count, row count, and source
-  warnings.
+  warnings;
+- CT-158/159: latest generated time, generator version, depth limit, symbol count, summary row
+  count, level row count, total row count, and source warnings.
 
 ## Manual Smoke Result
 
@@ -64,11 +67,15 @@ Local artifact-only run after CT-153:
 | CT-145 trade count | `0` |
 | CT-149 position count | `0` |
 | CT-151/153 row count | `55` |
+| CT-158/159 row count | `451` |
 
 The one source warning is expected while the watched Hyperliquid wallet has no open perp position.
 
+Droplet run after CT-158 deploy also returned `overall_status=ok`, `ct158` service
+`Result=success`, timer `active/waiting`, and `row_count=451` with no CT-158 source warnings.
+
 ## Use In Monitoring
 
-Use this command in CT-146, CT-150, and CT-152 checks before deeper inspection. The command is only a
-health/evidence summarizer; CT-113 still requires separate forward paper evidence before any working
-model claim.
+Use this command in CT-146, CT-150, CT-152, CT-157, and CT-159 checks before deeper inspection. The
+command is only a health/evidence summarizer; CT-113 still requires separate forward paper evidence
+before any working model claim.

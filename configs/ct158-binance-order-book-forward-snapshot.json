@@ -1,0 +1,21 @@
+{
+  "dataset_prefix": "ct158_binance_order_book_forward",
+  "generator_version": "ct158.binance_order_book_forward.v1",
+  "output_dir": "data/generated",
+  "limit": 20,
+  "request_sleep_seconds": 0.05,
+  "symbols": [
+    "SOLUSDT",
+    "SUIUSDT",
+    "AVAXUSDT",
+    "ADAUSDT",
+    "ICPUSDT",
+    "ATOMUSDT",
+    "XRPUSDT",
+    "TONUSDT",
+    "DOTUSDT",
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "notes": "Research-only Binance USD-M order-book depth forward snapshot. Public REST reads only; no live trading or order placement."
+}

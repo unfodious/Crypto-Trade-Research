@@ -91,6 +91,19 @@ def test_build_research_stream_health_report_summarizes_active_streams(tmp_path:
             "warnings": [],
         },
     )
+    _write_json(
+        tmp_path / "data/generated/ct158_binance_order_book_forward/order_book_run.json",
+        {
+            "latest_generated_at": "2026-05-27T10:59:20Z",
+            "generator_version": "ct158.binance_order_book_forward.v1",
+            "row_count": 451,
+            "summary_row_count": 11,
+            "level_row_count": 440,
+            "depth_limit": 20,
+            "symbols": ["BTCUSDT", "ETHUSDT"],
+            "warnings": [],
+        },
+    )
 
     report = build_research_stream_health_report(root=tmp_path, include_systemd=False)
 
@@ -104,6 +117,8 @@ def test_build_research_stream_health_report_summarizes_active_streams(tmp_path:
     assert streams["ct149_whale_watchlist"]["latest_snapshot"]["position_count"] == 0
     assert streams["ct151_binance_crowding"]["row_count"] == 55
     assert streams["ct151_binance_crowding"]["symbol_count"] == 2
+    assert streams["ct158_binance_order_book"]["row_count"] == 451
+    assert streams["ct158_binance_order_book"]["level_row_count"] == 440
 
 
 def test_build_research_stream_health_report_warns_on_missing_files_and_bad_crowding_count(
@@ -125,6 +140,7 @@ def test_build_research_stream_health_report_warns_on_missing_files_and_bad_crow
 
     assert report["overall_status"] == "warning"
     assert any("expected CT-153 healthy row_count=55" in warning for warning in report["warnings"])
+    assert any("expected CT-158 healthy row_count=451" in warning for warning in report["warnings"])
     assert any("missing file" in warning for warning in report["warnings"])
 
 

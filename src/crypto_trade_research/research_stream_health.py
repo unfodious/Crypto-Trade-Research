@@ -28,6 +28,7 @@ def build_research_stream_health_report(
         "ct156_shadow_forward_paper": _build_ct156_summary(root, include_systemd, reader),
         "ct149_whale_watchlist": _build_ct149_summary(root, include_systemd, reader),
         "ct151_binance_crowding": _build_ct151_summary(root, include_systemd, reader),
+        "ct158_binance_order_book": _build_ct158_summary(root, include_systemd, reader),
     }
     health_warnings = [
         warning
@@ -190,6 +191,41 @@ def _build_ct151_summary(
     }
     if stream["row_count"] != 55:
         stream["health_warnings"].append("expected CT-153 healthy row_count=55")
+    _add_missing_file_warnings(stream, run_path)
+    return stream
+
+
+def _build_ct158_summary(
+    root: Path,
+    include_systemd: bool,
+    systemd_reader: SystemdReader,
+) -> dict[str, object]:
+    run_path = root / "data/generated/ct158_binance_order_book_forward/order_book_run.json"
+    run = _read_json(run_path)
+    stream = {
+        "issue_id": "CT-159",
+        "source_issue_id": "CT-158",
+        "service_unit": "ct158-binance-order-book-snapshot.service",
+        "timer_unit": "ct158-binance-order-book-snapshot.timer",
+        "order_book_run_path": str(run_path),
+        "service": _unit_summary(
+            "ct158-binance-order-book-snapshot.service", include_systemd, systemd_reader
+        ),
+        "timer": _unit_summary(
+            "ct158-binance-order-book-snapshot.timer", include_systemd, systemd_reader
+        ),
+        "latest_generated_at": _text(run.get("latest_generated_at")),
+        "generator_version": _text(run.get("generator_version")),
+        "row_count": _int(run.get("row_count")),
+        "summary_row_count": _int(run.get("summary_row_count")),
+        "level_row_count": _int(run.get("level_row_count")),
+        "depth_limit": _int(run.get("depth_limit")),
+        "symbol_count": len(_nested_list(run, ("symbols",))),
+        "source_warnings": list(_nested_list(run, ("warnings",))),
+        "health_warnings": [],
+    }
+    if stream["row_count"] != 451:
+        stream["health_warnings"].append("expected CT-158 healthy row_count=451")
     _add_missing_file_warnings(stream, run_path)
     return stream
 
