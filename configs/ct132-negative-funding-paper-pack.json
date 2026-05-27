@@ -1,0 +1,116 @@
+{
+  "pack_name": "ct132_negative_funding_paper_dry_run_pack",
+  "output_path": "data/generated/ct132_negative_funding_paper_dry_run_pack/pack_manifest.json",
+  "issue_id": "CT-132",
+  "epic_id": "CT-113",
+  "candidate_name": "ct130_long_negative_funding_h12_base_top3",
+  "plan_path": "docs/experiments/ct132-negative-funding-paper-dry-run-pack.md",
+  "source_artifacts": {
+    "model_artifact_path": "data/generated/ct130_long_negative_funding_h12_base_top3/model_artifact.json",
+    "baseline_report_path": "data/generated/ct130_long_negative_funding_h12_base_top3/baseline_report.json",
+    "stability_report_path": "data/generated/ct130_negative_funding_stability_matrix/stability_report.json",
+    "experiment_config_path": "configs/ct130-negative-funding-stability-base.json"
+  },
+  "strategy": {
+    "side": "long",
+    "timeframe": "1m",
+    "symbols": [
+      "SOLUSDT",
+      "SUIUSDT",
+      "AVAXUSDT",
+      "ADAUSDT",
+      "ICPUSDT",
+      "ATOMUSDT",
+      "XRPUSDT",
+      "TONUSDT",
+      "DOTUSDT",
+      "BTCUSDT",
+      "ETHUSDT"
+    ],
+    "filters": [
+      {
+        "feature": "funding_rate",
+        "operator": "<=",
+        "value": -0.00002
+      },
+      {
+        "feature": "funding_rate_zscore_20",
+        "operator": "<=",
+        "value": -0.25
+      },
+      {
+        "feature": "close_location",
+        "operator": ">=",
+        "value": 0.45
+      }
+    ],
+    "ranking": {
+      "score": "expected_r_ridge",
+      "top_n_per_decision_time": 3,
+      "selected_expected_r_threshold": -0.2,
+      "selected_probability_threshold": 0.55
+    },
+    "exits": {
+      "stop_loss_pct": 0.004,
+      "target_pct": 0.008,
+      "horizon_bars": 12,
+      "target_stop_tie_breaker": "stop_first"
+    },
+    "cost_model": {
+      "round_trip_cost_pct": 0.0007,
+      "source": "CT-130 label cost assumption"
+    },
+    "risk_controls": {
+      "max_trades_per_decision_time": 3,
+      "max_trades_per_symbol": 600,
+      "loss_cooldown_signals": 2,
+      "max_open_paper_positions": 1
+    }
+  },
+  "paper_gate": {
+    "minimum_calendar_days": 30,
+    "minimum_paper_trades": 100,
+    "minimum_average_r_after_costs": 0.0,
+    "maximum_simulated_drawdown_pct": 0.08,
+    "maximum_single_day_positive_r_share": 0.75,
+    "minimum_positive_symbol_breadth": 0.5,
+    "minimum_positive_session_breadth": 0.5
+  },
+  "monitoring": {
+    "required_metrics": [
+      "paper_average_r_after_costs",
+      "paper_profit_factor",
+      "paper_trade_count",
+      "paper_max_drawdown_pct",
+      "paper_drawdown_duration",
+      "paper_symbol_breadth",
+      "paper_session_breadth",
+      "paper_single_day_positive_r_share",
+      "rejection_reason_distribution",
+      "funding_source_latency_seconds",
+      "feature_freshness_seconds"
+    ],
+    "pause_conditions": [
+      "average_r_negative_after_50_paper_trades",
+      "simulated_drawdown_above_8pct",
+      "risk_off_slice_dominates_losses",
+      "funding_data_missing_or_not_source_available",
+      "research_and_paper_signal_mismatch"
+    ],
+    "review_cadence": "daily_operator_review"
+  },
+  "reconciliation": {
+    "signal_rules": [
+      "closed_1m_candles_only",
+      "funding_time_and_source_available_at_must_be_at_or_before_signal_timestamp",
+      "feature_set_version_must_match_model_artifact",
+      "model_artifact_hash_must_match_pack_manifest",
+      "paper_fills_must_use_stop_target_timeout_rules_from_pack"
+    ],
+    "expected_outputs": [
+      "ml-inference.v1 compatible signal log",
+      "paper ledger with fill reason and net R",
+      "daily drift report against CT-130 research rules"
+    ]
+  }
+}

@@ -23,6 +23,7 @@ crypto-trade-experiments = "crypto_trade_research.tracking.registry:main"
 crypto-trade-run-batch-experiments = "crypto_trade_research.experiments.batch:main"
 crypto-trade-run-baseline-experiment = "crypto_trade_research.experiments.runner:main"
 crypto-trade-write-stability-report = "crypto_trade_research.evaluation.stability:main"
+crypto-trade-build-paper-pack = "crypto_trade_research.paper_trading:main"
 
 [project.optional-dependencies]
 dev = [
