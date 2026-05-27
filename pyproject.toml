@@ -18,6 +18,7 @@ dependencies = [
 crypto-trade-ingest-market-dataset = "crypto_trade_research.data.ingestion:main"
 crypto-trade-ingest-funding-rates = "crypto_trade_research.data.funding:main"
 crypto-trade-ingest-hyperliquid-whales = "crypto_trade_research.data.hyperliquid_whales:main"
+crypto-trade-run-hyperliquid-watchlist = "crypto_trade_research.data.hyperliquid_watchlist:main"
 crypto-trade-experiments = "crypto_trade_research.tracking.registry:main"
 crypto-trade-run-batch-experiments = "crypto_trade_research.experiments.batch:main"
 crypto-trade-run-baseline-experiment = "crypto_trade_research.experiments.runner:main"

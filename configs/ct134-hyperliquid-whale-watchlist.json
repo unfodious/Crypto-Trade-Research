@@ -1,0 +1,22 @@
+{
+  "dataset_prefix": "ct134_hyperliquid_whale_watchlist",
+  "generator_version": "ct134.hyperliquid_whale_watchlist.v1",
+  "output_dir": "data/generated",
+  "iterations": 1,
+  "poll_interval_seconds": 60,
+  "include_fills": true,
+  "aggregate_fills_by_time": true,
+  "wallets": [
+    {
+      "alias": "eth_50x_note_wallet",
+      "address": "0xf3F496C9486BE5924a93D67e98298733Bb47057c"
+    }
+  ],
+  "thresholds": {
+    "min_position_notional_usd": 5000000,
+    "min_leverage": 10,
+    "max_liquidation_distance_pct": 0.03,
+    "min_notional_delta_usd": 1000000
+  },
+  "notes": "Research-only Hyperliquid watched-wallet forward collector. No live trading or order placement."
+}
