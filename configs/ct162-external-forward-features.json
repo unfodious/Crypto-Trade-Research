@@ -1,0 +1,23 @@
+{
+  "source_root": ".",
+  "dataset_prefix": "ct162_external_forward_features",
+  "generator_version": "ct162.external_forward_features.v1",
+  "output_dir": "data/generated",
+  "crowding_prefix": "data/generated/ct151_binance_crowding_forward",
+  "order_book_prefix": "data/generated/ct158_binance_order_book_forward",
+  "liquidation_prefix": "data/generated/ct160_binance_liquidations_forward",
+  "symbols": [
+    "SOLUSDT",
+    "SUIUSDT",
+    "AVAXUSDT",
+    "ADAUSDT",
+    "ICPUSDT",
+    "ATOMUSDT",
+    "XRPUSDT",
+    "TONUSDT",
+    "DOTUSDT",
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "notes": "Research-only point-in-time external feature table from CT-151/153 crowding, CT-158 order book, and CT-160 liquidation forward snapshots."
+}

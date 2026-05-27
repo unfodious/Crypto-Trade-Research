@@ -118,6 +118,20 @@ def test_build_research_stream_health_report_summarizes_active_streams(tmp_path:
             "warnings": [],
         },
     )
+    _write_json(
+        tmp_path
+        / "data/generated/ct162_external_forward_features/external_forward_features_run.json",
+        {
+            "latest_generated_at": "2026-05-27T11:05:20Z",
+            "generator_version": "ct162.external_forward_features.v1",
+            "row_count": 44,
+            "crowding_snapshot_count": 2,
+            "order_book_snapshot_count": 1,
+            "liquidation_snapshot_count": 1,
+            "symbols": ["BTCUSDT", "ETHUSDT"],
+            "warnings": [],
+        },
+    )
 
     report = build_research_stream_health_report(root=tmp_path, include_systemd=False)
 
@@ -135,6 +149,8 @@ def test_build_research_stream_health_report_summarizes_active_streams(tmp_path:
     assert streams["ct158_binance_order_book"]["level_row_count"] == 440
     assert streams["ct160_binance_liquidations"]["row_count"] == 0
     assert streams["ct160_binance_liquidations"]["event_count_total"] == 0
+    assert streams["ct162_external_forward_features"]["row_count"] == 44
+    assert streams["ct162_external_forward_features"]["crowding_snapshot_count"] == 2
 
 
 def test_build_research_stream_health_report_warns_on_missing_files_and_bad_crowding_count(

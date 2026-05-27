@@ -30,6 +30,7 @@ def build_research_stream_health_report(
         "ct151_binance_crowding": _build_ct151_summary(root, include_systemd, reader),
         "ct158_binance_order_book": _build_ct158_summary(root, include_systemd, reader),
         "ct160_binance_liquidations": _build_ct160_summary(root, include_systemd, reader),
+        "ct162_external_forward_features": _build_ct162_summary(root, include_systemd, reader),
     }
     health_warnings = [
         warning
@@ -261,6 +262,43 @@ def _build_ct160_summary(
         "source_warnings": list(_nested_list(run, ("warnings",))),
         "health_warnings": [],
     }
+    _add_missing_file_warnings(stream, run_path)
+    return stream
+
+
+def _build_ct162_summary(
+    root: Path,
+    include_systemd: bool,
+    systemd_reader: SystemdReader,
+) -> dict[str, object]:
+    run_path = (
+        root / "data/generated/ct162_external_forward_features/external_forward_features_run.json"
+    )
+    run = _read_json(run_path)
+    stream = {
+        "issue_id": "CT-163",
+        "source_issue_id": "CT-162",
+        "service_unit": "ct162-external-forward-features.service",
+        "timer_unit": "ct162-external-forward-features.timer",
+        "external_forward_features_run_path": str(run_path),
+        "service": _unit_summary(
+            "ct162-external-forward-features.service", include_systemd, systemd_reader
+        ),
+        "timer": _unit_summary(
+            "ct162-external-forward-features.timer", include_systemd, systemd_reader
+        ),
+        "latest_generated_at": _text(run.get("latest_generated_at")),
+        "generator_version": _text(run.get("generator_version")),
+        "row_count": _int(run.get("row_count")),
+        "crowding_snapshot_count": _int(run.get("crowding_snapshot_count")),
+        "order_book_snapshot_count": _int(run.get("order_book_snapshot_count")),
+        "liquidation_snapshot_count": _int(run.get("liquidation_snapshot_count")),
+        "symbol_count": len(_nested_list(run, ("symbols",))),
+        "source_warnings": list(_nested_list(run, ("warnings",))),
+        "health_warnings": [],
+    }
+    if stream["row_count"] <= 0:
+        stream["health_warnings"].append("expected CT-162 row_count > 0")
     _add_missing_file_warnings(stream, run_path)
     return stream
 

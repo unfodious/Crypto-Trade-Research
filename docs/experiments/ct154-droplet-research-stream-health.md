@@ -15,7 +15,8 @@ Added a unified research-only health summary command for the active CT-113 dropl
 - CT-149 / CT-150 Hyperliquid whale watchlist;
 - CT-151 / CT-152 / CT-153 Binance crowding snapshots;
 - CT-158 / CT-159 Binance order-book depth snapshots;
-- CT-160 / CT-161 Binance force-liquidation snapshots.
+- CT-160 / CT-161 Binance force-liquidation snapshots;
+- CT-162 / CT-163 external forward feature table.
 
 The command reads existing generated JSON artifacts and, when available, systemd unit state. It does
 not submit orders, modify collectors, change leverage, change stops, or write runtime trading state.
@@ -56,7 +57,9 @@ Important stream fields:
 - CT-158/159: latest generated time, generator version, depth limit, symbol count, summary row
   count, level row count, total row count, and source warnings;
 - CT-160/161: latest generated time, capture window, symbol count, liquidation row count, total
-  source event count, filtered event count, and source warnings.
+  source event count, filtered event count, and source warnings;
+- CT-162/163: latest generated time, source snapshot counts, feature row count, symbol count, and
+  source warnings.
 
 ## Manual Smoke Result
 
@@ -72,6 +75,7 @@ Local artifact-only run after CT-153:
 | CT-151/153 row count | `55` |
 | CT-158/159 row count | `451` |
 | CT-160/161 row count | `0+` |
+| CT-162/163 row count | `>0` |
 
 The one source warning is expected while the watched Hyperliquid wallet has no open perp position.
 
@@ -80,6 +84,6 @@ Droplet run after CT-158 deploy also returned `overall_status=ok`, `ct158` servi
 
 ## Use In Monitoring
 
-Use this command in CT-146, CT-150, CT-152, CT-157, CT-159, and CT-161 checks before deeper
+Use this command in CT-146, CT-150, CT-152, CT-157, CT-159, CT-161, and CT-163 checks before deeper
 inspection. The command is only a health/evidence summarizer; CT-113 still requires separate forward
 paper evidence before any working model claim.
