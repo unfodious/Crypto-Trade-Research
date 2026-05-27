@@ -137,3 +137,83 @@ def test_feature_cache_key_changes_with_feature_parameters(tmp_path: Path) -> No
     assert replay_module._feature_cache_key(base_config) != replay_module._feature_cache_key(
         changed_config
     )
+
+
+def test_run_historical_holdout_replay_uses_pack_replay_cache_without_loading_rows(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    dataset_manifest = tmp_path / "dataset_manifest.json"
+    funding_manifest = tmp_path / "funding_manifest.json"
+    pack_manifest = tmp_path / "pack.json"
+    dataset_manifest.write_text('{"row_count": 10}', encoding="utf-8")
+    funding_manifest.write_text('{"row_count": 2}', encoding="utf-8")
+    pack_manifest.write_text('{"pack_name": "unit_pack"}', encoding="utf-8")
+    config = HistoricalHoldoutReplayConfig.from_dict(
+        {
+            "run_name": "unit_replay",
+            "output_dir": str(tmp_path / "out"),
+            "feature_cache_dir": str(tmp_path / "feature_cache"),
+            "replay_cache_dir": str(tmp_path / "replay_cache"),
+            "issue_id": "CT-171",
+            "epic_id": "CT-113",
+            "dataset_manifest_path": str(dataset_manifest),
+            "funding_manifest_path": str(funding_manifest),
+            "pack_manifest_paths": [str(pack_manifest)],
+            "feature": {
+                "feature_set_version": "features.unit.v1",
+                "rolling_window": 3,
+                "higher_timeframes": ["5m"],
+            },
+            "generated_at": "2026-05-27T16:00:00Z",
+        }
+    )
+    feature_cache_key = replay_module._feature_cache_key(config)
+    rows_path, manifest_path = replay_module._feature_cache_paths(config, feature_cache_key)
+    replay_module._write_feature_cache(
+        feature_cache_key,
+        rows_path,
+        manifest_path,
+        config,
+        FeatureFrame(
+            rows=[{"decision_time": datetime(2026, 1, 1, tzinfo=UTC), "close_location": 0.6}],
+            manifest=FeatureManifest(
+                schema_version="research.dataset.v1",
+                feature_set_version=config.feature_set_version,
+                generator_name="unit",
+                row_count=1,
+                features=(),
+            ),
+        ),
+    )
+    replay = {
+        "pack_manifest_path": str(pack_manifest),
+        "pack_name": "unit_pack",
+        "candidate_name": "unit_candidate",
+        "metrics": {
+            "trade_count": 3,
+            "average_r": 0.2,
+            "max_drawdown_pct": 0.01,
+            "profit_factor": 1.5,
+        },
+        "trades_path": "unit_pack/selected_trades.parquet",
+        "accepted_trades_path": "unit_pack/accepted_trades.parquet",
+        "trades": [],
+        "accepted_trades": [],
+    }
+    replay_module._write_pack_replay_cache(config, pack_manifest, feature_cache_key, replay)
+
+    def fail_read_rows(_):
+        raise AssertionError("fast replay cache path should not load full parquet rows")
+
+    monkeypatch.setattr(replay_module, "_read_manifest_rows", fail_read_rows)
+
+    payload = replay_module.run_historical_holdout_replay(config)
+
+    assert payload["replay_cache"]["status"] == "hit"
+    assert payload["feature_cache"]["status"] == "hit"
+    assert payload["row_counts"]["source_rows"] == 10
+    assert payload["row_counts"]["funding_rows"] == 2
+    assert payload["row_counts"]["feature_rows"] == 1
+    assert payload["replays"][0]["candidate_name"] == "unit_candidate"
+    assert (config.output_dir / "replay_report.json").exists()

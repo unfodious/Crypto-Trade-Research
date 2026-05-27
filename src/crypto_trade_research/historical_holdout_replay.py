@@ -38,6 +38,7 @@ class HistoricalHoldoutReplayConfig:
     dataset_manifest_path: Path
     funding_manifest_path: Path
     feature_cache_dir: Path
+    replay_cache_dir: Path
     pack_manifest_paths: tuple[Path, ...]
     feature_set_version: str
     rolling_window: int
@@ -58,6 +59,9 @@ class HistoricalHoldoutReplayConfig:
             feature_cache_dir=Path(
                 str(payload.get("feature_cache_dir", output_dir / "feature_cache"))
             ),
+            replay_cache_dir=Path(
+                str(payload.get("replay_cache_dir", output_dir / "replay_cache"))
+            ),
             pack_manifest_paths=tuple(Path(str(path)) for path in payload["pack_manifest_paths"]),
             feature_set_version=str(feature["feature_set_version"]),
             rolling_window=int(feature.get("rolling_window", 20)),
@@ -72,6 +76,24 @@ class HistoricalHoldoutReplayConfig:
 
 def run_historical_holdout_replay(config: HistoricalHoldoutReplayConfig) -> dict[str, object]:
     """Apply frozen pack rules and model artifacts to an older holdout."""
+
+    feature_cache_key = _feature_cache_key(config)
+    cached_replays = _read_all_pack_replay_caches(config, feature_cache_key)
+    if cached_replays is not None:
+        payload = _replay_payload(
+            config,
+            feature_cache=_feature_cache_report(config, feature_cache_key, "hit"),
+            replay_cache={
+                "status": "hit",
+                "cache_keys": [
+                    _pack_replay_cache_key(config, pack_path, feature_cache_key)
+                    for pack_path in config.pack_manifest_paths
+                ],
+            },
+            replays=cached_replays,
+        )
+        _write_replay_outputs(config, payload)
+        return payload
 
     source_rows = _read_manifest_rows(config.dataset_manifest_path)
     funding_rows = _read_manifest_rows(config.funding_manifest_path)
@@ -91,6 +113,31 @@ def run_historical_holdout_replay(config: HistoricalHoldoutReplayConfig) -> dict
         _replay_pack(pack_path, source_rows, features.rows, entry_prices)
         for pack_path in config.pack_manifest_paths
     ]
+    for pack_path, replay in zip(config.pack_manifest_paths, replays, strict=True):
+        _write_pack_replay_cache(config, pack_path, feature_cache_key, replay)
+    payload = _replay_payload(
+        config,
+        feature_cache=feature_cache,
+        replay_cache={
+            "status": "miss",
+            "cache_keys": [
+                _pack_replay_cache_key(config, pack_path, feature_cache_key)
+                for pack_path in config.pack_manifest_paths
+            ],
+        },
+        replays=replays,
+    )
+    _write_replay_outputs(config, payload)
+    return payload
+
+
+def _replay_payload(
+    config: HistoricalHoldoutReplayConfig,
+    *,
+    feature_cache: dict[str, object],
+    replay_cache: dict[str, object],
+    replays: list[dict[str, object]],
+) -> dict[str, object]:
     payload: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "run_name": config.run_name,
@@ -101,11 +148,12 @@ def run_historical_holdout_replay(config: HistoricalHoldoutReplayConfig) -> dict
         "dataset_manifest_path": str(config.dataset_manifest_path),
         "funding_manifest_path": str(config.funding_manifest_path),
         "row_counts": {
-            "source_rows": len(source_rows),
-            "funding_rows": len(funding_rows),
-            "feature_rows": len(features.rows),
+            "source_rows": _manifest_row_count(config.dataset_manifest_path),
+            "funding_rows": _manifest_row_count(config.funding_manifest_path),
+            "feature_rows": feature_cache.get("row_count"),
         },
         "feature_cache": feature_cache,
+        "replay_cache": replay_cache,
         "replays": replays,
         "decision": {
             "live_trading_approved": False,
@@ -113,10 +161,16 @@ def run_historical_holdout_replay(config: HistoricalHoldoutReplayConfig) -> dict
             "evidence_type": "older_historical_holdout",
         },
     }
+    return payload
+
+
+def _write_replay_outputs(
+    config: HistoricalHoldoutReplayConfig,
+    payload: dict[str, object],
+) -> None:
     config.output_dir.mkdir(parents=True, exist_ok=True)
     _write_json(config.output_dir / "replay_report.json", payload)
     _write_markdown(config.output_dir / "replay_report.md", payload)
-    return payload
 
 
 def _load_or_build_features(
@@ -126,9 +180,7 @@ def _load_or_build_features(
     feature_config: FeatureConfig,
 ) -> tuple[FeatureFrame, dict[str, object]]:
     cache_key = _feature_cache_key(config)
-    cache_path = config.feature_cache_dir / "features" / cache_key
-    rows_path = cache_path / "rows.parquet"
-    manifest_path = cache_path / "manifest.json"
+    rows_path, manifest_path = _feature_cache_paths(config, cache_key)
     cached = _read_feature_cache(rows_path, manifest_path)
     if cached is not None:
         return cached, {
@@ -136,6 +188,7 @@ def _load_or_build_features(
             "cache_key": cache_key,
             "rows_path": str(rows_path),
             "manifest_path": str(manifest_path),
+            "row_count": len(cached.rows),
         }
 
     features = generate_ohlcv_features(
@@ -149,6 +202,33 @@ def _load_or_build_features(
         "cache_key": cache_key,
         "rows_path": str(rows_path),
         "manifest_path": str(manifest_path),
+        "row_count": len(features.rows),
+    }
+
+
+def _feature_cache_paths(
+    config: HistoricalHoldoutReplayConfig,
+    cache_key: str,
+) -> tuple[Path, Path]:
+    cache_path = config.feature_cache_dir / "features" / cache_key
+    return cache_path / "rows.parquet", cache_path / "manifest.json"
+
+
+def _feature_cache_report(
+    config: HistoricalHoldoutReplayConfig,
+    cache_key: str,
+    status: str,
+) -> dict[str, object]:
+    rows_path, manifest_path = _feature_cache_paths(config, cache_key)
+    row_count = None
+    if manifest_path.exists():
+        row_count = int(_read_json(manifest_path).get("row_count", 0))
+    return {
+        "status": status,
+        "cache_key": cache_key,
+        "rows_path": str(rows_path),
+        "manifest_path": str(manifest_path),
+        "row_count": row_count,
     }
 
 
@@ -203,6 +283,92 @@ def _feature_cache_key(config: HistoricalHoldoutReplayConfig) -> str:
     )
     normalized = json.dumps(key, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _read_all_pack_replay_caches(
+    config: HistoricalHoldoutReplayConfig,
+    feature_cache_key: str,
+) -> list[dict[str, object]] | None:
+    replays: list[dict[str, object]] = []
+    for pack_path in config.pack_manifest_paths:
+        replay = _read_pack_replay_cache(config, pack_path, feature_cache_key)
+        if replay is None:
+            return None
+        replays.append(replay)
+    return replays
+
+
+def _read_pack_replay_cache(
+    config: HistoricalHoldoutReplayConfig,
+    pack_path: Path,
+    feature_cache_key: str,
+) -> dict[str, object] | None:
+    cache_key = _pack_replay_cache_key(config, pack_path, feature_cache_key)
+    cache_path = config.replay_cache_dir / "packs" / cache_key
+    manifest_path = cache_path / "manifest.json"
+    replay_path = cache_path / "replay.json"
+    if not manifest_path.exists() or not replay_path.exists():
+        return None
+    payload = _read_json(manifest_path)
+    if payload.get("schema_version") != "research.historical-holdout-pack-replay-cache.v1":
+        return None
+    if payload.get("cache_key") != cache_key:
+        return None
+    return _read_json(replay_path)
+
+
+def _write_pack_replay_cache(
+    config: HistoricalHoldoutReplayConfig,
+    pack_path: Path,
+    feature_cache_key: str,
+    replay: dict[str, object],
+) -> None:
+    cache_key = _pack_replay_cache_key(config, pack_path, feature_cache_key)
+    cache_path = config.replay_cache_dir / "packs" / cache_key
+    _write_json_atomic(cache_path / "replay.json", replay)
+    _write_json_atomic(
+        cache_path / "manifest.json",
+        {
+            "schema_version": "research.historical-holdout-pack-replay-cache.v1",
+            "kind": "pack_replay",
+            "run_name": config.run_name,
+            "created_at": _format_timestamp(datetime.now(UTC)),
+            "cache_key": cache_key,
+            "feature_cache_key": feature_cache_key,
+            "pack_manifest_path": str(pack_path),
+            "pack_manifest_sha256": _file_digest(pack_path),
+            "model_artifact_sha256": _pack_model_artifact_digest(pack_path),
+            "candidate_name": replay.get("candidate_name"),
+            "metrics": replay.get("metrics", {}),
+        },
+    )
+
+
+def _pack_replay_cache_key(
+    config: HistoricalHoldoutReplayConfig,
+    pack_path: Path,
+    feature_cache_key: str,
+) -> str:
+    key = (
+        feature_cache_key,
+        str(pack_path),
+        _file_digest(pack_path),
+        _pack_model_artifact_digest(pack_path),
+        config.issue_id,
+        config.epic_id,
+    )
+    normalized = json.dumps(key, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _pack_model_artifact_digest(pack_path: Path) -> str | None:
+    if not pack_path.exists():
+        return None
+    pack = _read_json(pack_path)
+    source_artifacts = dict(pack.get("source_artifacts", {}))
+    model_ref = dict(source_artifacts.get("model_artifact", {}))
+    model_path = model_ref.get("path")
+    return _file_digest(Path(str(model_path))) if model_path else None
 
 
 def _replay_pack(
@@ -501,6 +667,12 @@ def _row_key(row: dict[str, object], time_field: str) -> tuple[object, ...]:
 def _read_manifest_rows(manifest_path: Path) -> list[dict[str, object]]:
     payload = _read_json(manifest_path)
     return [dict(row) for row in pq.read_table(Path(str(payload["cleaned_path"]))).to_pylist()]
+
+
+def _manifest_row_count(manifest_path: Path) -> int | None:
+    payload = _read_json(manifest_path)
+    row_count = payload.get("row_count")
+    return int(row_count) if row_count is not None else None
 
 
 def _write_markdown(path: Path, payload: dict[str, object]) -> None:

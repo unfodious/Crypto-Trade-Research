@@ -2,6 +2,7 @@
   "run_name": "ct169_older_holdout_replay",
   "output_dir": "data/generated/ct169_older_holdout_replay",
   "feature_cache_dir": "data/generated/ct169_older_holdout_replay/feature_cache",
+  "replay_cache_dir": "data/generated/ct169_older_holdout_replay/replay_cache",
   "issue_id": "CT-169",
   "epic_id": "CT-113",
   "dataset_manifest_path": "data/generated/ct169_older_holdout_core_futures_dataset/manifest.json",
