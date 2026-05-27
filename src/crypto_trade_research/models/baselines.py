@@ -525,6 +525,15 @@ def _fit_ridge_expected_r_model(
     )
 
 
+def fit_ridge_expected_r_model(
+    samples: list[ModelSample],
+    config: BaselineConfig,
+) -> RidgeExpectedRModel:
+    """Fit the same ridge expected-R model used by baseline reports."""
+
+    return _fit_ridge_expected_r_model(samples, config)
+
+
 def fit_ridge_probability_model(
     samples: list[ModelSample],
     config: BaselineConfig,

@@ -129,6 +129,7 @@ def build_paper_trading_pack(config: PaperTradingPackConfig) -> dict[str, object
             "artifact_hash": model_artifact.artifact_hash,
             "feature_set_version": model_artifact.feature_schema.feature_set_version,
             "feature_count": len(model_artifact.feature_schema.feature_names),
+            "expected_r_model_available": model_artifact.expected_r_model is not None,
             "dataset_manifest_path": model_artifact.dataset_manifest_path,
             "funding_manifest_path": metadata.get("funding_manifest_path", ""),
             "calibration": model_artifact.calibration,

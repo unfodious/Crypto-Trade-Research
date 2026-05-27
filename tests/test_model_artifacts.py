@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from crypto_trade_research.models.artifacts import (
+    ExpectedRidgeArtifact,
     FeatureSchema,
     LinearProbabilityArtifact,
     ModelArtifact,
@@ -106,6 +107,50 @@ def test_multifeature_ridge_artifact_writes_loads_and_fails_closed(tmp_path: Pat
     assert skip.recommended_action == "skip"
     assert missing.recommended_action == "skip"
     assert missing.reason_codes == ("missing_feature",)
+
+
+def test_model_artifact_can_embed_expected_r_model_for_paper_ranking(tmp_path: Path) -> None:
+    artifact = ModelArtifact(
+        model_id="unit_expected_r",
+        model_version="20260527T070000Z",
+        model=MultifeatureRidgeArtifact(
+            feature_names=("return_1",),
+            means={"return_1": 0.0},
+            standard_deviations={"return_1": 0.02},
+            intercept=0.0,
+            weights={"return_1": 1.0},
+            probability_threshold=0.55,
+        ),
+        expected_r_model=ExpectedRidgeArtifact(
+            feature_names=("return_1",),
+            means={"return_1": 0.0},
+            standard_deviations={"return_1": 0.02},
+            intercept=-0.1,
+            weights={"return_1": 0.2},
+            expected_r_threshold=-0.2,
+        ),
+        feature_schema=FeatureSchema(
+            feature_set_version="features.unit.v1",
+            feature_names=("return_1",),
+        ),
+        preprocessing={"missing_value_policy": "fail_closed"},
+        calibration={"method": "validation_threshold_v1"},
+        dataset_manifest_path="data/generated/unit/manifest.json",
+        training_data_hash="sha256:unit",
+        research_git_commit="unitcommit",
+        dependency_versions={"python": "3.12", "pyarrow": "unit"},
+        created_at="2026-05-27T07:00:00Z",
+    )
+    artifact_path = tmp_path / "expected_r.json"
+
+    write_model_artifact(artifact_path, artifact)
+    loaded = load_model_artifact(artifact_path)
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    prediction = loaded.predict({"return_1": 0.02})
+    assert payload["expected_r_model"]["model_type"] == "ridge_expected_r"
+    assert loaded.expected_r_model is not None
+    assert prediction.expected_r == pytest.approx(0.1)
 
 
 def _artifact() -> ModelArtifact:

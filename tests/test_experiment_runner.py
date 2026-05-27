@@ -144,16 +144,19 @@ def test_runner_executes_dataset_to_registry_baseline_pipeline(tmp_path: Path) -
     )
     artifact_payload = json.loads(result.model_artifact_path.read_text(encoding="utf-8"))
     assert artifact_payload["model"]["model_type"] == "multifeature_ridge"
+    assert artifact_payload["expected_r_model"]["model_type"] == "ridge_expected_r"
     assert artifact_payload["preprocessing"]["research_training_target"]["mode"] == (
         "target_before_stop"
     )
     feature_values = {name: 0.0 for name in record["feature_names"]}
     feature_values["return_1"] = 0.05
     feature_values["ma_2"] = 100.0
-    assert loaded_artifact.predict(feature_values).recommended_action in {
+    prediction = loaded_artifact.predict(feature_values)
+    assert prediction.recommended_action in {
         "take",
         "skip",
     }
+    assert prediction.expected_r is not None
     assert loaded_artifact.predict({"return_1": 0.05}).reason_codes == ("missing_feature",)
 
 

@@ -27,10 +27,12 @@ from crypto_trade_research.labels import (
 )
 from crypto_trade_research.models import (
     BaselineConfig,
+    ExpectedRidgeArtifact,
     FeatureSchema,
     ModelArtifact,
     ModelSample,
     MultifeatureRidgeArtifact,
+    fit_ridge_expected_r_model,
     fit_ridge_probability_model,
     train_and_evaluate_baselines,
     write_model_artifact,
@@ -790,6 +792,9 @@ def _model_artifact(
         model_id=config.experiment_name,
         model_version=_version(config.generated_at),
         model=_multifeature_ridge_artifact(train_samples, config, feature_names, baseline_payload),
+        expected_r_model=_expected_r_artifact(
+            train_samples, config, feature_names, baseline_payload
+        ),
         feature_schema=FeatureSchema(
             feature_set_version=config.feature_set_version,
             feature_names=feature_names,
@@ -816,6 +821,46 @@ def _model_artifact(
             "pyarrow": pa.__version__,
         },
         created_at=_format_timestamp(config.generated_at or datetime.now(UTC)),
+    )
+
+
+def _expected_r_artifact(
+    samples: list[ModelSample],
+    config: BaselineExperimentConfig,
+    feature_names: tuple[str, ...],
+    baseline_payload: dict[str, Any],
+) -> ExpectedRidgeArtifact:
+    model = fit_ridge_expected_r_model(
+        samples,
+        BaselineConfig(
+            feature_names=feature_names,
+            decision_feature=config.decision_feature,
+            train_end=config.train_end,
+            validation_end=config.validation_end,
+            test_end=config.test_end,
+            probability_threshold=config.probability_threshold,
+            initial_equity=config.initial_equity,
+            risk_per_trade_pct=config.risk_per_trade_pct,
+            max_trades_per_symbol=config.max_trades_per_symbol,
+            max_trades_per_decision_time=config.max_trades_per_decision_time,
+            loss_cooldown_signals=config.loss_cooldown_signals,
+            probability_threshold_candidates=config.probability_threshold_candidates,
+            min_validation_trades_for_threshold=config.min_validation_trades_for_threshold,
+            expected_r_threshold_candidates=config.expected_r_threshold_candidates,
+            ranking_top_n_values=config.ranking_top_n_values,
+            primary_strategy=config.primary_strategy,
+            training_target_name=_training_target_name(config.training_target),
+        ),
+    )
+    return ExpectedRidgeArtifact(
+        feature_names=model.feature_names,
+        means=model.means,
+        standard_deviations=model.standard_deviations,
+        intercept=model.intercept,
+        weights=model.weights,
+        expected_r_threshold=float(
+            baseline_payload["model_metadata"].get("expected_r_threshold", 0.0)
+        ),
     )
 
 

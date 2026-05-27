@@ -59,8 +59,20 @@ class MultifeatureRidgeArtifact:
 
 
 @dataclass(frozen=True, slots=True)
+class ExpectedRidgeArtifact:
+    feature_names: tuple[str, ...]
+    means: dict[str, float]
+    standard_deviations: dict[str, float]
+    intercept: float
+    weights: dict[str, float]
+    expected_r_threshold: float
+    model_type: str = "ridge_expected_r"
+
+
+@dataclass(frozen=True, slots=True)
 class ModelArtifactPrediction:
     target_before_stop_probability: float
+    expected_r: float | None
     recommended_action: str
     reason_codes: tuple[str, ...]
 
@@ -78,26 +90,37 @@ class ModelArtifact:
     research_git_commit: str
     dependency_versions: dict[str, str]
     created_at: str
+    expected_r_model: ExpectedRidgeArtifact | None = None
     artifact_hash: str | None = None
 
     def predict(self, feature_values: dict[str, float]) -> ModelArtifactPrediction:
         missing_feature = _missing_model_feature(self.model, feature_values)
+        if missing_feature is None and self.expected_r_model is not None:
+            missing_feature = _missing_expected_r_feature(self.expected_r_model, feature_values)
         if missing_feature is not None:
             return ModelArtifactPrediction(
                 target_before_stop_probability=0.0,
+                expected_r=None,
                 recommended_action="skip",
                 reason_codes=("missing_feature",),
             )
+        expected_r = (
+            _ridge_expected_r(self.expected_r_model, feature_values)
+            if self.expected_r_model is not None
+            else None
+        )
         if isinstance(self.model, MultifeatureRidgeArtifact):
             probability = _ridge_probability(self.model, feature_values)
             if probability >= self.model.probability_threshold:
                 return ModelArtifactPrediction(
                     target_before_stop_probability=probability,
+                    expected_r=expected_r,
                     recommended_action="take",
                     reason_codes=("probability_above_threshold",),
                 )
             return ModelArtifactPrediction(
                 target_before_stop_probability=probability,
+                expected_r=expected_r,
                 recommended_action="skip",
                 reason_codes=("probability_below_threshold",),
             )
@@ -112,11 +135,13 @@ class ModelArtifact:
         if probability >= self.model.probability_threshold:
             return ModelArtifactPrediction(
                 target_before_stop_probability=probability,
+                expected_r=expected_r,
                 recommended_action="take",
                 reason_codes=("probability_above_threshold",),
             )
         return ModelArtifactPrediction(
             target_before_stop_probability=probability,
+            expected_r=expected_r,
             recommended_action="skip",
             reason_codes=("probability_below_threshold",),
         )
@@ -174,6 +199,9 @@ def _artifact_payload(
         "model_id": artifact.model_id,
         "model_version": artifact.model_version,
         "model": asdict(artifact.model),
+        "expected_r_model": (
+            asdict(artifact.expected_r_model) if artifact.expected_r_model is not None else None
+        ),
         "feature_schema": asdict(artifact.feature_schema),
         "preprocessing": artifact.preprocessing,
         "calibration": artifact.calibration,
@@ -207,6 +235,7 @@ def _artifact_from_payload(payload: dict[str, Any]) -> ModelArtifact:
         research_git_commit=str(payload["research_git_commit"]),
         dependency_versions={str(k): str(v) for k, v in payload["dependency_versions"].items()},
         created_at=str(payload["created_at"]),
+        expected_r_model=_expected_r_model_from_payload(payload.get("expected_r_model")),
         artifact_hash=str(payload["artifact_hash"]),
     )
     return replace(artifact, artifact_hash=str(payload["artifact_hash"]))
@@ -233,6 +262,26 @@ def _model_from_payload(
     raise ValueError(f"unsupported model_type: {model_type}")
 
 
+def _expected_r_model_from_payload(payload: object) -> ExpectedRidgeArtifact | None:
+    if payload is None:
+        return None
+    model_payload = dict(payload)
+    model_type = str(model_payload.get("model_type", "ridge_expected_r"))
+    if model_type != "ridge_expected_r":
+        raise ValueError(f"unsupported expected_r_model type: {model_type}")
+    return ExpectedRidgeArtifact(
+        feature_names=tuple(str(name) for name in model_payload["feature_names"]),
+        means={str(key): float(value) for key, value in model_payload["means"].items()},
+        standard_deviations={
+            str(key): float(value) for key, value in model_payload["standard_deviations"].items()
+        },
+        intercept=float(model_payload["intercept"]),
+        weights={str(key): float(value) for key, value in model_payload["weights"].items()},
+        expected_r_threshold=float(model_payload["expected_r_threshold"]),
+        model_type=model_type,
+    )
+
+
 def _validate_artifact(artifact: ModelArtifact) -> None:
     required_strings = {
         "model_id": artifact.model_id,
@@ -249,6 +298,8 @@ def _validate_artifact(artifact: ModelArtifact) -> None:
     if not artifact.feature_schema.feature_names:
         raise ValueError("feature_names must not be empty")
     _validate_model(artifact.model, artifact.feature_schema)
+    if artifact.expected_r_model is not None:
+        _validate_expected_r_model(artifact.expected_r_model, artifact.feature_schema)
     if not artifact.preprocessing:
         raise ValueError("preprocessing metadata must not be empty")
     if not artifact.calibration:
@@ -285,6 +336,22 @@ def _validate_model(
         raise ValueError("probability_threshold must be between 0 and 1")
 
 
+def _validate_expected_r_model(
+    model: ExpectedRidgeArtifact,
+    feature_schema: FeatureSchema,
+) -> None:
+    if not model.feature_names:
+        raise ValueError("expected_r_model feature_names must not be empty")
+    missing = [name for name in model.feature_names if name not in feature_schema.feature_names]
+    if missing:
+        raise ValueError("expected_r_model feature_names must be present in feature_schema")
+    for feature_name in model.feature_names:
+        if feature_name not in model.means or feature_name not in model.standard_deviations:
+            raise ValueError("expected_r_model preprocessing statistics are incomplete")
+        if feature_name not in model.weights:
+            raise ValueError("expected_r_model weights are incomplete")
+
+
 def _validate_expected_feature_schema(
     artifact: ModelArtifact,
     expected_feature_set_version: str | None,
@@ -319,6 +386,16 @@ def _missing_model_feature(
     return None
 
 
+def _missing_expected_r_feature(
+    model: ExpectedRidgeArtifact,
+    feature_values: dict[str, float],
+) -> str | None:
+    for feature_name in model.feature_names:
+        if feature_name not in feature_values:
+            return feature_name
+    return None
+
+
 def _ridge_probability(
     model: MultifeatureRidgeArtifact,
     feature_values: dict[str, float],
@@ -334,6 +411,23 @@ def _ridge_probability(
         )
         score += model.weights[feature_name] * standardized
     return 1 / (1 + math.exp(-score))
+
+
+def _ridge_expected_r(
+    model: ExpectedRidgeArtifact,
+    feature_values: dict[str, float],
+) -> float:
+    score = model.intercept
+    for feature_name in model.feature_names:
+        standard_deviation = model.standard_deviations[feature_name]
+        standardized = (
+            0.0
+            if standard_deviation == 0
+            else (float(feature_values[feature_name]) - model.means[feature_name])
+            / standard_deviation
+        )
+        score += model.weights[feature_name] * standardized
+    return score
 
 
 def _reject_forbidden_fields(value: Any, path: str = "$") -> None:

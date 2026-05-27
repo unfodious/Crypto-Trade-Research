@@ -1,0 +1,10 @@
+{
+  "report_name": "ct135_negative_funding_paper_monitoring_replay_seed",
+  "output_path": "data/generated/ct135_negative_funding_paper_monitoring/report.json",
+  "issue_id": "CT-135",
+  "epic_id": "CT-113",
+  "pack_manifest_path": "data/generated/ct132_negative_funding_paper_dry_run_pack/pack_manifest.json",
+  "ledger_source_path": "data/generated/ct130_long_negative_funding_h12_base_top3/baseline_report.json",
+  "ledger_strategy_name": "expected_r_ridge_top3_oos",
+  "evidence_type": "historical_replay_seed"
+}

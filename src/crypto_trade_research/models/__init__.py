@@ -1,6 +1,7 @@
 """Baseline and experimental model training."""
 
 from crypto_trade_research.models.artifacts import (
+    ExpectedRidgeArtifact,
     FeatureSchema,
     LinearProbabilityArtifact,
     ModelArtifact,
@@ -15,6 +16,7 @@ from crypto_trade_research.models.baselines import (
     LinearProbabilityModel,
     ModelSample,
     TimeSplit,
+    fit_ridge_expected_r_model,
     fit_ridge_probability_model,
     train_and_evaluate_baselines,
 )
@@ -23,6 +25,7 @@ __all__ = [
     "BaselineComparisonReport",
     "BaselineConfig",
     "FeatureSchema",
+    "ExpectedRidgeArtifact",
     "LinearProbabilityModel",
     "LinearProbabilityArtifact",
     "ModelArtifact",
@@ -30,6 +33,7 @@ __all__ = [
     "ModelSample",
     "MultifeatureRidgeArtifact",
     "TimeSplit",
+    "fit_ridge_expected_r_model",
     "fit_ridge_probability_model",
     "load_model_artifact",
     "train_and_evaluate_baselines",
