@@ -139,6 +139,70 @@ def test_feature_cache_key_changes_with_feature_parameters(tmp_path: Path) -> No
     )
 
 
+def test_config_parses_accepted_sessions(tmp_path: Path) -> None:
+    dataset_manifest = tmp_path / "dataset_manifest.json"
+    funding_manifest = tmp_path / "funding_manifest.json"
+    dataset_manifest.write_text('{"dataset": "unit"}', encoding="utf-8")
+    funding_manifest.write_text('{"funding": "unit"}', encoding="utf-8")
+
+    config = HistoricalHoldoutReplayConfig.from_dict(
+        {
+            "run_name": "unit_replay",
+            "output_dir": str(tmp_path / "out"),
+            "issue_id": "CT-174",
+            "epic_id": "CT-113",
+            "dataset_manifest_path": str(dataset_manifest),
+            "funding_manifest_path": str(funding_manifest),
+            "pack_manifest_paths": [],
+            "feature": {
+                "feature_set_version": "features.unit.v1",
+                "rolling_window": 3,
+                "higher_timeframes": ["5m"],
+            },
+            "accepted_sessions": ["Europe"],
+            "generated_at": "2026-05-27T16:00:00Z",
+        }
+    )
+
+    assert config.accepted_sessions == ("europe",)
+
+
+def test_trade_session_filter_keeps_requested_sessions(tmp_path: Path) -> None:
+    dataset_manifest = tmp_path / "dataset_manifest.json"
+    funding_manifest = tmp_path / "funding_manifest.json"
+    dataset_manifest.write_text('{"dataset": "unit"}', encoding="utf-8")
+    funding_manifest.write_text('{"funding": "unit"}', encoding="utf-8")
+    config = HistoricalHoldoutReplayConfig.from_dict(
+        {
+            "run_name": "unit_replay",
+            "output_dir": str(tmp_path / "out"),
+            "issue_id": "CT-174",
+            "epic_id": "CT-113",
+            "dataset_manifest_path": str(dataset_manifest),
+            "funding_manifest_path": str(funding_manifest),
+            "pack_manifest_paths": [],
+            "feature": {
+                "feature_set_version": "features.unit.v1",
+                "rolling_window": 3,
+                "higher_timeframes": ["5m"],
+            },
+            "accepted_sessions": ["europe"],
+            "generated_at": "2026-05-27T16:00:00Z",
+        }
+    )
+
+    rows = [
+        {"decision_time": "2026-01-01T07:59:00Z", "symbol": "SOLUSDT"},
+        {"decision_time": "2026-01-01T08:00:00Z", "symbol": "SUIUSDT"},
+        {"decision_time": "2026-01-01T15:59:00Z", "symbol": "AVAXUSDT"},
+        {"decision_time": "2026-01-01T16:00:00Z", "symbol": "ADAUSDT"},
+    ]
+
+    filtered = replay_module._apply_trade_filters(rows, config)
+
+    assert [row["symbol"] for row in filtered] == ["SUIUSDT", "AVAXUSDT"]
+
+
 def test_run_historical_holdout_replay_uses_pack_replay_cache_without_loading_rows(
     tmp_path: Path,
     monkeypatch,

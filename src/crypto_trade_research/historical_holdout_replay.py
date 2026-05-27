@@ -27,6 +27,7 @@ from crypto_trade_research.models.artifacts import ModelArtifact, load_model_art
 
 SCHEMA_VERSION = "research.historical-holdout-replay.v1"
 FEATURE_CACHE_SCHEMA_VERSION = "research.historical-holdout-feature-cache.v1"
+VALID_SESSIONS = frozenset({"asia", "europe", "us"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,7 @@ class HistoricalHoldoutReplayConfig:
     feature_set_version: str
     rolling_window: int
     higher_timeframes: tuple[str, ...]
+    accepted_sessions: tuple[str, ...]
     generated_at: datetime
 
     @classmethod
@@ -66,12 +68,21 @@ class HistoricalHoldoutReplayConfig:
             feature_set_version=str(feature["feature_set_version"]),
             rolling_window=int(feature.get("rolling_window", 20)),
             higher_timeframes=tuple(str(item) for item in feature.get("higher_timeframes", ())),
+            accepted_sessions=_accepted_sessions(payload),
             generated_at=_parse_timestamp(str(payload["generated_at"])),
         )
 
     @classmethod
     def from_path(cls, path: Path) -> HistoricalHoldoutReplayConfig:
         return cls.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _accepted_sessions(payload: dict[str, Any]) -> tuple[str, ...]:
+    sessions = tuple(str(item).lower() for item in payload.get("accepted_sessions", ()))
+    invalid = sorted(set(sessions) - VALID_SESSIONS)
+    if invalid:
+        raise ValueError(f"unsupported accepted_sessions: {', '.join(invalid)}")
+    return sessions
 
 
 def run_historical_holdout_replay(config: HistoricalHoldoutReplayConfig) -> dict[str, object]:
@@ -110,7 +121,7 @@ def run_historical_holdout_replay(config: HistoricalHoldoutReplayConfig) -> dict
     )
     entry_prices = _entry_prices(source_rows)
     replays = [
-        _replay_pack(pack_path, source_rows, features.rows, entry_prices)
+        _replay_pack(config, pack_path, source_rows, features.rows, entry_prices)
         for pack_path in config.pack_manifest_paths
     ]
     for pack_path, replay in zip(config.pack_manifest_paths, replays, strict=True):
@@ -154,6 +165,9 @@ def _replay_payload(
         },
         "feature_cache": feature_cache,
         "replay_cache": replay_cache,
+        "trade_filters": {
+            "accepted_sessions": list(config.accepted_sessions),
+        },
         "replays": replays,
         "decision": {
             "live_trading_approved": False,
@@ -339,6 +353,7 @@ def _write_pack_replay_cache(
             "pack_manifest_sha256": _file_digest(pack_path),
             "model_artifact_sha256": _pack_model_artifact_digest(pack_path),
             "candidate_name": replay.get("candidate_name"),
+            "trade_filters": replay.get("trade_filters", {}),
             "metrics": replay.get("metrics", {}),
         },
     )
@@ -356,6 +371,7 @@ def _pack_replay_cache_key(
         _pack_model_artifact_digest(pack_path),
         config.issue_id,
         config.epic_id,
+        config.accepted_sessions,
     )
     normalized = json.dumps(key, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
@@ -372,6 +388,7 @@ def _pack_model_artifact_digest(pack_path: Path) -> str | None:
 
 
 def _replay_pack(
+    config: HistoricalHoldoutReplayConfig,
     pack_path: Path,
     source_rows: list[dict[str, object]],
     feature_rows: list[dict[str, object]],
@@ -384,7 +401,8 @@ def _replay_pack(
     strategy = dict(pack["strategy"])
     candidate_rows = _candidate_rows(feature_rows, strategy)
     scored_rows = _score_and_rank(candidate_rows, artifact, strategy, entry_prices)
-    selected_rows = [row for row in scored_rows if row["paper_take"]]
+    selected_rows_before_trade_filters = [row for row in scored_rows if row["paper_take"]]
+    selected_rows = _apply_trade_filters(selected_rows_before_trade_filters, config)
     label_config = _label_config(strategy)
     labels = generate_trade_labels_for_keys(source_rows, label_config, _label_keys(selected_rows))
     labels_by_key = {_label_key(row): row for row in labels.rows}
@@ -409,7 +427,11 @@ def _replay_pack(
         "ranking": strategy.get("ranking", {}),
         "candidate_count": len(candidate_rows),
         "scored_count": len(scored_rows),
+        "pre_trade_filter_selected_count": len(selected_rows_before_trade_filters),
         "selected_count": len(selected_rows),
+        "trade_filters": {
+            "accepted_sessions": list(config.accepted_sessions),
+        },
         "label_count": len(labels.rows),
         "metrics": asdict(report.metrics),
         "symbol_metrics": _symbol_metrics(accepted_trades),
@@ -438,6 +460,16 @@ def _candidate_rows(
         for row in rows
         if str(row.get("symbol")) in symbols and all(_filter_passes(row, item) for item in filters)
     ]
+
+
+def _apply_trade_filters(
+    rows: list[dict[str, object]],
+    config: HistoricalHoldoutReplayConfig,
+) -> list[dict[str, object]]:
+    if not config.accepted_sessions:
+        return rows
+    accepted_sessions = set(config.accepted_sessions)
+    return [row for row in rows if _session(row["decision_time"]) in accepted_sessions]
 
 
 def _filter_passes(row: dict[str, object], item: dict[str, object]) -> bool:
