@@ -1,0 +1,264 @@
+{
+  "experiments": [
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct138_base_recheck",
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct138_base_recheck"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct138_no_riskoff_soft_top3",
+        "candidate_setup": {
+          "name": "h12_negative_funding_no_riskoff_soft",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct138_no_riskoff_soft_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct138_mixed_or_riskon_top3",
+        "candidate_setup": {
+          "name": "h12_negative_funding_mixed_or_riskon",
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.45
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct138_mixed_or_riskon_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct138_no_weak_symbols_top3",
+        "candidate_setup": {
+          "name": "h12_negative_funding_no_weak_symbols",
+          "symbols": [
+            "SOLUSDT",
+            "SUIUSDT",
+            "AVAXUSDT",
+            "ADAUSDT",
+            "ICPUSDT",
+            "TONUSDT",
+            "DOTUSDT"
+          ],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct138_no_weak_symbols_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct138_core_symbols_top3",
+        "candidate_setup": {
+          "name": "h12_negative_funding_core_symbols",
+          "symbols": [
+            "TONUSDT",
+            "ICPUSDT",
+            "DOTUSDT"
+          ],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct138_core_symbols_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct138_no_weak_symbols_no_riskoff_top3",
+        "candidate_setup": {
+          "name": "h12_negative_funding_no_weak_symbols_no_riskoff",
+          "symbols": [
+            "SOLUSDT",
+            "SUIUSDT",
+            "AVAXUSDT",
+            "ADAUSDT",
+            "ICPUSDT",
+            "TONUSDT",
+            "DOTUSDT"
+          ],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct138_no_weak_symbols_no_riskoff_top3"
+      }
+    },
+    {
+      "config": "configs/ct130-negative-funding-stability-base.json",
+      "overrides": {
+        "experiment_name": "ct138_core_symbols_no_riskoff_top3",
+        "candidate_setup": {
+          "name": "h12_negative_funding_core_symbols_no_riskoff",
+          "symbols": [
+            "TONUSDT",
+            "ICPUSDT",
+            "DOTUSDT"
+          ],
+          "filters": [
+            {
+              "feature": "funding_rate",
+              "operator": "<=",
+              "value": -0.00002
+            },
+            {
+              "feature": "funding_rate_zscore_20",
+              "operator": "<=",
+              "value": -0.25
+            },
+            {
+              "feature": "close_location",
+              "operator": ">=",
+              "value": 0.45
+            },
+            {
+              "feature": "risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            },
+            {
+              "feature": "mtf_5m_risk_on_score_20",
+              "operator": ">=",
+              "value": 0.35
+            }
+          ]
+        },
+        "reporting": {
+          "include_trade_details": false
+        },
+        "output_dir": "data/generated/ct138_core_symbols_no_riskoff_top3"
+      }
+    }
+  ],
+  "leaderboard_path": "data/generated/ct138_regime_symbol_refinement_matrix/leaderboard.json",
+  "markdown_path": "data/generated/ct138_regime_symbol_refinement_matrix/leaderboard.md"
+}

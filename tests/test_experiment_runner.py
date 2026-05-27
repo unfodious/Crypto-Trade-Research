@@ -241,6 +241,9 @@ def test_runner_applies_deterministic_candidate_setup_filters(tmp_path: Path) ->
                     "validation_end": "2026-01-01T00:06:00Z",
                     "test_end": "2026-01-01T00:07:00Z",
                 },
+                "memory": {
+                    "label_generation_mode": "candidate_only",
+                },
                 "output_dir": str(output_dir),
                 "registry_dir": str(tmp_path / "registry"),
                 "research_git_commit": "unitcommit",
@@ -256,6 +259,70 @@ def test_runner_applies_deterministic_candidate_setup_filters(tmp_path: Path) ->
     record = json.loads(result.registry_record_path.read_text(encoding="utf-8"))
     assert record["metrics"]["candidate_setup_name"] == "negative_one_bar_pullback"
     assert record["metrics"]["candidate_sample_count"] == 3
+
+
+def test_runner_applies_candidate_setup_symbol_filter_after_context_features(
+    tmp_path: Path,
+) -> None:
+    source_csv = tmp_path / "market_candles.csv"
+    _write_market_csv(source_csv, symbols=("BTCUSDT", "ETHUSDT"))
+    output_dir = tmp_path / "experiment"
+
+    result = run_baseline_experiment(
+        BaselineExperimentConfig.from_dict(
+            {
+                "experiment_name": "unit_eth_only_candidate_setup",
+                "source_csv": str(source_csv),
+                "dataset_name": "unit_real_dataset",
+                "generator_version": "unit.runner.v1",
+                "generated_at": "2026-05-26T06:00:00Z",
+                "symbols": ["BTCUSDT", "ETHUSDT"],
+                "feature": {
+                    "feature_set_version": "features.unit.v1",
+                    "rolling_window": 2,
+                    "decision_feature": "return_1",
+                },
+                "label": {
+                    "label_set_version": "labels.unit.v1",
+                    "horizon_bars": 1,
+                    "side": "long",
+                    "stop_loss_pct": 0.01,
+                    "target_pct": 0.02,
+                    "cost_pct": 0.001,
+                    "flat_threshold_pct": 0.0,
+                },
+                "candidate_setup": {
+                    "name": "eth_only_negative_one_bar_pullback",
+                    "symbols": ["ETHUSDT"],
+                    "filters": [
+                        {
+                            "feature": "return_1",
+                            "operator": "<=",
+                            "value": 0.0,
+                        }
+                    ],
+                },
+                "splits": {
+                    "strategy": "chronological",
+                    "train_end": "2026-01-01T00:04:00Z",
+                    "validation_end": "2026-01-01T00:06:00Z",
+                    "test_end": "2026-01-01T00:07:00Z",
+                },
+                "memory": {
+                    "label_generation_mode": "candidate_only",
+                },
+                "output_dir": str(output_dir),
+                "registry_dir": str(tmp_path / "registry"),
+                "research_git_commit": "unitcommit",
+            }
+        )
+    )
+
+    report = json.loads(result.baseline_report_path.read_text(encoding="utf-8"))
+    labels = pq.read_table(result.labels_path).to_pylist()
+    assert report["metadata"]["candidate_setup"]["symbols"] == ["ETHUSDT"]
+    assert report["metadata"]["sample_count"] == 3
+    assert {row["symbol"] for row in labels} == {"ETHUSDT"}
 
 
 def test_runner_can_generate_candidate_only_labels(tmp_path: Path) -> None:
@@ -381,7 +448,7 @@ def test_runner_supports_clean_win_training_target(tmp_path: Path) -> None:
     assert record["metrics"]["training_target"] == "clean_win_max_adverse_r_gte_-0.5"
 
 
-def _write_market_csv(path: Path) -> None:
+def _write_market_csv(path: Path, symbols: tuple[str, ...] = ("BTCUSDT",)) -> None:
     header = [
         "schema_version",
         "venue",
@@ -409,35 +476,37 @@ def _write_market_csv(path: Path) -> None:
     closes = [100.0, 103.0, 101.0, 104.0, 102.0, 105.0, 103.0, 106.0]
     rows = []
     start = datetime(2026, 1, 1, tzinfo=UTC)
-    for index, close in enumerate(closes):
-        open_time = start + timedelta(minutes=index)
-        close_time = open_time + timedelta(minutes=1)
-        rows.append(
-            [
-                "research.dataset.v1",
-                "binance",
-                "um_futures",
-                "BTCUSDT",
-                "BTC",
-                "USDT",
-                "1m",
-                _fmt(open_time),
-                _fmt(close_time),
-                _fmt(close_time),
-                f"{close - 1:.8f}",
-                f"{close + 3:.8f}",
-                f"{close - 2:.8f}",
-                f"{close:.8f}",
-                "100.0",
-                f"{close * 100:.8f}",
-                "100",
-                "50.0",
-                f"{close * 50:.8f}",
-                "fixture:runner",
-                "unit.csv",
-                "sha256:unit",
-            ]
-        )
+    for symbol in symbols:
+        for index, close in enumerate(closes):
+            open_time = start + timedelta(minutes=index)
+            close_time = open_time + timedelta(minutes=1)
+            base_asset = symbol.removesuffix("USDT")
+            rows.append(
+                [
+                    "research.dataset.v1",
+                    "binance",
+                    "um_futures",
+                    symbol,
+                    base_asset,
+                    "USDT",
+                    "1m",
+                    _fmt(open_time),
+                    _fmt(close_time),
+                    _fmt(close_time),
+                    f"{close - 1:.8f}",
+                    f"{close + 3:.8f}",
+                    f"{close - 2:.8f}",
+                    f"{close:.8f}",
+                    "100.0",
+                    f"{close * 100:.8f}",
+                    "100",
+                    "50.0",
+                    f"{close * 50:.8f}",
+                    "fixture:runner",
+                    "unit.csv",
+                    "sha256:unit",
+                ]
+            )
     path.write_text(
         ",".join(header) + "\n" + "\n".join(",".join(row) for row in rows) + "\n",
         encoding="utf-8",

@@ -242,6 +242,7 @@ class CandidateSetupFilter:
 class CandidateSetup:
     name: str
     filters: tuple[CandidateSetupFilter, ...]
+    symbols: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -495,8 +496,12 @@ def _validate_config(config: BaselineExperimentConfig) -> None:
         raise ValueError("source_csv or dataset_manifest_path is required")
     if config.source_csv is not None and config.dataset_manifest_path is not None:
         raise ValueError("source_csv and dataset_manifest_path are mutually exclusive")
-    if config.candidate_setup is not None and not config.candidate_setup.filters:
-        raise ValueError("candidate_setup filters must not be empty")
+    if (
+        config.candidate_setup is not None
+        and not config.candidate_setup.filters
+        and not config.candidate_setup.symbols
+    ):
+        raise ValueError("candidate_setup filters or symbols must not be empty")
     if not config.probability_threshold_candidates:
         raise ValueError("probability_threshold_candidates must not be empty")
     if any(threshold < 0 or threshold > 1 for threshold in config.probability_threshold_candidates):
@@ -542,6 +547,7 @@ def _candidate_setup_from_payload(payload: object) -> CandidateSetup | None:
             )
             for item in setup.get("filters", ())
         ),
+        symbols=tuple(str(symbol).upper() for symbol in setup.get("symbols", ())),
     )
 
 
@@ -550,6 +556,7 @@ def _candidate_setup_payload(setup: CandidateSetup | None) -> dict[str, object]:
         return {
             "name": "all_samples",
             "filters": [],
+            "symbols": [],
         }
     return asdict(setup)
 
@@ -693,6 +700,9 @@ def _candidate_feature_rows(
         if feature_row.get(config.decision_feature) is None:
             continue
         if config.candidate_setup is not None:
+            candidate_symbols = set(config.candidate_setup.symbols)
+            if candidate_symbols and str(feature_row["symbol"]).upper() not in candidate_symbols:
+                continue
             feature_values = {
                 name: float(value)
                 for name, value in feature_row.items()
@@ -720,11 +730,16 @@ def _apply_candidate_setup(
     filtered = [
         sample
         for sample in samples
-        if all(_matches_filter(sample.features, condition) for condition in setup.filters)
+        if _matches_candidate_symbol(sample, setup)
+        and all(_matches_filter(sample.features, condition) for condition in setup.filters)
     ]
     if not filtered:
         raise ValueError("candidate_setup filters produced no trainable samples")
     return filtered
+
+
+def _matches_candidate_symbol(sample: ModelSample, setup: CandidateSetup) -> bool:
+    return not setup.symbols or sample.symbol.upper() in set(setup.symbols)
 
 
 def _matches_filter(

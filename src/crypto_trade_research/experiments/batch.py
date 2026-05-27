@@ -278,6 +278,10 @@ def _failure_row(
 
 
 def _symbol_coverage(config: dict[str, object]) -> str:
+    candidate_setup = dict(config.get("candidate_setup", {}))
+    candidate_symbols = candidate_setup.get("symbols")
+    if candidate_symbols:
+        return "candidate:" + ",".join(str(symbol).upper() for symbol in candidate_symbols)
     symbols = config.get("symbols")
     if not symbols:
         return "all"

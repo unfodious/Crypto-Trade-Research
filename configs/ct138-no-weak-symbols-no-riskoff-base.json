@@ -1,0 +1,151 @@
+{
+  "experiment_name": "ct138_no_weak_symbols_no_riskoff_top3_detail",
+  "dataset_manifest_path": "data/generated/ct121_six_month_core_futures_dataset/manifest.json",
+  "funding_manifest_path": "data/generated/ct128_six_month_funding_rate_dataset/manifest.json",
+  "dataset_name": "ct121_six_month_core_futures_dataset",
+  "generator_version": "ct138.regime_symbol_refinement.v1",
+  "generated_at": "2026-05-27T00:00:00Z",
+  "symbols": [
+    "SOLUSDT",
+    "SUIUSDT",
+    "AVAXUSDT",
+    "ADAUSDT",
+    "ICPUSDT",
+    "ATOMUSDT",
+    "XRPUSDT",
+    "TONUSDT",
+    "DOTUSDT",
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "timeframes": [
+    "1m"
+  ],
+  "feature": {
+    "feature_set_version": "features.ct138.regime-symbol-refinement.v1",
+    "rolling_window": 20,
+    "higher_timeframes": [
+      "5m",
+      "15m"
+    ],
+    "decision_feature": "funding_rate_zscore_20"
+  },
+  "label": {
+    "label_set_version": "labels.ct138.long-12bar-2r.v1",
+    "horizon_bars": 12,
+    "side": "long",
+    "stop_loss_pct": 0.004,
+    "target_pct": 0.008,
+    "cost_pct": 0.0007,
+    "flat_threshold_pct": 0.0002,
+    "target_stop_tie_breaker": "stop_first"
+  },
+  "candidate_setup": {
+    "name": "h12_negative_funding_no_weak_symbols_no_riskoff",
+    "symbols": [
+      "SOLUSDT",
+      "SUIUSDT",
+      "AVAXUSDT",
+      "ADAUSDT",
+      "ICPUSDT",
+      "TONUSDT",
+      "DOTUSDT"
+    ],
+    "filters": [
+      {
+        "feature": "funding_rate",
+        "operator": "<=",
+        "value": -0.00002
+      },
+      {
+        "feature": "funding_rate_zscore_20",
+        "operator": "<=",
+        "value": -0.25
+      },
+      {
+        "feature": "close_location",
+        "operator": ">=",
+        "value": 0.45
+      },
+      {
+        "feature": "risk_on_score_20",
+        "operator": ">=",
+        "value": 0.35
+      },
+      {
+        "feature": "mtf_5m_risk_on_score_20",
+        "operator": ">=",
+        "value": 0.35
+      }
+    ]
+  },
+  "memory": {
+    "label_generation_mode": "candidate_only"
+  },
+  "reporting": {
+    "include_trade_details": true
+  },
+  "splits": {
+    "strategy": "chronological",
+    "train_end": "2026-03-25T00:00:00Z",
+    "validation_end": "2026-04-25T00:00:00Z",
+    "test_end": "2026-05-25T00:00:00Z"
+  },
+  "baseline": {
+    "probability_threshold": 0.55,
+    "probability_threshold_candidates": [
+      0.4,
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65,
+      0.7,
+      0.75,
+      0.8
+    ],
+    "min_validation_trades_for_threshold": 10,
+    "expected_r_threshold_candidates": [
+      -0.2,
+      -0.1,
+      0.0,
+      0.05,
+      0.1,
+      0.2,
+      0.3,
+      0.5,
+      0.75
+    ],
+    "ranking_top_n_values": [
+      1,
+      2,
+      3,
+      5
+    ],
+    "primary_strategy": "expected_r_ridge_risk_controlled_oos",
+    "initial_equity": 10000,
+    "risk_per_trade_pct": 0.01
+  },
+  "risk_controls": {
+    "max_trades_per_symbol": 600,
+    "max_trades_per_decision_time": 3,
+    "loss_cooldown_signals": 2
+  },
+  "cost_assumptions": {
+    "fee_bps": 4.0,
+    "slippage_bps": 2.0,
+    "funding_bps": 0.0,
+    "notes": "CT-138 no-weak-symbols plus no-riskoff refinement of CT-130. Research-only; no live approval."
+  },
+  "promotion_gates": {
+    "min_walk_forward_average_r": 0.0,
+    "min_oos_trade_count": 100,
+    "max_drawdown_pct": 0.08,
+    "max_drawdown_duration_bars": 2400,
+    "require_leakage_checks": true,
+    "require_stability_checks": true,
+    "require_paper_trading_plan": true
+  },
+  "output_dir": "data/generated/ct138_no_weak_symbols_no_riskoff_top3_detail",
+  "registry_dir": "data/generated/experiment_registry"
+}
