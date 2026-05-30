@@ -265,6 +265,56 @@ def test_abstention_filters_skip_only_full_pattern_matches(tmp_path: Path) -> No
     assert [row["symbol"] for row in filtered] == ["SUIUSDT", "AVAXUSDT"]
 
 
+def test_abstention_filter_groups_skip_any_matching_pattern(tmp_path: Path) -> None:
+    dataset_manifest = tmp_path / "dataset_manifest.json"
+    funding_manifest = tmp_path / "funding_manifest.json"
+    dataset_manifest.write_text('{"dataset": "unit"}', encoding="utf-8")
+    funding_manifest.write_text('{"funding": "unit"}', encoding="utf-8")
+    config = HistoricalHoldoutReplayConfig.from_dict(
+        {
+            "run_name": "unit_replay",
+            "output_dir": str(tmp_path / "out"),
+            "issue_id": "CT-180",
+            "epic_id": "CT-113",
+            "dataset_manifest_path": str(dataset_manifest),
+            "funding_manifest_path": str(funding_manifest),
+            "pack_manifest_paths": [],
+            "feature": {
+                "feature_set_version": "features.unit.v1",
+                "rolling_window": 3,
+                "higher_timeframes": ["5m"],
+            },
+            "abstention_filter_groups": [
+                [
+                    {
+                        "feature": "fm_oi_value_change_1h",
+                        "operator": ">",
+                        "value": 0.015,
+                    }
+                ],
+                [
+                    {
+                        "feature": "fm_session_europe",
+                        "operator": ">=",
+                        "value": 1,
+                    }
+                ],
+            ],
+            "generated_at": "2026-05-27T16:00:00Z",
+        }
+    )
+
+    rows = [
+        {"symbol": "SOLUSDT", "fm_oi_value_change_1h": 0.02, "fm_session_europe": 0},
+        {"symbol": "SUIUSDT", "fm_oi_value_change_1h": 0.0, "fm_session_europe": 1},
+        {"symbol": "AVAXUSDT", "fm_oi_value_change_1h": 0.0, "fm_session_europe": 0},
+    ]
+
+    filtered = replay_module._apply_trade_filters(rows, config)
+
+    assert [row["symbol"] for row in filtered] == ["AVAXUSDT"]
+
+
 def test_external_feature_rows_join_before_abstention_filters(tmp_path: Path) -> None:
     dataset_manifest = tmp_path / "dataset_manifest.json"
     funding_manifest = tmp_path / "funding_manifest.json"

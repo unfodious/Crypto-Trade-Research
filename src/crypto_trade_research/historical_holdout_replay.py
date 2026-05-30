@@ -46,6 +46,7 @@ class HistoricalHoldoutReplayConfig:
     higher_timeframes: tuple[str, ...]
     accepted_sessions: tuple[str, ...]
     abstention_filters: tuple[dict[str, object], ...]
+    abstention_filter_groups: tuple[tuple[dict[str, object], ...], ...]
     external_feature_rows_path: Path | None
     external_feature_required: bool
     generated_at: datetime
@@ -73,6 +74,7 @@ class HistoricalHoldoutReplayConfig:
             higher_timeframes=tuple(str(item) for item in feature.get("higher_timeframes", ())),
             accepted_sessions=_accepted_sessions(payload),
             abstention_filters=tuple(dict(item) for item in payload.get("abstention_filters", ())),
+            abstention_filter_groups=_abstention_filter_groups(payload),
             external_feature_rows_path=(
                 Path(str(payload["external_feature_rows_path"]))
                 if payload.get("external_feature_rows_path")
@@ -93,6 +95,16 @@ def _accepted_sessions(payload: dict[str, Any]) -> tuple[str, ...]:
     if invalid:
         raise ValueError(f"unsupported accepted_sessions: {', '.join(invalid)}")
     return sessions
+
+
+def _abstention_filter_groups(
+    payload: dict[str, Any],
+) -> tuple[tuple[dict[str, object], ...], ...]:
+    raw_groups = payload.get("abstention_filter_groups")
+    if raw_groups is not None:
+        return tuple(tuple(dict(item) for item in group) for group in raw_groups)
+    filters = tuple(dict(item) for item in payload.get("abstention_filters", ()))
+    return (filters,) if filters else ()
 
 
 def run_historical_holdout_replay(config: HistoricalHoldoutReplayConfig) -> dict[str, object]:
@@ -178,6 +190,7 @@ def _replay_payload(
         "trade_filters": {
             "accepted_sessions": list(config.accepted_sessions),
             "abstention_filters": list(config.abstention_filters),
+            "abstention_filter_groups": [list(group) for group in config.abstention_filter_groups],
             "external_feature_rows_path": str(config.external_feature_rows_path)
             if config.external_feature_rows_path
             else None,
@@ -388,6 +401,7 @@ def _pack_replay_cache_key(
         config.epic_id,
         config.accepted_sessions,
         config.abstention_filters,
+        config.abstention_filter_groups,
         str(config.external_feature_rows_path) if config.external_feature_rows_path else None,
         _file_digest(config.external_feature_rows_path),
         config.external_feature_required,
@@ -455,6 +469,7 @@ def _replay_pack(
         "trade_filters": {
             "accepted_sessions": list(config.accepted_sessions),
             "abstention_filters": list(config.abstention_filters),
+            "abstention_filter_groups": [list(group) for group in config.abstention_filter_groups],
             "external_feature_rows_path": str(config.external_feature_rows_path)
             if config.external_feature_rows_path
             else None,
@@ -500,11 +515,11 @@ def _apply_trade_filters(
         filtered_rows = [
             row for row in filtered_rows if _session(row["decision_time"]) in accepted_sessions
         ]
-    if config.abstention_filters:
+    if config.abstention_filter_groups:
         filtered_rows = [
             row
             for row in filtered_rows
-            if not all(_filter_passes(row, item) for item in config.abstention_filters)
+            if not _abstention_filter_matches(row, config.abstention_filter_groups)
         ]
     return filtered_rows
 
@@ -551,7 +566,8 @@ def _validate_abstention_feature_sources(
     row_keys = set(rows[0])
     missing_external_features = sorted(
         str(item["feature"])
-        for item in config.abstention_filters
+        for group in config.abstention_filter_groups
+        for item in group
         if str(item["feature"]).startswith("fm_") and str(item["feature"]) not in row_keys
     )
     if missing_external_features:
@@ -559,6 +575,13 @@ def _validate_abstention_feature_sources(
             "external_feature_rows_path is required for abstention filters: "
             f"{', '.join(missing_external_features)}"
         )
+
+
+def _abstention_filter_matches(
+    row: dict[str, object],
+    filter_groups: tuple[tuple[dict[str, object], ...], ...],
+) -> bool:
+    return any(all(_filter_passes(row, item) for item in group) for group in filter_groups)
 
 
 def _external_feature_values(row: dict[str, object]) -> dict[str, object]:

@@ -1,0 +1,252 @@
+{
+  "report_name": "ct180_oi_expansion_stability_selected_matrix",
+  "issue_id": "CT-180",
+  "epic_id": "CT-113",
+  "output_json_path": "data/generated/ct180_oi_expansion_stability_selected_matrix/report.json",
+  "output_markdown_path": "data/generated/ct180_oi_expansion_stability_selected_matrix/report.md",
+  "windows": [
+    {
+      "name": "2024H2",
+      "replay_report_path": "data/generated/ct174_2024h2_holdout_base_replay/replay_report.json",
+      "feature_rows_path": "data/generated/ct180_futures_metrics_selected_features/2024h2.parquet"
+    },
+    {
+      "name": "2025H1",
+      "replay_report_path": "data/generated/ct172_pre_july_2025_holdout_replay/replay_report.json",
+      "feature_rows_path": "data/generated/ct180_futures_metrics_selected_features/2025h1.parquet"
+    },
+    {
+      "name": "2025JulNov",
+      "replay_report_path": "data/generated/ct169_older_holdout_replay/replay_report.json",
+      "feature_rows_path": "data/generated/ct180_futures_metrics_selected_features/2025julnov.parquet"
+    }
+  ],
+  "rules": [
+    {
+      "name": "oi_1h_expansion_high",
+      "filters": [
+        {
+          "feature": "fm_oi_value_change_1h",
+          "operator": ">",
+          "value": 0.015
+        }
+      ]
+    },
+    {
+      "name": "oi_1h_expansion_1pct",
+      "filters": [
+        {
+          "feature": "fm_oi_value_change_1h",
+          "operator": ">",
+          "value": 0.01
+        }
+      ]
+    },
+    {
+      "name": "oi_1h_expansion_2pct",
+      "filters": [
+        {
+          "feature": "fm_oi_value_change_1h",
+          "operator": ">",
+          "value": 0.02
+        }
+      ]
+    },
+    {
+      "name": "europe_session_only",
+      "filters": [
+        {
+          "feature": "fm_session_europe",
+          "operator": ">=",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "oi_high_or_europe",
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.015
+          }
+        ],
+        [
+          {
+            "feature": "fm_session_europe",
+            "operator": ">=",
+            "value": 1
+          }
+        ]
+      ]
+    },
+    {
+      "name": "oi_high_or_europe_oi5",
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.015
+          }
+        ],
+        [
+          {
+            "feature": "fm_session_europe",
+            "operator": ">=",
+            "value": 1
+          },
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.005
+          }
+        ]
+      ]
+    },
+    {
+      "name": "oi_high_or_ada_icp_sui",
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.015
+          }
+        ],
+        [
+          {
+            "feature": "fm_symbol_group_ada_icp_sui",
+            "operator": ">=",
+            "value": 1
+          }
+        ]
+      ]
+    },
+    {
+      "name": "oi_high_or_avax_sol",
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.015
+          }
+        ],
+        [
+          {
+            "feature": "fm_symbol_group_avax_sol",
+            "operator": ">=",
+            "value": 1
+          }
+        ]
+      ]
+    },
+    {
+      "name": "oi_high_or_ada_icp_sui_europe",
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.015
+          }
+        ],
+        [
+          {
+            "feature": "fm_symbol_group_ada_icp_sui",
+            "operator": ">=",
+            "value": 1
+          },
+          {
+            "feature": "fm_session_europe",
+            "operator": ">=",
+            "value": 1
+          }
+        ]
+      ]
+    },
+    {
+      "name": "oi_high_or_avax_sol_europe",
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.015
+          }
+        ],
+        [
+          {
+            "feature": "fm_symbol_group_avax_sol",
+            "operator": ">=",
+            "value": 1
+          },
+          {
+            "feature": "fm_session_europe",
+            "operator": ">=",
+            "value": 1
+          }
+        ]
+      ]
+    },
+    {
+      "name": "oi_high_or_global_long_crowded",
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.015
+          }
+        ],
+        [
+          {
+            "feature": "fm_count_long_short_ratio",
+            "operator": ">",
+            "value": 1.2
+          }
+        ]
+      ]
+    },
+    {
+      "name": "oi_high_or_top_crowded",
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.015
+          }
+        ],
+        [
+          {
+            "feature": "fm_sum_toptrader_long_short_ratio",
+            "operator": ">",
+            "value": 1.3
+          }
+        ]
+      ]
+    },
+    {
+      "name": "oi_high_or_taker_long_pressure",
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.015
+          }
+        ],
+        [
+          {
+            "feature": "fm_taker_long_short_vol_ratio",
+            "operator": ">",
+            "value": 1.2
+          }
+        ]
+      ]
+    }
+  ]
+}

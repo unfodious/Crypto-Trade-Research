@@ -26,12 +26,15 @@ class SelectedTradeAbstentionError(ValueError):
 class AbstentionRule:
     name: str
     filters: tuple[dict[str, object], ...]
+    filter_groups: tuple[tuple[dict[str, object], ...], ...] = ()
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> AbstentionRule:
+        filters = tuple(dict(item) for item in payload.get("filters", ()))
         return cls(
             name=str(payload["name"]),
-            filters=tuple(dict(item) for item in payload.get("filters", ())),
+            filters=filters,
+            filter_groups=_filter_groups_from_payload(payload, filters),
         )
 
 
@@ -161,7 +164,8 @@ def _rule_report(
     candidate_name: str,
     strategy: dict[str, object],
 ) -> dict[str, object]:
-    kept_rows = rows if not rule.filters else [row for row in rows if not _rule_matches(row, rule)]
+    filter_groups = _rule_filter_groups(rule)
+    kept_rows = rows if not filter_groups else [row for row in rows if not _rule_matches(row, rule)]
     signals = _signals(kept_rows, strategy)
     report = evaluate_signal_strategy(
         f"{candidate_name}:{rule.name}",
@@ -171,15 +175,18 @@ def _rule_report(
     return {
         "name": rule.name,
         "filters": list(rule.filters),
+        "filter_groups": [list(group) for group in filter_groups],
         "selected_row_count": len(rows),
         "kept_row_count": len(kept_rows),
         "skipped_row_count": len(rows) - len(kept_rows),
         "metrics": asdict(report.metrics),
+        "symbol_metrics": _symbol_metrics(report.trades),
+        "session_metrics": _session_metrics(report.trades),
     }
 
 
 def _rules_with_baseline(rules: tuple[AbstentionRule, ...]) -> tuple[AbstentionRule, ...]:
-    return (AbstentionRule(name="base_recomputed", filters=()), *rules)
+    return (AbstentionRule(name="base_recomputed", filters=(), filter_groups=()), *rules)
 
 
 def _read_selected_rows(path: Path) -> list[dict[str, object]]:
@@ -265,12 +272,35 @@ def _backtest_config(strategy: dict[str, object]) -> BacktestConfig:
 
 
 def _feature_columns(rules: tuple[AbstentionRule, ...]) -> tuple[str, ...]:
-    columns = sorted({str(item["feature"]) for rule in rules for item in rule.filters})
+    columns = sorted(
+        {
+            str(item["feature"])
+            for rule in rules
+            for group in _rule_filter_groups(rule)
+            for item in group
+        }
+    )
     return tuple(columns)
 
 
 def _rule_matches(row: dict[str, object], rule: AbstentionRule) -> bool:
-    return all(_filter_passes(row, item) for item in rule.filters)
+    return any(
+        all(_filter_passes(row, item) for item in group) for group in _rule_filter_groups(rule)
+    )
+
+
+def _rule_filter_groups(rule: AbstentionRule) -> tuple[tuple[dict[str, object], ...], ...]:
+    return rule.filter_groups or ((rule.filters,) if rule.filters else ())
+
+
+def _filter_groups_from_payload(
+    payload: dict[str, Any],
+    filters: tuple[dict[str, object], ...],
+) -> tuple[tuple[dict[str, object], ...], ...]:
+    raw_groups = payload.get("filter_groups")
+    if raw_groups is None:
+        return (filters,) if filters else ()
+    return tuple(tuple(dict(item) for item in group) for group in raw_groups)
 
 
 def _filter_passes(row: dict[str, object], item: dict[str, object]) -> bool:
@@ -357,6 +387,39 @@ def _optional_int(value: object) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+def _symbol_metrics(trades: list[object]) -> list[dict[str, object]]:
+    return _group_metrics(trades, "symbol")
+
+
+def _session_metrics(trades: list[object]) -> list[dict[str, object]]:
+    return _group_metrics(trades, "session")
+
+
+def _group_metrics(trades: list[object], field: str) -> list[dict[str, object]]:
+    grouped: dict[str, list[float]] = {}
+    for trade in trades:
+        key = trade.symbol if field == "symbol" else _session(trade.decision_time)
+        grouped.setdefault(key, []).append(float(trade.net_r))
+    return [
+        {
+            field: key,
+            "trade_count": len(values),
+            "average_r": sum(values) / len(values),
+            "positive": (sum(values) / len(values)) > 0,
+        }
+        for key, values in sorted(grouped.items())
+    ]
+
+
+def _session(decision_time: datetime) -> str:
+    hour = decision_time.astimezone(UTC).hour
+    if 0 <= hour < 8:
+        return "asia"
+    if 8 <= hour < 16:
+        return "europe"
+    return "us"
 
 
 def _expected_r_confidence(expected_r: float) -> float:

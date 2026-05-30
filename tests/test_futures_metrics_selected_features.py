@@ -108,9 +108,15 @@ def test_build_futures_metrics_selected_features_uses_last_point_in_time_metric(
     assert rows[0]["fm_oi_value_change_1h"] == 0.25
     assert rows[0]["fm_top_vs_global_ratio_spread"] == 0.5
     assert rows[0]["fm_global_vs_market_median_spread"] == pytest.approx(0.1)
+    assert rows[0]["fm_session_asia"] == 1
+    assert rows[0]["fm_session_europe"] == 0
+    assert rows[0]["fm_symbol_btc"] == 1
+    assert rows[0]["fm_symbol_group_ada_icp_sui"] == 0
     assert rows[1]["symbol"] == "ETHUSDT"
     assert rows[1]["fm_metrics_match"] == 0
     assert rows[1]["fm_sum_open_interest_value"] is None
+    assert rows[1]["fm_session_asia"] == 1
+    assert rows[1]["fm_symbol_eth"] == 1
 
 
 def _metric_row(

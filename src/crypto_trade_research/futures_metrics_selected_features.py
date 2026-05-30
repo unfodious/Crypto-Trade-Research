@@ -30,6 +30,23 @@ RATIO_COLUMNS = (
     "count_long_short_ratio",
     "sum_taker_long_short_vol_ratio",
 )
+KNOWN_SYMBOLS = (
+    "ADAUSDT",
+    "ATOMUSDT",
+    "AVAXUSDT",
+    "BTCUSDT",
+    "DOTUSDT",
+    "ETHUSDT",
+    "ICPUSDT",
+    "SOLUSDT",
+    "SUIUSDT",
+    "TONUSDT",
+    "XRPUSDT",
+)
+SYMBOL_GROUPS = {
+    "fm_symbol_group_ada_icp_sui": frozenset({"ADAUSDT", "ICPUSDT", "SUIUSDT"}),
+    "fm_symbol_group_avax_sol": frozenset({"AVAXUSDT", "SOLUSDT"}),
+}
 
 
 class FuturesMetricsSelectedFeaturesError(ValueError):
@@ -173,6 +190,7 @@ def _feature_row(key: dict[str, object], metrics_index: _MetricsIndex) -> dict[s
         "symbol": symbol,
         "timeframe": str(key["timeframe"]),
         "decision_time": decision_time,
+        **_categorical_feature_flags(symbol, decision_time),
     }
     if current is None:
         return {
@@ -223,6 +241,21 @@ def _feature_row(key: dict[str, object], metrics_index: _MetricsIndex) -> dict[s
         ),
         "fm_ratio_missing_count": sum(1 for field in RATIO_COLUMNS if current[field] is None),
     }
+
+
+def _categorical_feature_flags(symbol: str, decision_time: datetime) -> dict[str, int]:
+    hour = decision_time.hour
+    session_flags = {
+        "fm_session_asia": int(0 <= hour < 8),
+        "fm_session_europe": int(8 <= hour < 16),
+        "fm_session_us": int(hour >= 16),
+    }
+    symbol_flags = {
+        f"fm_symbol_{known_symbol.removesuffix('USDT').lower()}": int(symbol == known_symbol)
+        for known_symbol in KNOWN_SYMBOLS
+    }
+    group_flags = {name: int(symbol in symbols) for name, symbols in SYMBOL_GROUPS.items()}
+    return {**session_flags, **symbol_flags, **group_flags}
 
 
 def _lookup_metric_row(

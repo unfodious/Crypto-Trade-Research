@@ -1,0 +1,40 @@
+{
+  "run_name": "ct180_2025julnov_oi_high_or_europe_replay",
+  "output_dir": "data/generated/ct180_2025julnov_oi_high_or_europe_replay",
+  "feature_cache_dir": "data/generated/ct169_older_holdout_replay/feature_cache",
+  "replay_cache_dir": "data/generated/ct180_2025julnov_oi_high_or_europe_replay/replay_cache",
+  "issue_id": "CT-180",
+  "epic_id": "CT-113",
+  "dataset_manifest_path": "data/generated/ct169_older_holdout_core_futures_dataset/manifest.json",
+  "funding_manifest_path": "data/generated/ct169_older_holdout_funding_rate_dataset/manifest.json",
+  "pack_manifest_paths": [
+    "data/generated/ct145_no_ton_negative_funding_paper_pack/pack_manifest.json"
+  ],
+  "feature": {
+    "feature_set_version": "features.ct138.regime-symbol-refinement.v1",
+    "rolling_window": 20,
+    "higher_timeframes": [
+      "5m",
+      "15m"
+    ]
+  },
+  "external_feature_rows_path": "data/generated/ct180_futures_metrics_selected_features/2025julnov.parquet",
+  "external_feature_required": true,
+  "abstention_filter_groups": [
+    [
+      {
+        "feature": "fm_oi_value_change_1h",
+        "operator": ">",
+        "value": 0.015
+      }
+    ],
+    [
+      {
+        "feature": "fm_session_europe",
+        "operator": ">=",
+        "value": 1
+      }
+    ]
+  ],
+  "generated_at": "2026-05-30T12:00:00Z"
+}
