@@ -65,6 +65,7 @@ def run_paper_collector(config: PaperCollectorConfig) -> dict[str, object]:
     labels = _label_map(_read_rows(config.label_source_path)) if config.label_source_path else {}
     candidate_rows = _candidate_rows(features, pack)
     scored_rows = _score_rows(candidate_rows, artifact, pack)
+    scored_rows = _apply_abstention_rules(scored_rows, pack)
     selected_time = config.decision_time or _latest_decision_time_with_takes(scored_rows)
     selected_rows = [row for row in scored_rows if row["decision_time"] == selected_time]
     signals = _signals(selected_rows, artifact, pack, config)
@@ -192,6 +193,46 @@ def _score_rows(
     return ranked
 
 
+def _apply_abstention_rules(
+    rows: list[dict[str, object]],
+    pack: dict[str, object],
+) -> list[dict[str, object]]:
+    filter_groups = _abstention_filter_groups(pack)
+    if not filter_groups:
+        return rows
+    required_features = sorted({str(item["feature"]) for group in filter_groups for item in group})
+    updated_rows: list[dict[str, object]] = []
+    for row in rows:
+        updated = dict(row)
+        missing_features = [feature for feature in required_features if row.get(feature) is None]
+        filter_matched = _abstention_filter_matches(row, filter_groups)
+        updated["missing_abstention_features"] = missing_features
+        updated["abstention_filter_matched"] = filter_matched
+        updated["abstention_blocked"] = bool(missing_features or filter_matched)
+        if updated["paper_take"] and updated["abstention_blocked"]:
+            updated["paper_take"] = False
+        updated_rows.append(updated)
+    return updated_rows
+
+
+def _abstention_filter_groups(
+    pack: dict[str, object],
+) -> tuple[tuple[dict[str, object], ...], ...]:
+    strategy = dict(pack["strategy"])
+    raw_groups = strategy.get("abstention_filter_groups")
+    if raw_groups is not None:
+        return tuple(tuple(dict(item) for item in group) for group in raw_groups)
+    filters = tuple(dict(item) for item in strategy.get("abstention_filters", ()))
+    return (filters,) if filters else ()
+
+
+def _abstention_filter_matches(
+    row: dict[str, object],
+    filter_groups: tuple[tuple[dict[str, object], ...], ...],
+) -> bool:
+    return any(all(_filter_passes(row, item) for item in group) for group in filter_groups)
+
+
 def _latest_decision_time_with_takes(rows: list[dict[str, object]]) -> str:
     times = sorted({str(row["decision_time"]) for row in rows if row.get("paper_take")})
     if not times:
@@ -210,8 +251,8 @@ def _signals(
     for row in sorted(rows, key=lambda item: int(item["rank"])):
         signal_timestamp = str(row["decision_time"])
         features_timestamp = str(row.get("source_available_at") or row["decision_time"])
-        hard_blocks = [] if row["paper_take"] else ["expected_r_or_rank_block"]
         reason_codes = _reason_codes(row)
+        hard_blocks = _hard_risk_blocks(row)
         signals.append(
             {
                 "contract_version": CONTRACT_VERSION,
@@ -241,6 +282,11 @@ def _signals(
                 "recommended_action": "take" if row["paper_take"] else "skip",
                 "reason_codes": reason_codes,
                 "hard_risk_blocks": hard_blocks,
+                "abstention": {
+                    "blocked": bool(row.get("abstention_blocked", False)),
+                    "filter_matched": bool(row.get("abstention_filter_matched", False)),
+                    "missing_features": list(row.get("missing_abstention_features", ())),
+                },
                 "generated_at": generated_at,
             }
         )
@@ -251,11 +297,28 @@ def _reason_codes(row: dict[str, object]) -> list[str]:
     if row["paper_take"]:
         return ["expected_r_above_threshold", "rank_within_top_n"]
     reasons = []
+    if row.get("missing_abstention_features"):
+        reasons.append("missing_abstention_feature")
+    if row.get("abstention_filter_matched"):
+        reasons.append("abstention_filter_block")
     if not row["expected_r_threshold_passed"]:
         reasons.append("expected_r_below_threshold")
     if not row["top_n_passed"]:
         reasons.append("outside_top_n")
     return reasons or ["paper_skip"]
+
+
+def _hard_risk_blocks(row: dict[str, object]) -> list[str]:
+    if row["paper_take"]:
+        return []
+    blocks = []
+    if row.get("missing_abstention_features"):
+        blocks.append("missing_abstention_feature")
+    if row.get("abstention_filter_matched"):
+        blocks.append("abstention_filter_block")
+    if not row["expected_r_threshold_passed"] or not row["top_n_passed"]:
+        blocks.append("expected_r_or_rank_block")
+    return blocks
 
 
 def _ledger_entries(

@@ -27,9 +27,14 @@ from crypto_trade_research.paper_monitoring import (
 
 BINANCE_FAPI_KLINES_URL = "https://fapi.binance.com/fapi/v1/klines"
 BINANCE_FAPI_FUNDING_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
+BINANCE_FAPI_OPEN_INTEREST_HIST_URL = "https://fapi.binance.com/futures/data/openInterestHist"
 
 KlineFetcher = Callable[[str, datetime, datetime, int, str], list[list[object]]]
 FundingFetcher = Callable[[str, datetime, datetime, int, str], list[dict[str, object]]]
+OpenInterestFetcher = Callable[
+    [str, datetime, datetime, int, str, str],
+    list[dict[str, object]],
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,9 +53,13 @@ class ForwardPaperRunConfig:
     end_time: datetime | None = None
     kline_limit: int = 1500
     funding_limit: int = 1000
+    futures_metrics_period: str = "5m"
+    futures_metrics_limit: int = 500
+    futures_metrics_lookback_hours: int = 3
     request_sleep_seconds: float = 0.05
     kline_base_url: str = BINANCE_FAPI_KLINES_URL
     funding_base_url: str = BINANCE_FAPI_FUNDING_URL
+    open_interest_base_url: str = BINANCE_FAPI_OPEN_INTEREST_HIST_URL
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> ForwardPaperRunConfig:
@@ -72,9 +81,15 @@ class ForwardPaperRunConfig:
             ),
             kline_limit=int(payload.get("kline_limit", 1500)),
             funding_limit=int(payload.get("funding_limit", 1000)),
+            futures_metrics_period=str(payload.get("futures_metrics_period", "5m")),
+            futures_metrics_limit=int(payload.get("futures_metrics_limit", 500)),
+            futures_metrics_lookback_hours=int(payload.get("futures_metrics_lookback_hours", 3)),
             request_sleep_seconds=float(payload.get("request_sleep_seconds", 0.05)),
             kline_base_url=str(payload.get("kline_base_url", BINANCE_FAPI_KLINES_URL)),
             funding_base_url=str(payload.get("funding_base_url", BINANCE_FAPI_FUNDING_URL)),
+            open_interest_base_url=str(
+                payload.get("open_interest_base_url", BINANCE_FAPI_OPEN_INTEREST_HIST_URL)
+            ),
         )
 
     @classmethod
@@ -87,6 +102,7 @@ def run_forward_paper_collection(
     *,
     fetch_klines: KlineFetcher | None = None,
     fetch_funding: FundingFetcher | None = None,
+    fetch_open_interest: OpenInterestFetcher | None = None,
     clock: Callable[[], datetime] | None = None,
 ) -> dict[str, object]:
     """Fetch fresh public data, generate features, and run the paper collector."""
@@ -106,6 +122,17 @@ def run_forward_paper_collection(
         end_time,
         fetch_funding or _fetch_binance_funding,
     )
+    pack = _read_json(config.pack_manifest_path)
+    futures_metrics_rows = (
+        _fetch_open_interest_rows(
+            config,
+            end_time - timedelta(hours=config.futures_metrics_lookback_hours),
+            end_time,
+            fetch_open_interest or _fetch_binance_open_interest_hist,
+        )
+        if _pack_requires_futures_metrics(pack)
+        else []
+    )
     feature_frame = generate_ohlcv_features(
         candle_rows,
         FeatureConfig(
@@ -118,7 +145,7 @@ def run_forward_paper_collection(
     entry_prices = _entry_prices_by_symbol_time(candle_rows)
     latest_decision_time = max(_as_datetime(row["decision_time"]) for row in feature_frame.rows)
     latest_features = [
-        _feature_row_with_entry_price(row, entry_prices)
+        _feature_row_with_forward_context(row, entry_prices, futures_metrics_rows)
         for row in feature_frame.rows
         if _as_datetime(row["decision_time"]) == latest_decision_time
     ]
@@ -138,7 +165,6 @@ def run_forward_paper_collection(
             mode="forward_paper",
         )
     )
-    pack = _read_json(config.pack_manifest_path)
     cumulative_signals = _merge_signals(
         _existing_signals(config.output_dir / "forward_signals.json"),
         [dict(signal) for signal in collector_payload["signals"]],
@@ -196,6 +222,7 @@ def run_forward_paper_collection(
         "row_counts": {
             "candles": len(candle_rows),
             "funding": len(funding_rows),
+            "futures_metrics": len(futures_metrics_rows),
             "latest_features": len(latest_features),
             "cumulative_signals": len(cumulative_signals),
             "cumulative_trades": len(cumulative_trades),
@@ -245,6 +272,27 @@ def _fetch_funding_rows(
         _sleep(config)
     if not rows:
         raise ValueError("fresh funding fetch returned no rows")
+    return rows
+
+
+def _fetch_open_interest_rows(
+    config: ForwardPaperRunConfig,
+    start_time: datetime,
+    end_time: datetime,
+    fetcher: OpenInterestFetcher,
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for symbol in config.symbols:
+        page = fetcher(
+            symbol,
+            start_time,
+            end_time,
+            config.futures_metrics_limit,
+            config.open_interest_base_url,
+            config.futures_metrics_period,
+        )
+        rows.extend(_normalize_open_interest(item) for item in page)
+        _sleep(config)
     return rows
 
 
@@ -301,6 +349,34 @@ def _fetch_binance_funding(
     return [dict(item) for item in payload]
 
 
+def _fetch_binance_open_interest_hist(
+    symbol: str,
+    start_time: datetime,
+    end_time: datetime,
+    limit: int,
+    base_url: str,
+    period: str,
+) -> list[dict[str, object]]:
+    query = urllib.parse.urlencode(
+        {
+            "symbol": symbol,
+            "period": period,
+            "startTime": _timestamp_ms(start_time),
+            "endTime": _timestamp_ms(end_time),
+            "limit": limit,
+        }
+    )
+    request = urllib.request.Request(
+        f"{base_url}?{query}",
+        headers={"User-Agent": "crypto-trade-research/ct181"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("Binance open-interest response must be a list")
+    return [dict(item) for item in payload]
+
+
 def _normalize_kline(symbol: str, item: list[object]) -> dict[str, object]:
     open_time = _ms_timestamp(item[0])
     close_time = open_time + timedelta(minutes=1)
@@ -345,6 +421,17 @@ def _normalize_funding(item: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _normalize_open_interest(item: dict[str, object]) -> dict[str, object]:
+    metrics_time = _ms_timestamp(item["timestamp"])
+    return {
+        "symbol": str(item["symbol"]).upper(),
+        "metrics_time": metrics_time,
+        "source_available_at": metrics_time,
+        "sum_open_interest_value": _decimal(item["sumOpenInterestValue"]),
+        "data_source": "binance_fapi_open_interest_hist",
+    }
+
+
 def _entry_prices_by_symbol_time(
     candle_rows: list[dict[str, object]],
 ) -> dict[tuple[str, datetime], float]:
@@ -354,14 +441,85 @@ def _entry_prices_by_symbol_time(
     }
 
 
-def _feature_row_with_entry_price(
+def _feature_row_with_forward_context(
     row: dict[str, object],
     entry_prices: dict[tuple[str, datetime], float],
+    futures_metrics_rows: list[dict[str, object]],
 ) -> dict[str, object]:
     updated = dict(row)
     key = (str(row["symbol"]), _as_datetime(row["decision_time"]))
     updated["entry_price"] = entry_prices[key]
+    updated.update(_session_flags(_as_datetime(row["decision_time"])))
+    updated.update(
+        _open_interest_features(
+            str(row["symbol"]), _as_datetime(row["decision_time"]), futures_metrics_rows
+        )
+    )
     return updated
+
+
+def _session_flags(decision_time: datetime) -> dict[str, int]:
+    hour = decision_time.astimezone(UTC).hour
+    return {
+        "fm_session_asia": int(0 <= hour < 8),
+        "fm_session_europe": int(8 <= hour < 16),
+        "fm_session_us": int(hour >= 16),
+    }
+
+
+def _open_interest_features(
+    symbol: str,
+    decision_time: datetime,
+    futures_metrics_rows: list[dict[str, object]],
+) -> dict[str, object]:
+    current = _latest_open_interest_row(symbol, decision_time, futures_metrics_rows)
+    lagged = _latest_open_interest_row(
+        symbol,
+        decision_time - timedelta(minutes=60),
+        futures_metrics_rows,
+    )
+    features: dict[str, object] = {
+        "fm_metrics_match": int(current is not None),
+        "fm_metrics_age_minutes": None,
+        "fm_sum_open_interest_value": None,
+        "fm_oi_value_change_1h": None,
+    }
+    if current is None:
+        return features
+    current_time = _as_datetime(current["metrics_time"])
+    current_value = float(current["sum_open_interest_value"])
+    features["fm_metrics_age_minutes"] = (decision_time - current_time).total_seconds() / 60
+    features["fm_sum_open_interest_value"] = current_value
+    if lagged is None:
+        return features
+    lagged_value = float(lagged["sum_open_interest_value"])
+    if lagged_value > 0:
+        features["fm_oi_value_change_1h"] = (current_value / lagged_value) - 1
+    return features
+
+
+def _latest_open_interest_row(
+    symbol: str,
+    decision_time: datetime,
+    futures_metrics_rows: list[dict[str, object]],
+) -> dict[str, object] | None:
+    rows = [
+        row
+        for row in futures_metrics_rows
+        if str(row["symbol"]) == symbol and _as_datetime(row["metrics_time"]) <= decision_time
+    ]
+    if not rows:
+        return None
+    return max(rows, key=lambda row: _as_datetime(row["metrics_time"]))
+
+
+def _pack_requires_futures_metrics(pack: dict[str, object]) -> bool:
+    strategy = dict(pack.get("strategy", {}))
+    filters = [
+        dict(item) for group in strategy.get("abstention_filter_groups", ()) for item in group
+    ]
+    filters.extend(dict(item) for item in strategy.get("abstention_filters", ()))
+    return any(str(item.get("feature", "")).startswith("fm_") for item in filters)
 
 
 def _existing_signals(path: Path) -> list[dict[str, object]]:

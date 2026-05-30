@@ -112,7 +112,47 @@ def test_run_forward_paper_collection_uses_fresh_public_data_without_live_author
     assert "counterfactual_exit_metrics" in monitoring["metrics"]
 
 
-def _write_pack(tmp_path: Path) -> Path:
+def test_run_forward_paper_collection_adds_futures_metrics_abstention_context(
+    tmp_path: Path,
+) -> None:
+    pack_path = _write_pack(tmp_path, abstention=True)
+    config = ForwardPaperRunConfig.from_dict(
+        {
+            "run_name": "unit_forward",
+            "output_dir": str(tmp_path / "forward"),
+            "issue_id": "CT-181",
+            "epic_id": "CT-113",
+            "pack_manifest_path": str(pack_path),
+            "symbols": ["TONUSDT", "BTCUSDT", "ETHUSDT"],
+            "lookback_minutes": 30,
+            "funding_lookback_hours": 200,
+            "futures_metrics_lookback_hours": 3,
+            "feature": {
+                "feature_set_version": "features.unit.v1",
+                "rolling_window": 3,
+                "higher_timeframes": ["5m"],
+            },
+            "request_sleep_seconds": 0,
+            "end_time": "2026-05-27T01:00:30Z",
+        }
+    )
+
+    payload = run_forward_paper_collection(
+        config,
+        fetch_klines=_fake_klines,
+        fetch_funding=_fake_funding,
+        fetch_open_interest=_fake_open_interest,
+    )
+
+    assert payload["row_counts"]["futures_metrics"] == 6
+    assert payload["row_counts"]["open_trades"] == 0
+    assert payload["collector_summary"]["take_count"] == 0
+    signals = json.loads((config.output_dir / "signals.json").read_text())["signals"]
+    assert signals[0]["recommended_action"] == "skip"
+    assert "abstention_filter_block" in signals[0]["hard_risk_blocks"]
+
+
+def _write_pack(tmp_path: Path, *, abstention: bool = False) -> Path:
     model_path = tmp_path / "model_artifact.json"
     write_model_artifact(
         model_path,
@@ -173,10 +213,32 @@ def _write_pack(tmp_path: Path) -> Path:
             },
             "strategy": {
                 "side": "long",
-                "symbols": ["TONUSDT", "BTCUSDT", "ETHUSDT"],
+                "symbols": ["TONUSDT"] if abstention else ["TONUSDT", "BTCUSDT", "ETHUSDT"],
                 "filters": [{"feature": "close_location", "operator": ">=", "value": 0.0}],
                 "ranking": {"top_n_per_decision_time": 1, "selected_expected_r_threshold": -1.0},
                 "exits": {"stop_loss_pct": 0.004, "target_pct": 0.008, "horizon_bars": 12},
+                **(
+                    {
+                        "abstention_filter_groups": [
+                            [
+                                {
+                                    "feature": "fm_oi_value_change_1h",
+                                    "operator": ">",
+                                    "value": 0.015,
+                                }
+                            ],
+                            [
+                                {
+                                    "feature": "fm_session_europe",
+                                    "operator": ">=",
+                                    "value": 1,
+                                }
+                            ],
+                        ]
+                    }
+                    if abstention
+                    else {}
+                ),
             },
             "paper_gate": {"minimum_calendar_days": 30, "minimum_paper_trades": 100},
             "monitoring": {},
@@ -242,3 +304,29 @@ def _fake_funding(
         current += timedelta(hours=8)
         index += 1
     return rows[-limit:]
+
+
+def _fake_open_interest(
+    symbol: str,
+    start_time: datetime,
+    end_time: datetime,
+    limit: int,
+    base_url: str,
+    period: str,
+) -> list[dict[str, object]]:
+    del start_time, limit, base_url, period
+    current_value = "1030" if symbol == "TONUSDT" else "1000"
+    return [
+        {
+            "symbol": symbol,
+            "sumOpenInterest": "100",
+            "sumOpenInterestValue": "1000",
+            "timestamp": int((end_time - timedelta(hours=1)).timestamp() * 1000),
+        },
+        {
+            "symbol": symbol,
+            "sumOpenInterest": "100",
+            "sumOpenInterestValue": current_value,
+            "timestamp": int(end_time.timestamp() * 1000),
+        },
+    ]

@@ -79,6 +79,27 @@ freshness threshold is configured and the response is stale, the response must s
 `recommended_action` to `skip` and include `stale_data` in both `reason_codes` and
 `hard_risk_blocks`.
 
+## CT-180 Shadow Abstention Context
+
+The CT-180/CT-181 shadow paper pack extends the signal payload with an observation-only
+`abstention` object:
+
+- `blocked`
+- `filter_matched`
+- `missing_features`
+
+Required point-in-time abstention features:
+
+- `fm_oi_value_change_1h`
+- `fm_session_asia`
+- `fm_session_europe`
+- `fm_session_us`
+
+For CT-180, `recommended_action` must be `skip` when `fm_oi_value_change_1h > 0.015`, when
+`fm_session_europe >= 1`, or when any required abstention feature is missing. Missing abstention
+features must add `missing_abstention_feature` to `hard_risk_blocks`. A matched abstention filter
+must add `abstention_filter_block` to `hard_risk_blocks`.
+
 ## Export Options
 
 Supported future implementation paths:

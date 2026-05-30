@@ -38,7 +38,39 @@ def test_run_paper_collector_generates_ranked_signals_and_paper_ledger(
     assert (config.output_dir / "ledger.json").exists()
 
 
-def _config(tmp_path: Path) -> PaperCollectorConfig:
+def test_run_paper_collector_blocks_abstention_filtered_take(tmp_path: Path) -> None:
+    config = _config(tmp_path, abstention_block=True)
+
+    payload = run_paper_collector(config)
+
+    assert payload["summary"]["take_count"] == 0
+    assert payload["signals"][0]["recommended_action"] == "skip"
+    assert payload["signals"][0]["reason_codes"] == ["abstention_filter_block"]
+    assert payload["signals"][0]["hard_risk_blocks"] == ["abstention_filter_block"]
+    assert payload["signals"][0]["abstention"]["blocked"] is True
+    assert payload["trades"] == []
+
+
+def test_run_paper_collector_fails_closed_when_abstention_feature_missing(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path, abstention_block=True, include_abstention_features=False)
+
+    payload = run_paper_collector(config)
+
+    assert payload["summary"]["take_count"] == 0
+    assert payload["signals"][0]["recommended_action"] == "skip"
+    assert payload["signals"][0]["reason_codes"] == ["missing_abstention_feature"]
+    assert payload["signals"][0]["hard_risk_blocks"] == ["missing_abstention_feature"]
+    assert payload["signals"][0]["abstention"]["missing_features"] == ["fm_oi_value_change_1h"]
+
+
+def _config(
+    tmp_path: Path,
+    *,
+    abstention_block: bool = False,
+    include_abstention_features: bool = True,
+) -> PaperCollectorConfig:
     model_path = _write_model_artifact(tmp_path)
     pack_path = tmp_path / "pack.json"
     pack_path.write_text(
@@ -62,6 +94,21 @@ def _config(tmp_path: Path) -> PaperCollectorConfig:
                         "top_n_per_decision_time": 1,
                         "selected_expected_r_threshold": -0.2,
                     },
+                    **(
+                        {
+                            "abstention_filter_groups": [
+                                [
+                                    {
+                                        "feature": "fm_oi_value_change_1h",
+                                        "operator": ">",
+                                        "value": 0.015,
+                                    }
+                                ]
+                            ]
+                        }
+                        if abstention_block
+                        else {}
+                    ),
                 },
             }
         ),
@@ -71,9 +118,30 @@ def _config(tmp_path: Path) -> PaperCollectorConfig:
     write_rows_parquet(
         feature_path,
         [
-            _feature("2026-05-27T00:01:00Z", "TONUSDT", -0.00003, -0.5, 0.5),
-            _feature("2026-05-27T00:02:00Z", "TONUSDT", -0.00004, -0.6, 0.6),
-            _feature("2026-05-27T00:02:00Z", "ICPUSDT", -0.00003, -0.4, 0.5),
+            _feature(
+                "2026-05-27T00:01:00Z",
+                "TONUSDT",
+                -0.00003,
+                -0.5,
+                0.5,
+                include_abstention_features=include_abstention_features,
+            ),
+            _feature(
+                "2026-05-27T00:02:00Z",
+                "TONUSDT",
+                -0.00004,
+                -0.6,
+                0.6,
+                include_abstention_features=include_abstention_features,
+            ),
+            _feature(
+                "2026-05-27T00:02:00Z",
+                "ICPUSDT",
+                -0.00003,
+                -0.4,
+                0.5,
+                include_abstention_features=include_abstention_features,
+            ),
         ],
     )
     label_path = tmp_path / "labels.parquet"
@@ -100,7 +168,7 @@ def _config(tmp_path: Path) -> PaperCollectorConfig:
             "pack_manifest_path": str(pack_path),
             "feature_source_path": str(feature_path),
             "label_source_path": str(label_path),
-            "decision_time": None,
+            "decision_time": "2026-05-27T00:02:00Z" if abstention_block else None,
             "mode": "historical_dry_run",
         }
     )
@@ -112,8 +180,10 @@ def _feature(
     funding_rate: float,
     funding_z: float,
     close_location: float,
+    *,
+    include_abstention_features: bool,
 ) -> dict[str, object]:
-    return {
+    row = {
         "symbol": symbol,
         "timeframe": "1m",
         "decision_time": decision_time,
@@ -124,6 +194,9 @@ def _feature(
         "hours_since_funding": 2.0,
         "risk_on_score_20": 0.6,
     }
+    if include_abstention_features:
+        row["fm_oi_value_change_1h"] = 0.02 if symbol == "TONUSDT" else 0.0
+    return row
 
 
 def _write_model_artifact(tmp_path: Path) -> Path:

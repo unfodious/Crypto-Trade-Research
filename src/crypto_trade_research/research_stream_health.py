@@ -26,6 +26,11 @@ def build_research_stream_health_report(
     streams = {
         "ct145_forward_paper": _build_ct145_summary(root, include_systemd, reader),
         "ct156_shadow_forward_paper": _build_ct156_summary(root, include_systemd, reader),
+        "ct180_oi_europe_shadow_forward_paper": _build_ct180_summary(
+            root,
+            include_systemd,
+            reader,
+        ),
         "ct149_whale_watchlist": _build_ct149_summary(root, include_systemd, reader),
         "ct151_binance_crowding": _build_ct151_summary(root, include_systemd, reader),
         "ct158_binance_order_book": _build_ct158_summary(root, include_systemd, reader),
@@ -86,6 +91,23 @@ def _build_ct156_summary(
         service_unit="ct156-forward-paper.service",
         timer_unit="ct156-forward-paper.timer",
         output_path=Path("data/generated/ct156_high_beta_dot_shadow_forward_paper"),
+        include_systemd=include_systemd,
+        systemd_reader=systemd_reader,
+    )
+
+
+def _build_ct180_summary(
+    root: Path,
+    include_systemd: bool,
+    systemd_reader: SystemdReader,
+) -> dict[str, object]:
+    return _build_forward_paper_summary(
+        root=root,
+        issue_id="CT-181",
+        source_issue_id="CT-180",
+        service_unit="ct180-forward-paper.service",
+        timer_unit="ct180-forward-paper.timer",
+        output_path=Path("data/generated/ct180_oi_europe_shadow_forward_paper"),
         include_systemd=include_systemd,
         systemd_reader=systemd_reader,
     )
