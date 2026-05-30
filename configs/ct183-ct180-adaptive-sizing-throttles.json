@@ -1,0 +1,108 @@
+{
+  "report_name": "ct183_ct180_adaptive_sizing_throttles",
+  "issue_id": "CT-183",
+  "epic_id": "CT-113",
+  "initial_equity": 1000,
+  "max_drawdown_gate_pct": 0.08,
+  "output_json_path": "data/generated/ct183_ct180_adaptive_sizing_throttles/report.json",
+  "output_markdown_path": "data/generated/ct183_ct180_adaptive_sizing_throttles/report.md",
+  "windows": [
+    {
+      "name": "2024H2",
+      "replay_report_path": "data/generated/ct180_2024h2_oi_high_or_europe_replay/replay_report.json"
+    },
+    {
+      "name": "2025H1",
+      "replay_report_path": "data/generated/ct180_2025h1_oi_high_or_europe_replay/replay_report.json"
+    },
+    {
+      "name": "2025JulNov",
+      "replay_report_path": "data/generated/ct180_2025julnov_oi_high_or_europe_replay/replay_report.json"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "fixed_0_25pct_realized",
+      "description": "CT-182 fixed 0.25% risk rerun with non-leaky realized-exit accounting.",
+      "base_risk_per_trade_pct": 0.0025
+    },
+    {
+      "name": "fixed_0_10pct_realized",
+      "description": "Lower fixed-risk control that targets drawdown by using smaller constant risk.",
+      "base_risk_per_trade_pct": 0.001
+    },
+    {
+      "name": "drawdown_throttle_4_6_7p5",
+      "description": "Start at 0.25%, reduce to 0.10% after 4% current DD, 0.025% after 6%, and pause at 7.5%.",
+      "base_risk_per_trade_pct": 0.0025,
+      "drawdown_risk_steps": [
+        {
+          "at_drawdown_pct": 0.04,
+          "risk_per_trade_pct": 0.001
+        },
+        {
+          "at_drawdown_pct": 0.06,
+          "risk_per_trade_pct": 0.00025
+        },
+        {
+          "at_drawdown_pct": 0.075,
+          "risk_per_trade_pct": 0
+        }
+      ]
+    },
+    {
+      "name": "daily_cap_10_fixed_0_25pct",
+      "description": "Keep fixed 0.25% risk, but accept only the first 10 signals per UTC day.",
+      "base_risk_per_trade_pct": 0.0025,
+      "max_trades_per_day": 10
+    },
+    {
+      "name": "daily_cap_10_drawdown_throttle",
+      "description": "Accept only the first 10 signals per UTC day and apply the 4%/6%/7.5% drawdown throttle.",
+      "base_risk_per_trade_pct": 0.0025,
+      "max_trades_per_day": 10,
+      "drawdown_risk_steps": [
+        {
+          "at_drawdown_pct": 0.04,
+          "risk_per_trade_pct": 0.001
+        },
+        {
+          "at_drawdown_pct": 0.06,
+          "risk_per_trade_pct": 0.00025
+        },
+        {
+          "at_drawdown_pct": 0.075,
+          "risk_per_trade_pct": 0
+        }
+      ]
+    },
+    {
+      "name": "daily_cap_10_core3_fixed_0_25pct",
+      "description": "Accept only ADA/AVAX/SUI, then keep fixed 0.25% risk with the first 10 eligible signals per UTC day.",
+      "base_risk_per_trade_pct": 0.0025,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "daily_cap_10_core4_drawdown_throttle",
+      "description": "Accept ADA/AVAX/SOL/SUI, cap at 10 eligible signals per UTC day, and apply the 4%/6%/7.5% drawdown throttle.",
+      "base_risk_per_trade_pct": 0.0025,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SOLUSDT", "SUIUSDT"],
+      "drawdown_risk_steps": [
+        {
+          "at_drawdown_pct": 0.04,
+          "risk_per_trade_pct": 0.001
+        },
+        {
+          "at_drawdown_pct": 0.06,
+          "risk_per_trade_pct": 0.00025
+        },
+        {
+          "at_drawdown_pct": 0.075,
+          "risk_per_trade_pct": 0
+        }
+      ]
+    }
+  ]
+}
