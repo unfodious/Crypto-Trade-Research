@@ -7,6 +7,7 @@ import pyarrow.parquet as pq
 
 from crypto_trade_research.spot_drawdown_swing import (
     SpotDrawdownSwingConfig,
+    _entry_rank_passes,
     _rotate_positions,
     build_spot_drawdown_swing_report,
 )
@@ -355,6 +356,58 @@ def test_spot_drawdown_swing_rotation_redeploys_profitable_weak_position() -> No
     assert completed[0]["exit_reason"] == "rotation_redeploy"
     assert "SOLUSDT" not in positions
     assert "SUIUSDT" in positions
+
+
+def test_spot_drawdown_swing_entry_rank_filter_requires_relative_strength() -> None:
+    scenario = SpotDrawdownSwingConfig.from_dict(
+        {
+            "report_name": "unit_spot_swing",
+            "issue_id": "CT-193",
+            "epic_id": "CT-113",
+            "output_json_path": "/tmp/unused.json",
+            "output_markdown_path": "/tmp/unused.md",
+            "round_trip_cost_pct": 0.002,
+            "timeframe_minutes": 60,
+            "symbols": ["SOLUSDT", "SUIUSDT"],
+            "windows": [],
+            "scenarios": [
+                {
+                    "name": "unit_entry_rank",
+                    "description": "unit",
+                    "drawdown_lookback_hours": 2,
+                    "min_drawdown_pct": 0.08,
+                    "min_reclaim_return_pct": 0.001,
+                    "max_rsi": 60,
+                    "min_rsi_rebound": 0.1,
+                    "min_close_location": 0.5,
+                    "min_lower_wick_ratio": 0.0,
+                    "profit_target_pct": 0.10,
+                    "min_hold_hours": 1,
+                    "max_hold_hours": 24,
+                    "entry_rank_lookback_hours": 2,
+                    "max_entry_rank_pct": 0.5,
+                    "min_entry_rank_return_pct": 0.01,
+                }
+            ],
+        }
+    ).scenarios[0]
+    now = datetime(2026, 1, 1, 16, tzinfo=UTC)
+    symbol_rows = {
+        "SOLUSDT": [
+            _row("SOLUSDT", now - timedelta(hours=2), 100, 101, 99, 100, 0),
+            _row("SOLUSDT", now - timedelta(hours=1), 103, 104, 102, 103, 1),
+            _row("SOLUSDT", now, 108, 109, 107, 108, 2),
+        ],
+        "SUIUSDT": [
+            _row("SUIUSDT", now - timedelta(hours=2), 100, 101, 99, 100, 0),
+            _row("SUIUSDT", now - timedelta(hours=1), 99, 100, 98, 99, 1),
+            _row("SUIUSDT", now, 98, 99, 97, 98, 2),
+        ],
+    }
+    current_rows = {symbol: rows[-1] for symbol, rows in symbol_rows.items()}
+
+    assert _entry_rank_passes("SOLUSDT", current_rows, symbol_rows, scenario)
+    assert not _entry_rank_passes("SUIUSDT", current_rows, symbol_rows, scenario)
 
 
 def _write_dataset(tmp_path: Path) -> Path:

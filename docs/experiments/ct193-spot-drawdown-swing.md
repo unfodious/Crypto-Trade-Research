@@ -57,6 +57,7 @@ Artifacts:
 - `configs/ct193-spot-drawdown-swing-spot-bear-guard-selected.json`
 - `configs/ct193-spot-drawdown-swing-spot-partial-trailing-selected.json`
 - `configs/ct193-spot-drawdown-swing-spot-momentum-rotation-selected.json`
+- `configs/ct193-spot-drawdown-swing-spot-broad-rotation-selected.json`
 - `scripts/download_binance_spot_klines.py`
 - `data/generated/ct193_spot_drawdown_swing/report.json`
 - `data/generated/ct193_spot_drawdown_swing/report.md`
@@ -243,6 +244,49 @@ Interpretation:
 - This is directionally promising but not a paper candidate. The returns are still multi-month
   window returns, not the desired month-sized return profile.
 
+### Broad 17-Symbol Rotation And Entry Ranking
+
+The next replay tested whether the five-coin universe was simply too small. The same true-spot
+windows were regenerated for `17` Binance spot symbols:
+
+- `BTCUSDT`, `ETHUSDT`, `SOLUSDT`, `SUIUSDT`, `AVAXUSDT`, `ADAUSDT`, `ICPUSDT`, `ATOMUSDT`,
+  `XRPUSDT`, `DOTUSDT`, `LINKUSDT`, `NEARUSDT`, `APTUSDT`, `ARBUSDT`, `OPUSDT`, `INJUSDT`,
+  `DOGEUSDT`.
+
+Data generation completed without missing monthly slices:
+
+- `ct193_spot_broad_2024h2_dataset`: `75,072` rows
+- `ct193_spot_broad_2025h1_dataset`: `73,848` rows
+- `ct193_spot_broad_2025julnov_dataset`: `59,976` rows
+
+The broad replay also added an entry-quality filter: portfolio entries can require the symbol to
+rank in the top `30%` by point-in-time `72h` or `168h` relative strength and to have at least
+`+1%` momentum over that lookback.
+
+Selected broad true-spot results:
+
+| Scenario | Avg Window Return | 2024H2 | 2025H1 | 2025JulNov | Avg Max DD | Closed | Open | Partial exits | Rotation exits | Open Unrealized | Gate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `portfolio_dd8_broad_spot_baseline_guard_1000` | `1.26%` | `9.08%` | `-3.31%` | `-1.99%` | `-8.87%` | `57` | `5` | `0` | `0` | `-17.76%` | fail |
+| `portfolio_dd8_broad_symbol_30d_partial_trail_1000` | `2.67%` | `7.81%` | `2.70%` | `-2.50%` | `-5.06%` | `29` | `2` | `25` | `0` | `-10.71%` | fail |
+| `portfolio_dd8_broad_symbol_30d_momentum_rotation_1000` | `0.37%` | `8.51%` | `-4.90%` | `-2.50%` | `-7.91%` | `36` | `4` | `29` | `11` | `-14.81%` | fail |
+| `portfolio_dd8_broad_basket_14d_momentum_rotation_1000` | `0.93%` | `8.06%` | `-2.05%` | `-3.22%` | `-10.54%` | `29` | `4` | `20` | `10` | `-23.30%` | fail |
+| `portfolio_dd8_broad_symbol_30d_entry_rank_72h_top30_partial_trail_1000` | `0.63%` | `1.30%` | `0.22%` | `0.38%` | `-0.32%` | `5` | `0` | `4` | `0` | `0.00%` | fail |
+| `portfolio_dd8_broad_basket_14d_entry_rank_72h_top30_momentum_rotation_1000` | `0.82%` | `2.82%` | `0.22%` | `-0.59%` | `-1.38%` | `7` | `1` | `3` | `3` | `-4.28%` | fail |
+
+Interpretation:
+
+- Broadening the universe alone hurt the signal. It increased the number of potential dip buys but
+  also added more weak coins whose rebounds did not resolve before the replay window ended.
+- Momentum rotation did not rescue the broad set. Rotation increased activity but also carried
+  unresolved losers into weak windows.
+- Entry ranking made inventory risk cleaner but too sparse. The clean `72h/top30` partial-trailing
+  row had only `5` closed trades and `+0.63%` average window return.
+- The CT-193 research gate was tightened so that a tiny positive no-open row does not appear as a
+  candidate: portfolio rows now need at least `20` closed trades, positive all-window returns,
+  no open positions, average window return of at least `5%`, and average max drawdown no worse than
+  `-10%`.
+
 ## Interpretation
 
 The idea has a real useful part: profitable exits are common. Once a rebound happens, the tested
@@ -271,7 +315,8 @@ broad-market recovery gating is a better research direction than one-shot dip bu
 current rules still buy too early in persistent bear legs. Bear-leg abstention improves risk but
 shrinks the opportunity set too far to solve the return target. Partial take-profit plus trailing
 remainder is a small improvement on the clean rows but does not change that conclusion. Momentum
-rotation improves the clean rows more meaningfully, but still remains below the return objective.
+rotation improves the clean five-symbol rows more meaningfully, but broadening the universe and
+adding entry-rank filters did not solve the return objective.
 
 ## Decision
 
@@ -295,5 +340,8 @@ The next CT-193 refinement should keep the `$1000` portfolio cap and improve ent
 - do not continue by only adding nearby partial-take-profit or trailing-stop thresholds;
 - do not continue by requiring rotation replacements to also be drawdown candidates; that produced
   no actual rotations;
-- next useful branch should broaden the rotation universe or use a higher-frequency redeployment
-  cadence, because the selected five-coin universe still provides too little high-quality exposure.
+- broadening the rotation universe was tested and rejected in this form;
+- rank-filtering first entries cleaned risk but made the model too sparse;
+- next useful branch should change the timing layer rather than only the symbol list: compare `15m`,
+  `30m`, and `4h` spot bars, or test a separate exhaustion-detection model that can enter after a
+  finished selloff without waiting for a rare top-rank drawdown overlap.

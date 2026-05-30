@@ -62,6 +62,9 @@ class SpotSwingScenario:
     max_rotation_entry_rank_pct: float | None = None
     rotation_entry_requires_drawdown: bool = True
     min_rotation_entry_return_pct: float | None = None
+    entry_rank_lookback_hours: int | None = None
+    max_entry_rank_pct: float | None = None
+    min_entry_rank_return_pct: float | None = None
     sell_only_profitable: bool = False
     portfolio_cash_usd: float | None = None
     initial_buy_usd: float | None = None
@@ -117,6 +120,9 @@ class SpotSwingScenario:
             min_rotation_entry_return_pct=_optional_float(
                 payload.get("min_rotation_entry_return_pct")
             ),
+            entry_rank_lookback_hours=_optional_int(payload.get("entry_rank_lookback_hours")),
+            max_entry_rank_pct=_optional_float(payload.get("max_entry_rank_pct")),
+            min_entry_rank_return_pct=_optional_float(payload.get("min_entry_rank_return_pct")),
             sell_only_profitable=bool(payload.get("sell_only_profitable", False)),
             portfolio_cash_usd=_optional_float(payload.get("portfolio_cash_usd")),
             initial_buy_usd=_optional_float(payload.get("initial_buy_usd")),
@@ -490,6 +496,7 @@ def _portfolio_window_report(
             if position is None:
                 if (
                     _portfolio_entry_passes(scenario, symbol_rows[symbol], row)
+                    and _entry_rank_passes(symbol, current_rows, symbol_rows, scenario)
                     and _can_open_position(positions, scenario)
                     and _market_guard_passes(
                         scenario,
@@ -719,6 +726,34 @@ def _can_open_position(
     scenario: SpotSwingScenario,
 ) -> bool:
     return scenario.max_open_positions is None or len(positions) < scenario.max_open_positions
+
+
+def _entry_rank_passes(
+    symbol: str,
+    current_rows: dict[str, dict[str, object]],
+    symbol_rows: dict[str, list[dict[str, object]]],
+    scenario: SpotSwingScenario,
+) -> bool:
+    if scenario.entry_rank_lookback_hours is None:
+        return True
+
+    relative_returns = _relative_strength_returns(
+        current_rows, symbol_rows, scenario.entry_rank_lookback_hours
+    )
+    symbol_return = relative_returns.get(symbol)
+    if symbol_return is None:
+        return False
+
+    ranks = _relative_strength_ranks(relative_returns)
+    rank = ranks.get(symbol)
+    if rank is None:
+        return False
+    if scenario.max_entry_rank_pct is not None and rank > scenario.max_entry_rank_pct:
+        return False
+    return not (
+        scenario.min_entry_rank_return_pct is not None
+        and symbol_return < scenario.min_entry_rank_return_pct
+    )
 
 
 def _rotate_positions(
@@ -1120,8 +1155,12 @@ def _portfolio_passes_initial_gate(
     reports: list[dict[str, object]],
     positions: list[object],
 ) -> bool:
+    closed_trade_count = sum(int(report["closed_trade_count"]) for report in reports)
     return (
         bool(positions)
+        and closed_trade_count >= 20
+        and _mean([_as_float(report["portfolio_return_pct"]) for report in reports]) >= 0.05
+        and _mean([_as_float(report["max_portfolio_drawdown_pct"]) for report in reports]) >= -0.10
         and all(_as_float(report["portfolio_return_pct"]) > 0 for report in reports)
         and sum(int(report["open_trade_count"]) for report in reports) == 0
     )
