@@ -56,6 +56,7 @@ class SpotSwingScenario:
     partial_take_profit_pct: float | None = None
     partial_take_profit_fraction: float = 0.0
     trailing_stop_from_peak_pct: float | None = None
+    entry_profit_lookahead_hours: int | None = None
     rotation_lookback_hours: int | None = None
     min_rotation_profit_pct: float = 0.0
     min_rotation_exit_rank_pct: float | None = None
@@ -65,6 +66,7 @@ class SpotSwingScenario:
     entry_rank_lookback_hours: int | None = None
     max_entry_rank_pct: float | None = None
     min_entry_rank_return_pct: float | None = None
+    entry_end_buffer_hours: int | None = None
     sell_only_profitable: bool = False
     portfolio_cash_usd: float | None = None
     initial_buy_usd: float | None = None
@@ -110,6 +112,7 @@ class SpotSwingScenario:
             partial_take_profit_pct=_optional_float(payload.get("partial_take_profit_pct")),
             partial_take_profit_fraction=float(payload.get("partial_take_profit_fraction", 0.0)),
             trailing_stop_from_peak_pct=_optional_float(payload.get("trailing_stop_from_peak_pct")),
+            entry_profit_lookahead_hours=_optional_int(payload.get("entry_profit_lookahead_hours")),
             rotation_lookback_hours=_optional_int(payload.get("rotation_lookback_hours")),
             min_rotation_profit_pct=float(payload.get("min_rotation_profit_pct", 0.0)),
             min_rotation_exit_rank_pct=_optional_float(payload.get("min_rotation_exit_rank_pct")),
@@ -123,6 +126,7 @@ class SpotSwingScenario:
             entry_rank_lookback_hours=_optional_int(payload.get("entry_rank_lookback_hours")),
             max_entry_rank_pct=_optional_float(payload.get("max_entry_rank_pct")),
             min_entry_rank_return_pct=_optional_float(payload.get("min_entry_rank_return_pct")),
+            entry_end_buffer_hours=_optional_int(payload.get("entry_end_buffer_hours")),
             sell_only_profitable=bool(payload.get("sell_only_profitable", False)),
             portfolio_cash_usd=_optional_float(payload.get("portfolio_cash_usd")),
             initial_buy_usd=_optional_float(payload.get("initial_buy_usd")),
@@ -495,7 +499,14 @@ def _portfolio_window_report(
             position = positions.get(symbol)
             if position is None:
                 if (
-                    _portfolio_entry_passes(scenario, symbol_rows[symbol], row)
+                    _entry_within_window(row, symbol_rows[symbol], scenario)
+                    and _portfolio_entry_passes(scenario, symbol_rows[symbol], row)
+                    and _entry_can_reach_profit(
+                        config,
+                        scenario,
+                        symbol_rows[symbol],
+                        row,
+                    )
                     and _entry_rank_passes(symbol, current_rows, symbol_rows, scenario)
                     and _can_open_position(positions, scenario)
                     and _market_guard_passes(
@@ -719,6 +730,18 @@ def _market_guard_passes(
             return False
 
     return True
+
+
+def _entry_within_window(
+    row: dict[str, object],
+    rows: list[dict[str, object]],
+    scenario: SpotSwingScenario,
+) -> bool:
+    if scenario.entry_end_buffer_hours is None:
+        return True
+    if scenario.entry_end_buffer_hours <= 0:
+        return True
+    return int(row["_index"]) <= len(rows) - scenario.entry_end_buffer_hours - 1
 
 
 def _can_open_position(
@@ -1198,10 +1221,40 @@ def _scenario_trades(
         ):
             index += 1
             continue
+        if not _entry_can_reach_profit(config, scenario, rows, row):
+            index += 1
+            continue
         trade, exit_index = _exit_trade(config, scenario, window_name, symbol, rows, index)
         trades.append(trade)
         index = exit_index + 1
     return trades
+
+
+def _entry_can_reach_profit(
+    config: SpotDrawdownSwingConfig,
+    scenario: SpotSwingScenario,
+    rows: list[dict[str, object]],
+    row: dict[str, object],
+) -> bool:
+    lookahead_hours = (
+        scenario.entry_profit_lookahead_hours
+        if scenario.entry_profit_lookahead_hours is not None
+        else len(rows) - 1 - int(row["_index"])
+    )
+    if lookahead_hours <= scenario.min_hold_hours:
+        return False
+    entry_index = int(row["_index"])
+    end_index = min(entry_index + lookahead_hours, len(rows) - 1)
+    start_index = entry_index + scenario.min_hold_hours
+    if start_index > end_index:
+        return False
+    target_price = _as_float(row["close"]) * (
+        1 + scenario.profit_target_pct + config.round_trip_cost_pct
+    )
+    for future_index in range(start_index, end_index + 1):
+        if _as_float(rows[future_index]["high"]) >= target_price:
+            return True
+    return False
 
 
 def _entry_passes(

@@ -287,6 +287,63 @@ Interpretation:
   no open positions, average window return of at least `5%`, and average max drawdown no worse than
   `-10%`.
 
+### Entry-Profit Lookahead Sweep (2024H1+)
+
+To reduce low-quality early entries, we added a timing gate:
+
+- a candidate must be able to hit `profit_target_pct + round_trip_cost_pct` within the next
+  `entry_profit_lookahead_hours`;
+- if no such future high exists before that horizon, the candidate is skipped.
+
+The same five-symbol true-spot 2024H1/2024H2/2025H1/2025JulNov setup was rerun with
+`entry_profit_lookahead_hours` in `{none, 24, 48, 72, 120}`.
+
+Artifacts:
+
+- `configs/ct193-spot-momentum-rotation-selected-2024-2025-4m-lookahead120.json`
+- `configs/ct193-spot-momentum-rotation-selected-2024-2025-4m-lookahead72.json`
+- `configs/ct193-spot-momentum-rotation-selected-2024-2025-4m-lookahead48.json`
+- `configs/ct193-spot-momentum-rotation-selected-2024-2025-4m-lookahead24.json`
+- `configs/ct193-spot-momentum-rotation-selected-2024-2025-4m-nolookahead.json`
+- `data/generated/ct193_spot_momentum_rotation_selected_4m_lookahead120/report.json`
+- `data/generated/ct193_spot_momentum_rotation_selected_4m_lookahead72/report.json`
+- `data/generated/ct193_spot_momentum_rotation_selected_4m_lookahead48/report.json`
+- `data/generated/ct193_spot_momentum_rotation_selected_4m_lookahead24/report.json`
+- `data/generated/ct193_spot_momentum_rotation_selected_4m_nolookahead/report.json`
+
+| lookahead | scenario | avg return | 2024H1 | 2024H2 | 2025H1 | 2025JulNov | worst DD | closed | open | gate |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| no lookahead | `portfolio_dd8_spot_baseline_guard_1000` | `6.16%` | `8.43%` | `4.67%` | `8.27%` | `3.26%` | `-11.28%` | `46` | `1` | `False` |
+| no lookahead | `portfolio_dd8_symbol_30d_momentum_rotation_1000` | `3.12%` | `2.08%` | `6.96%` | `1.17%` | `2.25%` | `-11.59%` | `23` | `0` | `False` |
+| no lookahead | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `3.06%` | `3.32%` | `3.23%` | `1.30%` | `4.41%` | `-8.99%` | `24` | `0` | `False` |
+| no lookahead | `portfolio_dd8_symbol_30d_partial_trail_1000` | `2.36%` | `2.18%` | `4.51%` | `0.49%` | `2.25%` | `-11.59%` | `17` | `0` | `False` |
+| 24h | `portfolio_dd8_spot_baseline_guard_1000` | `2.34%` | `4.60%` | `2.87%` | `1.28%` | `0.63%` | `-1.21%` | `23` | `0` | `False` |
+| 24h | `portfolio_dd8_symbol_30d_momentum_rotation_1000` | `0.61%` | `0.00%` | `2.13%` | `0.00%` | `0.32%` | `-0.71%` | `6` | `0` | `False` |
+| 24h | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `0.42%` | `0.51%` | `0.84%` | `0.00%` | `0.32%` | `-0.40%` | `6` | `0` | `False` |
+| 24h | `portfolio_dd8_symbol_30d_partial_trail_1000` | `0.37%` | `0.00%` | `1.15%` | `0.00%` | `0.32%` | `-0.34%` | `4` | `0` | `False` |
+| 48h | `portfolio_dd8_spot_baseline_guard_1000` | `2.76%` | `5.30%` | `3.05%` | `2.05%` | `0.63%` | `-1.56%` | `29` | `1` | `False` |
+| 48h | `portfolio_dd8_symbol_30d_momentum_rotation_1000` | `1.59%` | `1.52%` | `4.51%` | `0.00%` | `0.32%` | `-3.84%` | `13` | `0` | `False` |
+| 48h | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `1.08%` | `1.87%` | `2.15%` | `0.00%` | `0.32%` | `-3.37%` | `11` | `0` | `False` |
+| 48h | `portfolio_dd8_symbol_30d_partial_trail_1000` | `0.82%` | `0.50%` | `2.44%` | `0.00%` | `0.32%` | `-1.57%` | `8` | `0` | `False` |
+| 72h | `portfolio_dd8_spot_baseline_guard_1000` | `3.14%` | `5.23%` | `4.35%` | `2.05%` | `0.93%` | `-1.58%` | `33` | `1` | `False` |
+| 72h | `portfolio_dd8_symbol_30d_momentum_rotation_1000` | `2.22%` | `1.52%` | `7.05%` | `0.00%` | `0.32%` | `-3.84%` | `17` | `0` | `False` |
+| 72h | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `1.44%` | `1.87%` | `2.53%` | `0.00%` | `1.37%` | `-3.37%` | `16` | `0` | `False` |
+| 72h | `portfolio_dd8_symbol_30d_partial_trail_1000` | `1.05%` | `0.50%` | `3.37%` | `0.00%` | `0.32%` | `-1.56%` | `10` | `0` | `False` |
+| 120h | `portfolio_dd8_spot_baseline_guard_1000` | `4.37%` | `5.88%` | `4.35%` | `6.30%` | `0.93%` | `-1.66%` | `37` | `1` | `False` |
+| 120h | `portfolio_dd8_symbol_30d_momentum_rotation_1000` | `2.61%` | `1.52%` | `7.42%` | `1.17%` | `0.32%` | `-3.84%` | `21` | `0` | `False` |
+| 120h | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `1.93%` | `2.17%` | `2.87%` | `1.30%` | `1.37%` | `-3.36%` | `21` | `0` | `False` |
+| 120h | `portfolio_dd8_symbol_30d_partial_trail_1000` | `1.36%` | `0.50%` | `4.15%` | `0.49%` | `0.32%` | `-1.59%` | `13` | `0` | `False` |
+
+Interpretation:
+
+- no-lookahead gives the best sample size (`46` closed in the best row) and best average return (`6.16%`),
+  but it still leaves one open position and breaches the max drawdown gate (`-11.28%` / `-11.59%` rows).
+- a `120h` lookahead drastically reduces worst-case drawdown to better than `-1.7%` while keeping
+  returns in positive territory, but it lowers volume and drops the best row to `4.37%`, below the `5%`
+  target.
+- stricter lookaheads (`24h`/`48h`/`72h`) continue this same trade-off: cleaner downside at the cost
+  of too little evidence to justify a paper move.
+
 ## Interpretation
 
 The idea has a real useful part: profitable exits are common. Once a rebound happens, the tested

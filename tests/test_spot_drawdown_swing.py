@@ -7,6 +7,8 @@ import pyarrow.parquet as pq
 
 from crypto_trade_research.spot_drawdown_swing import (
     SpotDrawdownSwingConfig,
+    SpotSwingScenario,
+    _entry_can_reach_profit,
     _entry_rank_passes,
     _rotate_positions,
     build_spot_drawdown_swing_report,
@@ -408,6 +410,80 @@ def test_spot_drawdown_swing_entry_rank_filter_requires_relative_strength() -> N
 
     assert _entry_rank_passes("SOLUSDT", current_rows, symbol_rows, scenario)
     assert not _entry_rank_passes("SUIUSDT", current_rows, symbol_rows, scenario)
+
+
+def test_spot_drawdown_swing_entry_profit_lookahead_filter() -> None:
+    now = datetime(2026, 1, 1, 12, tzinfo=UTC)
+    rows = [
+        _row("SOLUSDT", now - timedelta(hours=5), 100, 101, 99, 100, 0),
+        _row("SOLUSDT", now - timedelta(hours=4), 100, 100, 97, 98, 1),
+        _row("SOLUSDT", now - timedelta(hours=3), 98, 99, 96, 97, 2),
+        _row("SOLUSDT", now - timedelta(hours=2), 97, 98, 94, 95, 3),
+        _row("SOLUSDT", now - timedelta(hours=1), 95, 96, 93, 94, 4),
+        _row("SOLUSDT", now - timedelta(hours=0), 94, 95, 92, 93, 5),
+    ]
+    config = SpotDrawdownSwingConfig.from_dict(
+        {
+            "report_name": "unit_spot_swing",
+            "issue_id": "CT-193",
+            "epic_id": "CT-113",
+            "output_json_path": "/tmp/unused.json",
+            "output_markdown_path": "/tmp/unused.md",
+            "round_trip_cost_pct": 0.002,
+            "timeframe_minutes": 60,
+            "symbols": ["SOLUSDT"],
+            "windows": [],
+            "scenarios": [
+                {
+                    "name": "unit_lookahead",
+                    "description": "unit",
+                    "drawdown_lookback_hours": 1,
+                    "min_drawdown_pct": 0.01,
+                    "min_reclaim_return_pct": -1.0,
+                    "max_rsi": 100,
+                    "min_rsi_rebound": -100,
+                    "min_close_location": 0.0,
+                    "min_lower_wick_ratio": 0.0,
+                    "profit_target_pct": 0.05,
+                    "min_hold_hours": 1,
+                    "max_hold_hours": 24,
+                    "entry_profit_lookahead_hours": 2,
+                }
+            ],
+        }
+    )
+    scenario = config.scenarios[0]
+    assert not _entry_can_reach_profit(
+        scenario=scenario,
+        rows=rows,
+        row=rows[0],
+        config=config,
+    )
+    optimistic_rows = [dict(row) for row in rows]
+    optimistic_rows[2]["high"] = 111.0
+    optimistic_scenario = SpotSwingScenario.from_dict(
+        {
+            "name": "unit_lookahead",
+            "description": "unit",
+            "drawdown_lookback_hours": 1,
+            "min_drawdown_pct": 0.01,
+            "min_reclaim_return_pct": -1.0,
+            "max_rsi": 100,
+            "min_rsi_rebound": -100,
+            "min_close_location": 0.0,
+            "min_lower_wick_ratio": 0.0,
+            "profit_target_pct": 0.05,
+            "min_hold_hours": 1,
+            "max_hold_hours": 24,
+            "entry_profit_lookahead_hours": 5,
+        }
+    )
+    assert _entry_can_reach_profit(
+        config=config,
+        scenario=optimistic_scenario,
+        rows=optimistic_rows,
+        row=rows[0],
+    )
 
 
 def _write_dataset(tmp_path: Path) -> Path:
