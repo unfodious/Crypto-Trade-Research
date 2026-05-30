@@ -119,6 +119,7 @@ class SpotDrawdownSwingConfig:
     report_name: str
     issue_id: str
     epic_id: str
+    market_data_note: str
     output_json_path: Path
     output_markdown_path: Path
     symbols: tuple[str, ...]
@@ -133,6 +134,13 @@ class SpotDrawdownSwingConfig:
             report_name=str(payload["report_name"]),
             issue_id=str(payload["issue_id"]),
             epic_id=str(payload["epic_id"]),
+            market_data_note=str(
+                payload.get(
+                    "market_data_note",
+                    "Initial screen uses existing USD-M futures OHLCV as a price-action proxy. "
+                    "A true spot candidate requires spot OHLCV and spot fee validation.",
+                )
+            ),
             output_json_path=Path(str(payload["output_json_path"])),
             output_markdown_path=Path(str(payload["output_markdown_path"])),
             symbols=tuple(str(item) for item in payload["symbols"]),
@@ -170,10 +178,7 @@ def build_spot_drawdown_swing_report(config: SpotDrawdownSwingConfig) -> dict[st
         "issue_id": config.issue_id,
         "epic_id": config.epic_id,
         "created_at": _format_timestamp(datetime.now(UTC)),
-        "market_data_note": (
-            "Initial screen uses existing USD-M futures OHLCV as a price-action proxy. "
-            "A true spot candidate requires spot OHLCV and spot fee validation."
-        ),
+        "market_data_note": config.market_data_note,
         "round_trip_cost_pct": config.round_trip_cost_pct,
         "timeframe_minutes": config.timeframe_minutes,
         "symbols": list(config.symbols),
@@ -414,6 +419,9 @@ def _portfolio_scenario_report(
         "average_max_adverse_pct": _mean(
             [_as_float(position["max_adverse_pct"]) for position in positions]
         ),
+        "average_max_portfolio_drawdown_pct": _mean(
+            [_as_float(report["max_portfolio_drawdown_pct"]) for report in reports]
+        ),
         "portfolio_cash_usd": scenario.portfolio_cash_usd,
         "by_window": [
             {key: value for key, value in report.items() if key != "positions"}
@@ -435,10 +443,12 @@ def _portfolio_window_report(
     cash = initial_cash
     positions: dict[str, dict[str, object]] = {}
     completed: list[dict[str, object]] = []
+    equity_curve: list[dict[str, object]] = []
     rows_by_time = _rows_by_time(symbol_rows)
     market_context = _market_context(symbol_rows)
 
     for decision_time in sorted(rows_by_time):
+        current_rows = dict(rows_by_time[decision_time])
         for symbol, row in rows_by_time[decision_time]:
             position = positions.get(symbol)
             if position is None:
@@ -481,6 +491,18 @@ def _portfolio_window_report(
                 completed.append(_close_position(position, row, fee_rate, "profit_fade"))
                 del positions[symbol]
 
+        equity_curve.append(
+            {
+                "decision_time": decision_time,
+                "equity_usd": cash
+                + sum(
+                    _position_value(position, current_rows[symbol], fee_rate)
+                    for symbol, position in positions.items()
+                    if symbol in current_rows
+                ),
+            }
+        )
+
     open_positions = [
         _close_position(position, symbol_rows[symbol][-1], fee_rate, "open_unrealized")
         for symbol, position in sorted(positions.items())
@@ -519,6 +541,8 @@ def _portfolio_window_report(
             else 0.0
         ),
         "profit_factor": _profit_factor(closed_returns),
+        "max_portfolio_drawdown_pct": _max_equity_drawdown(equity_curve),
+        "monthly_returns": _monthly_returns(equity_curve),
         "positions": all_positions,
     }
 
@@ -1074,6 +1098,32 @@ def _profit_factor(returns: list[float]) -> float:
     return sum(wins) / abs(sum(losses)) if losses else (math.inf if wins else 0.0)
 
 
+def _max_equity_drawdown(equity_curve: list[dict[str, object]]) -> float:
+    peak = 0.0
+    max_drawdown = 0.0
+    for point in equity_curve:
+        equity = _as_float(point["equity_usd"])
+        peak = max(peak, equity)
+        if peak > 0:
+            max_drawdown = min(max_drawdown, _return(equity, peak))
+    return max_drawdown
+
+
+def _monthly_returns(equity_curve: list[dict[str, object]]) -> list[dict[str, object]]:
+    by_month: dict[str, list[float]] = defaultdict(list)
+    for point in equity_curve:
+        decision_time = _as_datetime(point["decision_time"])
+        by_month[decision_time.strftime("%Y-%m")].append(_as_float(point["equity_usd"]))
+    return [
+        {
+            "month": month,
+            "return_pct": _return(values[-1], values[0]),
+        }
+        for month, values in sorted(by_month.items())
+        if values
+    ]
+
+
 def _passes_initial_gate(
     trades: list[dict[str, object]],
     by_window: list[dict[str, object]],
@@ -1119,9 +1169,9 @@ def _markdown_report(payload: dict[str, object]) -> str:
         "",
         (
             "| Scenario | Trades | Closed | Open | Avg MTM | Avg closed | Open unreal. | "
-            "Win rate | PF | Gate |"
+            "Max DD | Win rate | PF | Gate |"
         ),
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for scenario in payload["scenarios"]:
         item = dict(scenario)
@@ -1136,6 +1186,12 @@ def _markdown_report(payload: dict[str, object]) -> str:
                     _pct(item["average_net_return_pct"]),
                     _pct(item["average_closed_net_return_pct"]),
                     _pct(item["average_open_unrealized_pct"]),
+                    _pct(
+                        item.get(
+                            "average_max_portfolio_drawdown_pct",
+                            item["average_max_adverse_pct"],
+                        )
+                    ),
                     _pct(item["win_rate"]),
                     _number(item["profit_factor"]),
                     "pass" if item["passes_initial_gate"] else "fail",

@@ -96,6 +96,8 @@ def test_spot_drawdown_swing_portfolio_dca_reports_cash_cap(tmp_path: Path) -> N
     scenario = payload["scenarios"][0]
     assert scenario["portfolio_cash_usd"] == 250
     assert scenario["by_window"][0]["initial_cash_usd"] == 250
+    assert "monthly_returns" in scenario["by_window"][0]
+    assert "max_portfolio_drawdown_pct" in scenario["by_window"][0]
     assert scenario["trade_count"] >= 1
 
 
@@ -149,6 +151,7 @@ def test_spot_drawdown_swing_portfolio_accepts_market_guard_config(tmp_path: Pat
 
     scenario = payload["scenarios"][0]
     assert scenario["trade_count"] >= 1
+    assert "average_max_portfolio_drawdown_pct" in scenario
     assert scenario["by_window"][0]["initial_cash_usd"] == 250
 
 
