@@ -54,6 +54,7 @@ Artifacts:
 
 - `configs/ct193-spot-drawdown-swing.json`
 - `configs/ct193-spot-drawdown-swing-spot.json`
+- `configs/ct193-spot-drawdown-swing-spot-bear-guard-selected.json`
 - `scripts/download_binance_spot_klines.py`
 - `data/generated/ct193_spot_drawdown_swing/report.json`
 - `data/generated/ct193_spot_drawdown_swing/report.md`
@@ -144,6 +145,36 @@ True spot replay therefore weakens the futures-proxy pocket. The broad-market gu
 avoid many bad entries, but it does not satisfy the user's objective of roughly month-sized strong
 positive returns with acceptable inventory drawdown.
 
+### Bear-Leg Abstention Replay
+
+The next CT-193 follow-up tested whether the losing spot windows were caused by buying a temporary
+bounce inside a larger downtrend. The added filters are point-in-time only:
+
+- symbol-level trend guard: the coin must not be down more than a configured threshold over the
+  prior `7d`, `14d`, or `30d`;
+- basket-level trend guard: the equal-weight basket must not be down more than a configured
+  threshold over the prior `7d`, `14d`, or `30d`;
+- optional DCA trend guard: prevent adding when the coin itself is still in a larger bear leg.
+
+Selected true-spot results:
+
+| Scenario | Avg Window Return | 2024H2 | 2025H1 | 2025JulNov | Avg Max DD | Closed | Open | Open Unrealized | Gate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `portfolio_dd8_spot_baseline_guard_1000` | `3.80%` | `4.67%` | `9.21%` | `-2.49%` | `-5.14%` | `31` | `2` | `-15.38%` | fail |
+| `portfolio_dd8_basket_7d_bear_abstain_1000` | `3.15%` | `3.03%` | `6.17%` | `0.24%` | `-4.38%` | `19` | `1` | `-18.95%` | fail |
+| `portfolio_dd8_basket_14d_strict_bear_abstain_1000` | `2.34%` | `2.47%` | `0.33%` | `4.22%` | `-3.73%` | `11` | `0` | `0.00%` | fail |
+| `portfolio_dd8_symbol_30d_strict_bear_abstain_1000` | `2.36%` | `4.11%` | `0.33%` | `2.65%` | `-4.49%` | `14` | `0` | `0.00%` | fail |
+
+Interpretation:
+
+- Bear-leg abstention fixed the obvious `2025JulNov` negative window in selected rows.
+- The fix is too conservative: trade count fell from `31` closed trades to `11-19`, and average
+  multi-month window return fell to `2.34-3.15%`.
+- The no-open-inventory rows are cleaner but economically weak: `2025H1` drops to only `+0.33%`,
+  so this does not approach the user's desired month-sized return profile.
+- The less strict `7d` basket guard keeps more return but still leaves one open position at
+  `-18.95%`, which is not acceptable inventory risk.
+
 ## Interpretation
 
 The idea has a real useful part: profitable exits are common. Once a rebound happens, the tested
@@ -169,7 +200,8 @@ negative windows from the best `dd8` variants and materially reduced open invent
 The true spot replay did not confirm the futures-proxy pocket strongly enough. This is not yet close
 to the user's monthly-return objective. The improvement is qualitative: portfolio DCA plus
 broad-market recovery gating is a better research direction than one-shot dip buying, but the
-current rules still buy too early in persistent bear legs.
+current rules still buy too early in persistent bear legs. Bear-leg abstention improves risk but
+shrinks the opportunity set too far to solve the return target.
 
 ## Decision
 
@@ -188,5 +220,7 @@ The next CT-193 refinement should keep the `$1000` portfolio cap and improve ent
 - measure monthly return distribution, not only multi-month window return;
 - measure maximum portfolio drawdown and time stuck in open positions, not just closed-trade win
   rate.
-- try a stricter bear-leg abstention rule before first entry and DCA, because the current spot replay
-  fails mainly when the basket recovery is a temporary bounce inside a larger drawdown.
+- do not continue by only tightening bear-leg abstention thresholds; the selected rows are cleaner
+  but too low-return;
+- test a different exit/redeployment model, such as partial take-profit plus trailing remainder, or
+  a relative-strength rotation rule that exits profitable laggards into stronger spot candidates.

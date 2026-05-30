@@ -51,6 +51,8 @@ class SpotSwingScenario:
     recent_lookback_hours: int | None = None
     min_recent_return_pct: float | None = None
     min_positive_closes: int = 0
+    dca_trend_lookback_hours: int | None = None
+    min_dca_trend_return_pct: float | None = None
     sell_only_profitable: bool = False
     portfolio_cash_usd: float | None = None
     initial_buy_usd: float | None = None
@@ -65,6 +67,8 @@ class SpotSwingScenario:
     market_recent_lookback_hours: int | None = None
     min_market_recent_return_pct: float | None = None
     min_market_positive_symbol_ratio: float | None = None
+    market_trend_lookback_hours: int | None = None
+    min_market_trend_return_pct: float | None = None
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> SpotSwingScenario:
@@ -89,6 +93,8 @@ class SpotSwingScenario:
             recent_lookback_hours=_optional_int(payload.get("recent_lookback_hours")),
             min_recent_return_pct=_optional_float(payload.get("min_recent_return_pct")),
             min_positive_closes=int(payload.get("min_positive_closes", 0)),
+            dca_trend_lookback_hours=_optional_int(payload.get("dca_trend_lookback_hours")),
+            min_dca_trend_return_pct=_optional_float(payload.get("min_dca_trend_return_pct")),
             sell_only_profitable=bool(payload.get("sell_only_profitable", False)),
             portfolio_cash_usd=_optional_float(payload.get("portfolio_cash_usd")),
             initial_buy_usd=_optional_float(payload.get("initial_buy_usd")),
@@ -111,6 +117,8 @@ class SpotSwingScenario:
             min_market_positive_symbol_ratio=_optional_float(
                 payload.get("min_market_positive_symbol_ratio")
             ),
+            market_trend_lookback_hours=_optional_int(payload.get("market_trend_lookback_hours")),
+            min_market_trend_return_pct=_optional_float(payload.get("min_market_trend_return_pct")),
         )
 
 
@@ -471,7 +479,7 @@ def _portfolio_window_report(
             _update_position_excursions(position, row, fee_rate)
             if (
                 _should_dca(position, row, scenario)
-                and _portfolio_dca_passes(scenario, row)
+                and _portfolio_dca_passes(scenario, symbol_rows[symbol], row)
                 and _market_guard_passes(
                     scenario,
                     market_context,
@@ -645,6 +653,17 @@ def _market_guard_passes(
             if positive_count / len(shared_symbols) < scenario.min_market_positive_symbol_ratio:
                 return False
 
+    if scenario.market_trend_lookback_hours is not None:
+        if index < scenario.market_trend_lookback_hours:
+            return False
+        previous = dict(series[index - scenario.market_trend_lookback_hours])
+        market_trend_return = _return(current_level, _as_float(previous["basket_level"]))
+        if (
+            scenario.min_market_trend_return_pct is not None
+            and market_trend_return < scenario.min_market_trend_return_pct
+        ):
+            return False
+
     return True
 
 
@@ -678,8 +697,17 @@ def _portfolio_entry_passes(
     )
 
 
-def _portfolio_dca_passes(scenario: SpotSwingScenario, row: dict[str, object]) -> bool:
+def _portfolio_dca_passes(
+    scenario: SpotSwingScenario,
+    rows: list[dict[str, object]],
+    row: dict[str, object],
+) -> bool:
     if _as_float(row["return_1h_pct"]) < scenario.min_reclaim_return_pct:
+        return False
+    dca_trend_return = _dca_trend_return(rows, int(row["_index"]), scenario)
+    if scenario.min_dca_trend_return_pct is not None and (
+        dca_trend_return is None or dca_trend_return < scenario.min_dca_trend_return_pct
+    ):
         return False
     ema_9 = row.get("ema_9")
     return not (
@@ -948,6 +976,21 @@ def _trend_return(
     return _return(
         _as_float(rows[index]["close"]),
         _as_float(rows[index - scenario.trend_lookback_hours]["close"]),
+    )
+
+
+def _dca_trend_return(
+    rows: list[dict[str, object]],
+    index: int,
+    scenario: SpotSwingScenario,
+) -> float | None:
+    if scenario.dca_trend_lookback_hours is None:
+        return None
+    if index < scenario.dca_trend_lookback_hours:
+        return None
+    return _return(
+        _as_float(rows[index]["close"]),
+        _as_float(rows[index - scenario.dca_trend_lookback_hours]["close"]),
     )
 
 
