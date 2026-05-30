@@ -1,0 +1,23 @@
+{
+  "report_name": "ct182_ct180_fixed_risk_sizing_stress",
+  "issue_id": "CT-182",
+  "epic_id": "CT-113",
+  "initial_equity": 1000,
+  "fixed_risk_per_trade_pcts": [0.0025, 0.005, 0.01],
+  "output_json_path": "data/generated/ct182_ct180_fixed_risk_sizing_stress/report.json",
+  "output_markdown_path": "data/generated/ct182_ct180_fixed_risk_sizing_stress/report.md",
+  "windows": [
+    {
+      "name": "2024H2",
+      "replay_report_path": "data/generated/ct180_2024h2_oi_high_or_europe_replay/replay_report.json"
+    },
+    {
+      "name": "2025H1",
+      "replay_report_path": "data/generated/ct180_2025h1_oi_high_or_europe_replay/replay_report.json"
+    },
+    {
+      "name": "2025JulNov",
+      "replay_report_path": "data/generated/ct180_2025julnov_oi_high_or_europe_replay/replay_report.json"
+    }
+  ]
+}

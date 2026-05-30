@@ -39,6 +39,7 @@ crypto-trade-research-stream-health = "crypto_trade_research.research_stream_hea
 crypto-trade-run-historical-holdout-replay = "crypto_trade_research.historical_holdout_replay:main"
 crypto-trade-build-selected-trade-abstention = "crypto_trade_research.selected_trade_abstention:main"
 crypto-trade-build-futures-metrics-selected-features = "crypto_trade_research.futures_metrics_selected_features:main"
+crypto-trade-build-sizing-stress = "crypto_trade_research.sizing_stress:main"
 
 [project.optional-dependencies]
 dev = [
