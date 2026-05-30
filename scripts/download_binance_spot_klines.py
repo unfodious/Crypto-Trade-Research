@@ -13,6 +13,8 @@ from urllib.request import urlopen
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+SUPPORTED_PERIODS = frozenset({"1m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"})
+
 
 @dataclass(frozen=True, slots=True)
 class Candle:
@@ -31,6 +33,7 @@ def build_spot_klines_dataset(
     symbols: list[str],
     start: datetime,
     end: datetime,
+    period: str,
     dataset_name: str,
     output_dir: Path,
     cache_dir: Path,
@@ -45,7 +48,7 @@ def build_spot_klines_dataset(
                 symbol_rows.extend(
                     _read_monthly_zip(
                         symbol,
-                        _download_monthly_zip(symbol, year, month, cache_dir),
+                        _download_monthly_zip(symbol, period, year, month, cache_dir),
                         start,
                         end,
                     )
@@ -65,10 +68,10 @@ def build_spot_klines_dataset(
     manifest = {
         "schema_version": "research.dataset.v1",
         "dataset_name": dataset_name,
-        "source": "binance-data-vision-spot-monthly-klines-1h",
+        "source": f"binance-data-vision-spot-monthly-klines-{period}",
         "market_type": "spot",
         "symbols": symbols,
-        "period": "1h",
+        "period": period,
         "start": _format_timestamp(start),
         "end": _format_timestamp(end),
         "row_count": len(rows),
@@ -80,15 +83,21 @@ def build_spot_klines_dataset(
     return manifest_path
 
 
-def _download_monthly_zip(symbol: str, year: int, month: int, cache_dir: Path) -> Path:
+def _download_monthly_zip(
+    symbol: str,
+    period: str,
+    year: int,
+    month: int,
+    cache_dir: Path,
+) -> Path:
     cache_dir.mkdir(parents=True, exist_ok=True)
-    path = cache_dir / f"{symbol}-1h-{year}-{month:02d}.zip"
+    path = cache_dir / f"{symbol}-{period}-{year}-{month:02d}.zip"
     if path.exists() and path.stat().st_size > 0:
         return path
 
     url = (
         "https://data.binance.vision/data/spot/monthly/klines/"
-        f"{symbol}/1h/{symbol}-1h-{year}-{month:02d}.zip"
+        f"{symbol}/{period}/{symbol}-{period}-{year}-{month:02d}.zip"
     )
     with urlopen(url, timeout=60) as response:
         path.write_bytes(response.read())
@@ -154,6 +163,12 @@ def _format_timestamp(value: datetime) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--symbols", required=True, help="Comma-separated Binance spot symbols.")
+    parser.add_argument(
+        "--period",
+        default="1h",
+        choices=sorted(SUPPORTED_PERIODS),
+        help="Binance Data Vision spot klines period.",
+    )
     parser.add_argument("--start", required=True, help="Inclusive ISO timestamp.")
     parser.add_argument("--end", required=True, help="Exclusive ISO timestamp.")
     parser.add_argument("--dataset-name", required=True)
@@ -168,6 +183,7 @@ def main() -> None:
         symbols=[symbol.strip() for symbol in args.symbols.split(",") if symbol.strip()],
         start=_parse_timestamp(args.start),
         end=_parse_timestamp(args.end),
+        period=args.period,
         dataset_name=args.dataset_name,
         output_dir=args.output_dir,
         cache_dir=args.cache_dir,
