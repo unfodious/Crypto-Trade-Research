@@ -96,6 +96,44 @@ def test_build_research_stream_health_report_summarizes_active_streams(tmp_path:
         },
     )
     _write_json(
+        tmp_path / "data/generated/ct184_adaptive_sizing_shadow_forward_paper/forward_run.json",
+        {
+            "collector_summary": {
+                "decision_time": "2026-05-27T11:00:00Z",
+                "candidate_count": 0,
+                "signal_count": 0,
+                "take_count": 0,
+            },
+            "row_counts": {
+                "closed_trades": 0,
+                "open_trades": 0,
+                "cumulative_trades": 0,
+                "futures_metrics": 396,
+            },
+            "paper_sizing": {
+                "enabled": True,
+                "policy_name": "daily_cap_10_core4_drawdown_throttle",
+            },
+        },
+    )
+    _write_json(
+        tmp_path
+        / "data/generated/ct184_adaptive_sizing_shadow_forward_paper/monitoring_report.json",
+        {
+            "monitoring_status": "gate_failed",
+            "decision": {"working_model": False, "live_trading_approved": False},
+            "metrics": {
+                "trade_count": 0,
+                "open_trade_count": 0,
+                "average_r_after_costs": 0.0,
+                "max_drawdown_pct": 0.0,
+                "reached_1_0r_then_lost_count": 0,
+                "counterfactual_exit_metrics": {},
+            },
+            "warnings": [],
+        },
+    )
+    _write_json(
         tmp_path / "data/generated/ct134_hyperliquid_whale_watchlist/watchlist_run.json",
         {
             "created_at": "2026-05-27T10:57:34Z",
@@ -199,6 +237,10 @@ def test_build_research_stream_health_report_summarizes_active_streams(tmp_path:
     assert streams["ct145_forward_paper"]["metrics"]["trade_count"] == 0
     assert streams["ct156_shadow_forward_paper"]["latest_decision_time"] == "2026-05-27T11:00:00Z"
     assert streams["ct180_oi_europe_shadow_forward_paper"]["row_counts"]["futures_metrics"] == 396
+    assert (
+        streams["ct184_adaptive_sizing_shadow_forward_paper"]["row_counts"]["futures_metrics"]
+        == 396
+    )
     assert streams["ct149_whale_watchlist"]["latest_snapshot"]["position_count"] == 0
     assert streams["ct151_binance_crowding"]["row_count"] == 55
     assert streams["ct151_binance_crowding"]["symbol_count"] == 2

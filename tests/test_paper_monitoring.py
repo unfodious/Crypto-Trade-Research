@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from crypto_trade_research.models.artifacts import (
     ExpectedRidgeArtifact,
     FeatureSchema,
@@ -40,7 +42,22 @@ def test_build_paper_monitoring_report_can_pass_forward_paper_gate(tmp_path: Pat
     assert payload["decision"]["forward_paper_gate_passed"] is True
 
 
-def _config(tmp_path: Path, *, evidence_type: str) -> PaperMonitoringConfig:
+def test_build_paper_monitoring_report_uses_trade_risk_for_computed_drawdown(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path, evidence_type="forward_paper", include_source_metrics=False)
+
+    payload = build_paper_monitoring_report(config)
+
+    assert payload["metrics"]["max_drawdown_pct"] == pytest.approx(0.00125)
+
+
+def _config(
+    tmp_path: Path,
+    *,
+    evidence_type: str,
+    include_source_metrics: bool = True,
+) -> PaperMonitoringConfig:
     model_path = _write_model_artifact(tmp_path)
     pack_path = tmp_path / "pack.json"
     pack_path.write_text(
@@ -70,7 +87,9 @@ def _config(tmp_path: Path, *, evidence_type: str) -> PaperMonitoringConfig:
                     _trade("2026-05-27T09:00:00Z", "ICPUSDT", 1.0),
                     _trade("2026-05-27T17:00:00Z", "TONUSDT", -0.5),
                 ],
-                "metrics": {"max_drawdown_pct": 0.01, "max_drawdown_duration": 1},
+                "metrics": {"max_drawdown_pct": 0.01, "max_drawdown_duration": 1}
+                if include_source_metrics
+                else {},
             }
         ),
         encoding="utf-8",
@@ -94,6 +113,7 @@ def _trade(decision_time: str, symbol: str, net_r: float) -> dict[str, object]:
         "decision_time": decision_time,
         "symbol": symbol,
         "net_r": net_r,
+        "paper_risk_per_trade_pct": 0.0025,
         "feature_freshness_seconds": 0,
         "funding_source_latency_seconds": 0,
     }

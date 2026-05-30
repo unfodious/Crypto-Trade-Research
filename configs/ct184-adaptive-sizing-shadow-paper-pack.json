@@ -1,0 +1,186 @@
+{
+  "pack_name": "ct184_adaptive_sizing_shadow_paper_pack",
+  "output_path": "data/generated/ct184_adaptive_sizing_shadow_paper_pack/pack_manifest.json",
+  "issue_id": "CT-184",
+  "epic_id": "CT-113",
+  "candidate_name": "ct184_daily_cap_10_core4_drawdown_throttle",
+  "plan_path": "docs/experiments/ct184-adaptive-sizing-shadow-paper-pack.md",
+  "source_artifacts": {
+    "model_artifact_path": "data/generated/ct144_no_ton_detailed/model_artifact.json",
+    "baseline_report_path": "data/generated/ct144_no_ton_detailed/baseline_report.json",
+    "stability_report_path": "data/generated/ct144_no_ton_detailed/stability_report.json",
+    "experiment_config_path": "configs/ct144-core-symbol-detailed-stability-matrix.json"
+  },
+  "strategy": {
+    "side": "long",
+    "timeframe": "1m",
+    "symbols": [
+      "ADAUSDT",
+      "AVAXUSDT",
+      "SOLUSDT",
+      "SUIUSDT"
+    ],
+    "context_symbols": [
+      "SOLUSDT",
+      "SUIUSDT",
+      "AVAXUSDT",
+      "ADAUSDT",
+      "ICPUSDT",
+      "ATOMUSDT",
+      "XRPUSDT",
+      "TONUSDT",
+      "DOTUSDT",
+      "BTCUSDT",
+      "ETHUSDT"
+    ],
+    "filters": [
+      {
+        "feature": "funding_rate",
+        "operator": "<=",
+        "value": -0.00002
+      },
+      {
+        "feature": "funding_rate_zscore_20",
+        "operator": "<=",
+        "value": -0.25
+      },
+      {
+        "feature": "close_location",
+        "operator": ">=",
+        "value": 0.45
+      },
+      {
+        "feature": "risk_on_score_20",
+        "operator": ">=",
+        "value": 0.35
+      },
+      {
+        "feature": "mtf_5m_risk_on_score_20",
+        "operator": ">=",
+        "value": 0.35
+      }
+    ],
+    "abstention_filter_groups": [
+      [
+        {
+          "feature": "fm_oi_value_change_1h",
+          "operator": ">",
+          "value": 0.015
+        }
+      ],
+      [
+        {
+          "feature": "fm_session_europe",
+          "operator": ">=",
+          "value": 1
+        }
+      ]
+    ],
+    "ranking": {
+      "score": "expected_r_ridge",
+      "top_n_per_decision_time": 3,
+      "selected_expected_r_threshold": -0.2,
+      "selected_probability_threshold": 0.55
+    },
+    "exits": {
+      "stop_loss_pct": 0.004,
+      "target_pct": 0.008,
+      "horizon_bars": 12,
+      "target_stop_tie_breaker": "stop_first"
+    },
+    "cost_model": {
+      "round_trip_cost_pct": 0.0007,
+      "source": "CT-144 / CT-130 label cost assumption"
+    },
+    "paper_sizing": {
+      "policy_name": "daily_cap_10_core4_drawdown_throttle",
+      "base_risk_per_trade_pct": 0.0025,
+      "max_signals_per_utc_day": 10,
+      "drawdown_risk_steps": [
+        {
+          "at_drawdown_pct": 0.04,
+          "risk_per_trade_pct": 0.001
+        },
+        {
+          "at_drawdown_pct": 0.06,
+          "risk_per_trade_pct": 0.00025
+        },
+        {
+          "at_drawdown_pct": 0.075,
+          "risk_per_trade_pct": 0
+        }
+      ]
+    },
+    "risk_controls": {
+      "max_trades_per_decision_time": 3,
+      "max_trades_per_symbol": 600,
+      "loss_cooldown_signals": 2,
+      "max_open_paper_positions": 1
+    }
+  },
+  "paper_gate": {
+    "minimum_calendar_days": 30,
+    "minimum_paper_trades": 100,
+    "minimum_average_r_after_costs": 0.0,
+    "maximum_simulated_drawdown_pct": 0.08,
+    "maximum_single_day_positive_r_share": 0.75,
+    "minimum_positive_symbol_breadth": 0.5,
+    "minimum_positive_session_breadth": 0.5
+  },
+  "monitoring": {
+    "required_metrics": [
+      "paper_average_r_after_costs",
+      "paper_profit_factor",
+      "paper_trade_count",
+      "paper_max_drawdown_pct",
+      "paper_drawdown_duration",
+      "paper_symbol_breadth",
+      "paper_session_breadth",
+      "paper_single_day_positive_r_share",
+      "rejection_reason_distribution",
+      "funding_source_latency_seconds",
+      "feature_freshness_seconds",
+      "futures_metrics_row_count",
+      "abstention_filter_block_count",
+      "missing_abstention_feature_count",
+      "paper_risk_per_trade_pct",
+      "daily_paper_signal_cap_block_count",
+      "paper_drawdown_throttle_block_count"
+    ],
+    "pause_conditions": [
+      "average_r_negative_after_50_paper_trades",
+      "simulated_drawdown_above_8pct",
+      "missing_oi_metrics_for_selected_candidate",
+      "europe_session_trade_taken",
+      "oi_expansion_trade_taken",
+      "daily_signal_cap_not_enforced",
+      "paper_risk_pct_missing_from_ledger",
+      "research_and_paper_signal_mismatch"
+    ],
+    "review_cadence": "daily_operator_review"
+  },
+  "reconciliation": {
+    "signal_rules": [
+      "closed_1m_candles_only",
+      "funding_time_and_source_available_at_must_be_at_or_before_signal_timestamp",
+      "fapi_open_interest_hist_timestamp_must_be_at_or_before_signal_timestamp",
+      "fm_oi_value_change_1h_missing_must_skip",
+      "fm_oi_value_change_1h_above_0_015_must_skip",
+      "europe_session_08_00_to_15_59_utc_must_skip",
+      "feature_set_version_must_match_model_artifact",
+      "model_artifact_hash_must_match_pack_manifest",
+      "paper_fills_must_use_stop_target_timeout_rules_from_pack",
+      "candidate_entries_must_be_limited_to_ada_avax_sol_sui",
+      "paper_daily_signal_cap_must_be_at_most_10_utc_day",
+      "paper_risk_per_trade_must_follow_drawdown_throttle",
+      "context_symbols_must_still_include_btc_eth_for_market_features",
+      "live_order_authority_must_remain_false"
+    ],
+    "expected_outputs": [
+      "ml-inference.v1 compatible signal log",
+      "paper ledger with fill reason and net R",
+      "paper risk percentage per ledger entry",
+      "daily drift report against CT-184 research rules"
+    ]
+  }
+}

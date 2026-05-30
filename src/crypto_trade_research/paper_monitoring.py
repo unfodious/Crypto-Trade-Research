@@ -108,6 +108,7 @@ def _paper_metrics(
         if trade.get("paper_status", "closed") == "closed" and trade.get("net_r") is not None
     ]
     net_r_values = [_float(trade.get("net_r")) for trade in closed_trades]
+    risk_pcts = [_trade_risk_pct(trade) for trade in closed_trades]
     positive = [value for value in net_r_values if value > 0]
     negative = [value for value in net_r_values if value < 0]
     days = sorted(
@@ -123,7 +124,11 @@ def _paper_metrics(
         "open_trade_count": sum(1 for trade in trades if trade.get("paper_status") == "open"),
         "average_r_after_costs": _mean(net_r_values),
         "profit_factor": _profit_factor(net_r_values, positive, negative),
-        "max_drawdown_pct": _metric_or_computed_drawdown(source_metrics, net_r_values),
+        "max_drawdown_pct": _metric_or_computed_drawdown(
+            source_metrics,
+            net_r_values,
+            risk_pcts,
+        ),
         "max_drawdown_duration": _int(source_metrics.get("max_drawdown_duration"))
         if source_metrics
         else None,
@@ -254,18 +259,26 @@ def _gate(name: str, passed: bool, detail: str) -> dict[str, object]:
 
 
 def _metric_or_computed_drawdown(
-    source_metrics: dict[str, object], net_r_values: list[float]
+    source_metrics: dict[str, object],
+    net_r_values: list[float],
+    risk_pcts: list[float],
 ) -> float:
     if source_metrics.get("max_drawdown_pct") is not None:
         return _float(source_metrics["max_drawdown_pct"])
     equity = 1.0
     peak = 1.0
     max_drawdown = 0.0
-    for net_r in net_r_values:
-        equity *= 1 + net_r * 0.01
+    for net_r, risk_pct in zip(net_r_values, risk_pcts, strict=True):
+        equity *= 1 + net_r * risk_pct
         peak = max(peak, equity)
         max_drawdown = max(max_drawdown, (peak - equity) / peak)
     return max_drawdown
+
+
+def _trade_risk_pct(trade: dict[str, object]) -> float:
+    if trade.get("paper_risk_per_trade_pct") is not None:
+        return _float(trade["paper_risk_per_trade_pct"])
+    return 0.01
 
 
 def _positive_group_fraction(trades: list[dict[str, object]], key: str) -> float:

@@ -1,0 +1,32 @@
+{
+  "run_name": "ct184_adaptive_sizing_shadow_forward_paper",
+  "output_dir": "data/generated/ct184_adaptive_sizing_shadow_forward_paper",
+  "issue_id": "CT-184",
+  "epic_id": "CT-113",
+  "pack_manifest_path": "data/generated/ct184_adaptive_sizing_shadow_paper_pack/pack_manifest.json",
+  "symbols": [
+    "SOLUSDT",
+    "SUIUSDT",
+    "AVAXUSDT",
+    "ADAUSDT",
+    "ICPUSDT",
+    "ATOMUSDT",
+    "XRPUSDT",
+    "TONUSDT",
+    "DOTUSDT",
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "lookback_minutes": 420,
+  "funding_lookback_hours": 200,
+  "futures_metrics_lookback_hours": 3,
+  "futures_metrics_period": "5m",
+  "futures_metrics_limit": 500,
+  "feature": {
+    "feature_set_version": "features.ct138.regime-symbol-refinement.v1",
+    "rolling_window": 20,
+    "higher_timeframes": ["5m", "15m"]
+  },
+  "request_sleep_seconds": 0.05,
+  "mode": "forward_paper"
+}

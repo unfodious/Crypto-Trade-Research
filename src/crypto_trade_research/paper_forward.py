@@ -165,19 +165,36 @@ def run_forward_paper_collection(
             mode="forward_paper",
         )
     )
+    current_ledger = _read_json(config.output_dir / "ledger.json")
+    existing_forward_trades = _existing_trades(config.output_dir / "forward_ledger.json")
+    sized_signals, sized_trades = _apply_paper_sizing_policy(
+        [dict(signal) for signal in collector_payload["signals"]],
+        [dict(trade) for trade in current_ledger.get("trades", ())],
+        existing_forward_trades,
+        pack,
+    )
+    collector_summary = dict(collector_payload["summary"])
+    collector_summary["take_count"] = sum(
+        1 for signal in sized_signals if signal["recommended_action"] == "take"
+    )
+    collector_summary["ledger_entry_count"] = len(sized_trades)
+    collector_payload["signals"] = sized_signals
+    collector_payload["trades"] = sized_trades
+    collector_payload["summary"] = collector_summary
+    _write_json(config.output_dir / "signals.json", collector_payload)
+    _write_json(config.output_dir / "ledger.json", {"trades": sized_trades, "metrics": {}})
     cumulative_signals = _merge_signals(
         _existing_signals(config.output_dir / "forward_signals.json"),
-        [dict(signal) for signal in collector_payload["signals"]],
+        sized_signals,
     )
-    current_ledger = _read_json(config.output_dir / "ledger.json")
     resolved_existing_trades = _resolve_open_trades(
-        _existing_trades(config.output_dir / "forward_ledger.json"),
+        existing_forward_trades,
         candle_rows,
         pack,
     )
     cumulative_trades = _merge_trades(
         resolved_existing_trades,
-        [dict(trade) for trade in current_ledger.get("trades", ())],
+        sized_trades,
     )
     forward_signals_path = config.output_dir / "forward_signals.json"
     forward_ledger_path = config.output_dir / "forward_ledger.json"
@@ -230,6 +247,7 @@ def run_forward_paper_collection(
             "closed_trades": len(closed_trades),
         },
         "collector_summary": collector_payload["summary"],
+        "paper_sizing": _paper_sizing_summary(pack, existing_forward_trades, sized_trades),
         "monitoring_status": monitoring_payload["monitoring_status"],
         "decision": {
             "live_trading_approved": False,
@@ -555,6 +573,152 @@ def _merge_trades(
         merged.values(),
         key=lambda trade: (str(trade["decision_time"]), str(trade["symbol"])),
     )
+
+
+def _apply_paper_sizing_policy(
+    signals: list[dict[str, object]],
+    incoming_trades: list[dict[str, object]],
+    existing_trades: list[dict[str, object]],
+    pack: dict[str, object],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    strategy = dict(pack.get("strategy", {}))
+    sizing = dict(strategy.get("paper_sizing", {}))
+    if not sizing:
+        return signals, incoming_trades
+
+    base_risk_pct = float(sizing.get("base_risk_per_trade_pct", 0.01))
+    day_limit = _optional_int(sizing.get("max_signals_per_utc_day"))
+    current_drawdown = _current_sizing_drawdown(existing_trades, base_risk_pct)
+    risk_pct = _risk_after_drawdown_steps(base_risk_pct, current_drawdown, sizing)
+    taken_by_key = {_signal_trade_key(trade): dict(trade) for trade in incoming_trades}
+    existing_day_counts = _accepted_day_counts(existing_trades)
+    accepted_day_counts: dict[str, int] = defaultdict(int)
+    updated_signals: list[dict[str, object]] = []
+    updated_trades: list[dict[str, object]] = []
+
+    for signal in sorted(signals, key=lambda row: (str(row["signal_timestamp"]), int(row["rank"]))):
+        updated_signal = dict(signal)
+        trade = taken_by_key.get(_signal_trade_key(signal))
+        if updated_signal.get("recommended_action") != "take" or trade is None:
+            updated_signals.append(updated_signal)
+            continue
+
+        day = _signal_day(updated_signal)
+        existing_count = existing_day_counts.get(day, 0)
+        new_count = accepted_day_counts.get(day, 0)
+        if day_limit is not None and existing_count + new_count >= day_limit:
+            _block_signal_for_sizing(updated_signal, "daily_paper_signal_cap_reached")
+            updated_signals.append(updated_signal)
+            continue
+        if risk_pct <= 0:
+            _block_signal_for_sizing(updated_signal, "paper_drawdown_throttle_pause")
+            updated_signals.append(updated_signal)
+            continue
+
+        accepted_day_counts[day] = new_count + 1
+        updated_signal["paper_sizing"] = {
+            "policy_name": str(sizing.get("policy_name", "paper_sizing")),
+            "risk_per_trade_pct": risk_pct,
+            "current_drawdown_pct": current_drawdown,
+            "max_signals_per_utc_day": day_limit,
+        }
+        sized_trade = dict(trade)
+        sized_trade["paper_sizing_policy_name"] = str(sizing.get("policy_name", "paper_sizing"))
+        sized_trade["paper_risk_per_trade_pct"] = risk_pct
+        sized_trade["paper_sizing_drawdown_pct_at_entry"] = current_drawdown
+        sized_trade["paper_daily_signal_cap"] = day_limit
+        updated_trades.append(sized_trade)
+        updated_signals.append(updated_signal)
+
+    return updated_signals, updated_trades
+
+
+def _block_signal_for_sizing(signal: dict[str, object], reason: str) -> None:
+    signal["recommended_action"] = "skip"
+    reason_codes = [str(item) for item in signal.get("reason_codes", ())]
+    if reason not in reason_codes:
+        reason_codes.append(reason)
+    signal["reason_codes"] = reason_codes
+    hard_blocks = [str(item) for item in signal.get("hard_risk_blocks", ())]
+    if reason not in hard_blocks:
+        hard_blocks.append(reason)
+    signal["hard_risk_blocks"] = hard_blocks
+    signal["paper_sizing"] = {"blocked": True, "block_reason": reason}
+
+
+def _paper_sizing_summary(
+    pack: dict[str, object],
+    existing_trades: list[dict[str, object]],
+    incoming_trades: list[dict[str, object]],
+) -> dict[str, object]:
+    sizing = dict(dict(pack.get("strategy", {})).get("paper_sizing", {}))
+    if not sizing:
+        return {"enabled": False}
+    base_risk_pct = float(sizing.get("base_risk_per_trade_pct", 0.01))
+    return {
+        "enabled": True,
+        "policy_name": str(sizing.get("policy_name", "paper_sizing")),
+        "base_risk_per_trade_pct": base_risk_pct,
+        "max_signals_per_utc_day": _optional_int(sizing.get("max_signals_per_utc_day")),
+        "current_drawdown_pct": _current_sizing_drawdown(existing_trades, base_risk_pct),
+        "incoming_trade_count": len(incoming_trades),
+    }
+
+
+def _accepted_day_counts(trades: list[dict[str, object]]) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for trade in trades:
+        if trade.get("paper_status") in {"open", "closed"}:
+            counts[_signal_day(trade)] += 1
+    return counts
+
+
+def _current_sizing_drawdown(trades: list[dict[str, object]], default_risk_pct: float) -> float:
+    equity = 1.0
+    peak = 1.0
+    closed = [
+        trade
+        for trade in trades
+        if trade.get("paper_status") == "closed" and trade.get("net_r") is not None
+    ]
+    for trade in sorted(closed, key=lambda item: str(item.get("exit_time", item["decision_time"]))):
+        risk_pct = float(trade.get("paper_risk_per_trade_pct", default_risk_pct))
+        equity *= 1 + float(trade["net_r"]) * risk_pct
+        peak = max(peak, equity)
+    return (peak - equity) / peak if peak else 0.0
+
+
+def _risk_after_drawdown_steps(
+    base_risk_pct: float,
+    current_drawdown: float,
+    sizing: dict[str, object],
+) -> float:
+    risk_pct = base_risk_pct
+    steps = [dict(item) for item in sizing.get("drawdown_risk_steps", ())]
+    for step in sorted(
+        steps,
+        key=lambda item: float(item["at_drawdown_pct"]),
+        reverse=True,
+    ):
+        if current_drawdown >= float(step["at_drawdown_pct"]):
+            risk_pct = min(risk_pct, float(step["risk_per_trade_pct"]))
+            break
+    return risk_pct
+
+
+def _signal_trade_key(row: dict[str, object]) -> tuple[str, str]:
+    return (str(row["symbol"]), str(row.get("signal_timestamp", row.get("decision_time", ""))))
+
+
+def _signal_day(row: dict[str, object]) -> str:
+    raw_time = str(row.get("signal_timestamp", row.get("decision_time", "")))
+    return _parse_timestamp(raw_time).date().isoformat()
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    return int(value)
 
 
 def _resolve_open_trades(

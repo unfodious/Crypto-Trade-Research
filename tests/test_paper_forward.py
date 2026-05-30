@@ -152,7 +152,76 @@ def test_run_forward_paper_collection_adds_futures_metrics_abstention_context(
     assert "abstention_filter_block" in signals[0]["hard_risk_blocks"]
 
 
-def _write_pack(tmp_path: Path, *, abstention: bool = False) -> Path:
+def test_run_forward_paper_collection_enforces_daily_paper_sizing_cap(
+    tmp_path: Path,
+) -> None:
+    pack_path = _write_pack(tmp_path, paper_sizing=True)
+    forward_dir = tmp_path / "forward"
+    forward_dir.mkdir(parents=True)
+    (forward_dir / "forward_ledger.json").write_text(
+        json.dumps(
+            {
+                "trades": [
+                    {
+                        "strategy_name": "unit_forward",
+                        "decision_time": f"2026-05-27T00:{minute:02d}:00Z",
+                        "symbol": "TONUSDT",
+                        "timeframe": "1m",
+                        "side": "long",
+                        "entry_price": 10.0,
+                        "stop_price": 9.96,
+                        "target_price": 10.08,
+                        "paper_status": "open",
+                        "live_order_authority": False,
+                    }
+                    for minute in range(10)
+                ],
+                "metrics": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = ForwardPaperRunConfig.from_dict(
+        {
+            "run_name": "unit_forward",
+            "output_dir": str(forward_dir),
+            "issue_id": "CT-184",
+            "epic_id": "CT-113",
+            "pack_manifest_path": str(pack_path),
+            "symbols": ["TONUSDT", "BTCUSDT", "ETHUSDT"],
+            "lookback_minutes": 30,
+            "funding_lookback_hours": 200,
+            "feature": {
+                "feature_set_version": "features.unit.v1",
+                "rolling_window": 3,
+                "higher_timeframes": ["5m"],
+            },
+            "request_sleep_seconds": 0,
+            "end_time": "2026-05-27T01:00:30Z",
+        }
+    )
+
+    payload = run_forward_paper_collection(
+        config,
+        fetch_klines=_fake_klines,
+        fetch_funding=_fake_funding,
+    )
+
+    assert payload["collector_summary"]["take_count"] == 0
+    assert payload["row_counts"]["cumulative_trades"] == 10
+    assert payload["paper_sizing"]["enabled"] is True
+    signals = json.loads((config.output_dir / "signals.json").read_text())["signals"]
+    blocked = [signal for signal in signals if signal["symbol"] == "TONUSDT"]
+    assert blocked[0]["recommended_action"] == "skip"
+    assert "daily_paper_signal_cap_reached" in blocked[0]["hard_risk_blocks"]
+
+
+def _write_pack(
+    tmp_path: Path,
+    *,
+    abstention: bool = False,
+    paper_sizing: bool = False,
+) -> Path:
     model_path = tmp_path / "model_artifact.json"
     write_model_artifact(
         model_path,
@@ -213,10 +282,23 @@ def _write_pack(tmp_path: Path, *, abstention: bool = False) -> Path:
             },
             "strategy": {
                 "side": "long",
-                "symbols": ["TONUSDT"] if abstention else ["TONUSDT", "BTCUSDT", "ETHUSDT"],
+                "symbols": ["TONUSDT"]
+                if abstention or paper_sizing
+                else ["TONUSDT", "BTCUSDT", "ETHUSDT"],
                 "filters": [{"feature": "close_location", "operator": ">=", "value": 0.0}],
                 "ranking": {"top_n_per_decision_time": 1, "selected_expected_r_threshold": -1.0},
                 "exits": {"stop_loss_pct": 0.004, "target_pct": 0.008, "horizon_bars": 12},
+                **(
+                    {
+                        "paper_sizing": {
+                            "policy_name": "unit_daily_cap",
+                            "base_risk_per_trade_pct": 0.0025,
+                            "max_signals_per_utc_day": 10,
+                        }
+                    }
+                    if paper_sizing
+                    else {}
+                ),
                 **(
                     {
                         "abstention_filter_groups": [
