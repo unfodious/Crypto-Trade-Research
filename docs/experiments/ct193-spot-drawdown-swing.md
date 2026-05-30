@@ -344,6 +344,45 @@ Interpretation:
 - stricter lookaheads (`24h`/`48h`/`72h`) continue this same trade-off: cleaner downside at the cost
   of too little evidence to justify a paper move.
 
+
+### 5-Symbol Timed No-Lookahead Sweep (15m/30m/4h)
+
+After 1h and broad-universe timing tests, we reran the same five-symbol selected rows on
+`2024H1`, `2024H2`, `2025H1`, `2025JulNov` using true spot candles at `15m`, `30m`, and `4h`.
+
+Artifacts:
+
+- `configs/ct193-spot-momentum-rotation-selected-2024-2025-15m-nolookahead-5sym.json`
+- `configs/ct193-spot-momentum-rotation-selected-2024-2025-30m-nolookahead-5sym.json`
+- `configs/ct193-spot-momentum-rotation-selected-2024-2025-4h-nolookahead-5sym.json`
+- `data/generated/ct193_spot_momentum_rotation_selected_15m_nolookahead_5sym/report.json`
+- `data/generated/ct193_spot_momentum_rotation_selected_30m_nolookahead_5sym/report.json`
+- `data/generated/ct193_spot_momentum_rotation_selected_4h_nolookahead_5sym/report.json`
+
+| scenario | avg return | 2024H1 | 2024H2 | 2025H1 | 2025JulNov | avg max PnL DD | closed | open |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `portfolio_dd8_spot_baseline_guard_1000` (15m) | -0.39% | -6.40% | 1.65% | 2.09% | 1.10% | -3.97% | 20 | 1 |
+| `portfolio_dd8_symbol_30d_partial_trail_1000` (15m) | 0.41% | 0.51% | 0.70% | 0.00% | 0.42% | -0.54% | 4 | 0 |
+| `portfolio_dd8_symbol_30d_momentum_rotation_1000` (15m) | 1.13% | 1.83% | 2.29% | 0.00% | 0.42% | -0.75% | 10 | 0 |
+| `portfolio_dd8_basket_14d_momentum_rotation_1000` (15m) | 0.67% | 1.90% | 0.37% | 0.00% | 0.42% | -0.86% | 6 | 0 |
+| `portfolio_dd8_spot_baseline_guard_1000` (30m) | 2.69% | 2.05% | 1.93% | 3.63% | 3.14% | -0.88% | 25 | 0 |
+| `portfolio_dd8_symbol_30d_partial_trail_1000` (30m) | 0.94% | 0.98% | 1.34% | 0.36% | 1.08% | -0.60% | 9 | 0 |
+| `portfolio_dd8_symbol_30d_momentum_rotation_1000` (30m) | 1.18% | 0.98% | 1.33% | 1.33% | 1.08% | -1.21% | 11 | 0 |
+| `portfolio_dd8_basket_14d_momentum_rotation_1000` (30m) | 0.93% | 2.39% | 1.86% | 0.00% | -0.52% | -1.04% | 13 | 1 |
+| `portfolio_dd8_spot_baseline_guard_1000` (4h) | -0.52% | 5.31% | 0.04% | -4.73% | -2.71% | -8.14% | 34 | 6 |
+| `portfolio_dd8_symbol_30d_partial_trail_1000` (4h) | 0.80% | 0.37% | 2.84% | 0.00% | 0.00% | -0.27% | 6 | 0 |
+| `portfolio_dd8_symbol_30d_momentum_rotation_1000` (4h) | -0.76% | 0.37% | -3.39% | 0.00% | 0.00% | -1.54% | 7 | 2 |
+| `portfolio_dd8_basket_14d_momentum_rotation_1000` (4h) | 2.03% | 2.09% | 4.71% | 0.00% | 1.31% | -0.89% | 22 | 1 |
+
+Interpretation:
+
+- `30m` is the cleanest cadence so far: no open positions in top rows and lower adverse portfolio drawdown than `4h`.
+- The best result remains below the `+5%` avg-window target across all rows (`2.69%` top in `30m` baseline).
+- `4h` still has mixed behavior: better per-trade returns in some windows but unresolved inventory and weak `2025H1` for baseline.
+- No candidate from this cadence sweep passes the CT-113 working-model gate.
+
+
+
 ## Interpretation
 
 The idea has a real useful part: profitable exits are common. Once a rebound happens, the tested
