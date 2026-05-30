@@ -56,6 +56,7 @@ Artifacts:
 - `configs/ct193-spot-drawdown-swing-spot.json`
 - `configs/ct193-spot-drawdown-swing-spot-bear-guard-selected.json`
 - `configs/ct193-spot-drawdown-swing-spot-partial-trailing-selected.json`
+- `configs/ct193-spot-drawdown-swing-spot-momentum-rotation-selected.json`
 - `scripts/download_binance_spot_klines.py`
 - `data/generated/ct193_spot_drawdown_swing/report.json`
 - `data/generated/ct193_spot_drawdown_swing/report.md`
@@ -206,6 +207,42 @@ Interpretation:
 - Exit management helps cash realization, but the core bottleneck is now opportunity quality and
   redeployment, not only how profits are taken.
 
+### Relative-Strength Momentum Rotation
+
+The rotation follow-up tested redeploying capital out of profitable lower-ranked positions and into
+top relative-strength symbols. The first strict version required the replacement to also pass the
+old drawdown-entry filter; that produced `0` real rotations because strong symbols and dip-entry
+symbols rarely overlapped at the same timestamp.
+
+The selected replay therefore uses a separate momentum-redeployment rule:
+
+- sell only profitable positions;
+- rank symbols by point-in-time relative strength over `72h` or `168h`;
+- exit lower-ranked profitable positions;
+- redeploy into top-ranked symbols with positive momentum over the same lookback;
+- keep the original spot entry rules for first entries, but allow redeployment candidates to be
+  momentum candidates rather than fresh drawdown candidates.
+
+Selected true-spot results:
+
+| Scenario | Avg Window Return | 2024H2 | 2025H1 | 2025JulNov | Avg Max DD | Closed | Open | Partial exits | Rotation exits | Open Unrealized | Gate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `portfolio_dd8_spot_baseline_guard_1000` | `3.80%` | `4.67%` | `9.21%` | `-2.49%` | `-5.14%` | `31` | `2` | `0` | `0` | `-15.38%` | fail |
+| `portfolio_dd8_symbol_30d_partial_trail_1000` | `2.42%` | `4.51%` | `0.49%` | `2.25%` | `-4.49%` | `14` | `0` | `12` | `0` | `0.00%` | fail |
+| `portfolio_dd8_symbol_30d_momentum_rotation_1000` | `3.46%` | `6.96%` | `1.17%` | `2.25%` | `-5.28%` | `20` | `0` | `16` | `8` | `0.00%` | fail |
+| `portfolio_dd8_basket_14d_momentum_rotation_1000` | `2.98%` | `3.23%` | `1.30%` | `4.41%` | `-3.66%` | `18` | `0` | `9` | `8` | `0.00%` | fail |
+
+Interpretation:
+
+- Momentum rotation is the first refinement that materially improves the clean no-open-inventory
+  rows: `+3.46%` versus `+2.42%` for the comparable partial/trailing row.
+- It also fixes the main structural issue from the stricter rows: more closed trades (`20` versus
+  `14`) while keeping open inventory at `0`.
+- The balanced basket row has lower drawdown (`-3.66%`) and better `2025JulNov` (`+4.41%`), but
+  still weak `2025H1` (`+1.30%`).
+- This is directionally promising but not a paper candidate. The returns are still multi-month
+  window returns, not the desired month-sized return profile.
+
 ## Interpretation
 
 The idea has a real useful part: profitable exits are common. Once a rebound happens, the tested
@@ -233,7 +270,8 @@ to the user's monthly-return objective. The improvement is qualitative: portfoli
 broad-market recovery gating is a better research direction than one-shot dip buying, but the
 current rules still buy too early in persistent bear legs. Bear-leg abstention improves risk but
 shrinks the opportunity set too far to solve the return target. Partial take-profit plus trailing
-remainder is a small improvement on the clean rows but does not change that conclusion.
+remainder is a small improvement on the clean rows but does not change that conclusion. Momentum
+rotation improves the clean rows more meaningfully, but still remains below the return objective.
 
 ## Decision
 
@@ -255,5 +293,7 @@ The next CT-193 refinement should keep the `$1000` portfolio cap and improve ent
 - do not continue by only tightening bear-leg abstention thresholds; the selected rows are cleaner
   but too low-return;
 - do not continue by only adding nearby partial-take-profit or trailing-stop thresholds;
-- test a relative-strength rotation/redeployment rule that exits profitable laggards into stronger
-  spot candidates, because the current strategy's main weakness is too little high-quality exposure.
+- do not continue by requiring rotation replacements to also be drawdown candidates; that produced
+  no actual rotations;
+- next useful branch should broaden the rotation universe or use a higher-frequency redeployment
+  cadence, because the selected five-coin universe still provides too little high-quality exposure.

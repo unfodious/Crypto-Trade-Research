@@ -7,6 +7,7 @@ import pyarrow.parquet as pq
 
 from crypto_trade_research.spot_drawdown_swing import (
     SpotDrawdownSwingConfig,
+    _rotate_positions,
     build_spot_drawdown_swing_report,
 )
 
@@ -259,6 +260,103 @@ def test_spot_drawdown_swing_partial_take_profit_reports_partial_exit(
     assert scenario["by_window"][0]["partial_exit_count"] >= 1
 
 
+def test_spot_drawdown_swing_rotation_redeploys_profitable_weak_position() -> None:
+    scenario = SpotDrawdownSwingConfig.from_dict(
+        {
+            "report_name": "unit_spot_swing",
+            "issue_id": "CT-193",
+            "epic_id": "CT-113",
+            "output_json_path": "/tmp/unused.json",
+            "output_markdown_path": "/tmp/unused.md",
+            "round_trip_cost_pct": 0.002,
+            "timeframe_minutes": 60,
+            "symbols": ["SOLUSDT", "SUIUSDT"],
+            "windows": [],
+            "scenarios": [
+                {
+                    "name": "unit_rotation",
+                    "description": "unit",
+                    "drawdown_lookback_hours": 2,
+                    "min_drawdown_pct": 0.08,
+                    "min_reclaim_return_pct": 0.001,
+                    "max_rsi": 60,
+                    "min_rsi_rebound": 0.1,
+                    "min_close_location": 0.5,
+                    "min_lower_wick_ratio": 0.0,
+                    "profit_target_pct": 0.10,
+                    "min_hold_hours": 1,
+                    "max_hold_hours": 24,
+                    "portfolio_cash_usd": 250,
+                    "initial_buy_usd": 50,
+                    "dca_buy_usd": 50,
+                    "max_symbol_allocation_usd": 100,
+                    "dca_drop_levels_pct": [0.05],
+                    "rotation_lookback_hours": 2,
+                    "min_rotation_profit_pct": 0.02,
+                    "min_rotation_exit_rank_pct": 0.5,
+                    "max_rotation_entry_rank_pct": 0.5,
+                }
+            ],
+        }
+    ).scenarios[0]
+    now = datetime(2026, 1, 1, 16, tzinfo=UTC)
+    sol_padding = [
+        _row("SOLUSDT", now - timedelta(hours=15 - index), 110, 110, 109, 110, index)
+        for index in range(13)
+    ]
+    sui_padding = [
+        _row("SUIUSDT", now - timedelta(hours=15 - index), 95, 96, 94, 95, index)
+        for index in range(13)
+    ]
+    symbol_rows = {
+        "SOLUSDT": sol_padding
+        + [
+            _row("SOLUSDT", now - timedelta(hours=2), 110, 110, 109, 110, 13),
+            _row("SOLUSDT", now - timedelta(hours=1), 105, 106, 104, 105, 14),
+            _row("SOLUSDT", now, 103, 105, 102, 104, 15),
+        ],
+        "SUIUSDT": sui_padding
+        + [
+            _row("SUIUSDT", now - timedelta(hours=2), 95, 110, 90, 95, 13),
+            _row("SUIUSDT", now - timedelta(hours=1), 96, 100, 92, 96, 14),
+            _row("SUIUSDT", now, 99, 103, 98, 101, 15),
+        ],
+    }
+    current_rows = {symbol: rows[-1] for symbol, rows in symbol_rows.items()}
+    positions = {
+        "SOLUSDT": {
+            "symbol": "SOLUSDT",
+            "entry_time": (now - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+            "qty": 1.0,
+            "cost_usd": 100.0,
+            "realized_cost_usd": 0.0,
+            "realized_value_usd": 0.0,
+            "lot_count": 1,
+            "dca_count": 0,
+            "partial_exit_count": 0,
+            "max_adverse_pct": 0.0,
+            "max_favorable_pct": 0.04,
+        }
+    }
+    completed: list[dict[str, object]] = []
+
+    cash = _rotate_positions(
+        0.0,
+        completed,
+        positions,
+        current_rows,
+        symbol_rows,
+        scenario,
+        {},
+        0.0,
+    )
+
+    assert cash == 54.0
+    assert completed[0]["exit_reason"] == "rotation_redeploy"
+    assert "SOLUSDT" not in positions
+    assert "SUIUSDT" in positions
+
+
 def _write_dataset(tmp_path: Path) -> Path:
     dataset_dir = tmp_path / "dataset"
     rows = []
@@ -297,3 +395,31 @@ def _write_dataset(tmp_path: Path) -> Path:
     manifest_path = dataset_dir / "manifest.json"
     manifest_path.write_text(json.dumps({"cleaned_path": str(clean_path)}), encoding="utf-8")
     return manifest_path
+
+
+def _row(
+    symbol: str,
+    close_time: datetime,
+    open_price: float,
+    high: float,
+    low: float,
+    close: float,
+    index: int,
+) -> dict[str, object]:
+    return {
+        "symbol": symbol,
+        "open_time": close_time - timedelta(hours=1),
+        "close_time": close_time,
+        "open": open_price,
+        "high": high,
+        "low": low,
+        "close": close,
+        "volume": 1000.0,
+        "_index": index,
+        "return_1h_pct": 0.01,
+        "rsi_14": 40.0,
+        "rsi_delta": 1.0,
+        "close_location": 0.8,
+        "lower_wick_ratio": 0.1,
+        "ema_9": close - 1,
+    }

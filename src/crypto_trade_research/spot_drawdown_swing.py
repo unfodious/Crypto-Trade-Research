@@ -56,6 +56,12 @@ class SpotSwingScenario:
     partial_take_profit_pct: float | None = None
     partial_take_profit_fraction: float = 0.0
     trailing_stop_from_peak_pct: float | None = None
+    rotation_lookback_hours: int | None = None
+    min_rotation_profit_pct: float = 0.0
+    min_rotation_exit_rank_pct: float | None = None
+    max_rotation_entry_rank_pct: float | None = None
+    rotation_entry_requires_drawdown: bool = True
+    min_rotation_entry_return_pct: float | None = None
     sell_only_profitable: bool = False
     portfolio_cash_usd: float | None = None
     initial_buy_usd: float | None = None
@@ -101,6 +107,16 @@ class SpotSwingScenario:
             partial_take_profit_pct=_optional_float(payload.get("partial_take_profit_pct")),
             partial_take_profit_fraction=float(payload.get("partial_take_profit_fraction", 0.0)),
             trailing_stop_from_peak_pct=_optional_float(payload.get("trailing_stop_from_peak_pct")),
+            rotation_lookback_hours=_optional_int(payload.get("rotation_lookback_hours")),
+            min_rotation_profit_pct=float(payload.get("min_rotation_profit_pct", 0.0)),
+            min_rotation_exit_rank_pct=_optional_float(payload.get("min_rotation_exit_rank_pct")),
+            max_rotation_entry_rank_pct=_optional_float(payload.get("max_rotation_entry_rank_pct")),
+            rotation_entry_requires_drawdown=bool(
+                payload.get("rotation_entry_requires_drawdown", True)
+            ),
+            min_rotation_entry_return_pct=_optional_float(
+                payload.get("min_rotation_entry_return_pct")
+            ),
             sell_only_profitable=bool(payload.get("sell_only_profitable", False)),
             portfolio_cash_usd=_optional_float(payload.get("portfolio_cash_usd")),
             initial_buy_usd=_optional_float(payload.get("initial_buy_usd")),
@@ -410,6 +426,9 @@ def _portfolio_scenario_report(
         "partial_exit_count": sum(
             int(position.get("partial_exit_count", 0)) for position in positions
         ),
+        "rotation_exit_count": sum(
+            1 for position in closed if position.get("exit_reason") == "rotation_redeploy"
+        ),
         "average_net_return_pct": _mean(
             [_as_float(report["portfolio_return_pct"]) for report in reports]
         ),
@@ -510,6 +529,17 @@ def _portfolio_window_report(
                 completed.append(_close_position(position, row, fee_rate, "profit_fade"))
                 del positions[symbol]
 
+        cash = _rotate_positions(
+            cash,
+            completed,
+            positions,
+            current_rows,
+            symbol_rows,
+            scenario,
+            market_context,
+            fee_rate,
+        )
+
         equity_curve.append(
             {
                 "decision_time": decision_time,
@@ -552,6 +582,9 @@ def _portfolio_window_report(
         "open_trade_count": len(open_positions),
         "partial_exit_count": sum(
             int(position.get("partial_exit_count", 0)) for position in all_positions
+        ),
+        "rotation_exit_count": sum(
+            1 for position in completed if position.get("exit_reason") == "rotation_redeploy"
         ),
         "average_net_return_pct": _return(final_equity, initial_cash),
         "average_closed_net_return_pct": _mean(closed_returns),
@@ -686,6 +719,149 @@ def _can_open_position(
     scenario: SpotSwingScenario,
 ) -> bool:
     return scenario.max_open_positions is None or len(positions) < scenario.max_open_positions
+
+
+def _rotate_positions(
+    cash: float,
+    completed: list[dict[str, object]],
+    positions: dict[str, dict[str, object]],
+    current_rows: dict[str, dict[str, object]],
+    symbol_rows: dict[str, list[dict[str, object]]],
+    scenario: SpotSwingScenario,
+    market_context: dict[str, object],
+    fee_rate: float,
+) -> float:
+    if scenario.rotation_lookback_hours is None:
+        return cash
+    relative_returns = _relative_strength_returns(
+        current_rows, symbol_rows, scenario.rotation_lookback_hours
+    )
+    ranks = _relative_strength_ranks(relative_returns)
+    if not ranks:
+        return cash
+
+    entry_symbols = _rotation_entry_symbols(
+        positions,
+        current_rows,
+        symbol_rows,
+        scenario,
+        market_context,
+        ranks,
+        relative_returns,
+    )
+    if not entry_symbols:
+        return cash
+
+    exit_symbols = [
+        symbol
+        for symbol, position in positions.items()
+        if _should_rotate_exit(position, current_rows.get(symbol), scenario, fee_rate, ranks)
+    ]
+    exit_symbols.sort(key=lambda symbol: ranks[symbol], reverse=True)
+    for exit_symbol in exit_symbols:
+        if not entry_symbols:
+            break
+        position = positions.get(exit_symbol)
+        row = current_rows.get(exit_symbol)
+        if position is None or row is None:
+            continue
+        cash += _position_value(position, row, fee_rate)
+        completed.append(_close_position(position, row, fee_rate, "rotation_redeploy"))
+        del positions[exit_symbol]
+
+        entry_symbol = entry_symbols.pop(0)
+        spend = _buy_size(cash, scenario.initial_buy_usd, None, scenario)
+        if spend <= 0:
+            continue
+        positions[entry_symbol] = _new_position(
+            entry_symbol, current_rows[entry_symbol], spend, fee_rate
+        )
+        cash -= spend
+    return cash
+
+
+def _relative_strength_returns(
+    current_rows: dict[str, dict[str, object]],
+    symbol_rows: dict[str, list[dict[str, object]]],
+    lookback_hours: int,
+) -> dict[str, float]:
+    returns: dict[str, float] = {}
+    for symbol, row in current_rows.items():
+        rows = symbol_rows[symbol]
+        index = int(row["_index"])
+        if index < lookback_hours:
+            continue
+        returns[symbol] = _return(
+            _as_float(row["close"]), _as_float(rows[index - lookback_hours]["close"])
+        )
+    return returns
+
+
+def _relative_strength_ranks(relative_returns: dict[str, float]) -> dict[str, float]:
+    ranked = sorted(relative_returns.items(), key=lambda item: item[1], reverse=True)
+    total = len(ranked)
+    return {symbol: (rank + 1) / total for rank, (symbol, _) in enumerate(ranked)} if total else {}
+
+
+def _rotation_entry_symbols(
+    positions: dict[str, dict[str, object]],
+    current_rows: dict[str, dict[str, object]],
+    symbol_rows: dict[str, list[dict[str, object]]],
+    scenario: SpotSwingScenario,
+    market_context: dict[str, object],
+    ranks: dict[str, float],
+    relative_returns: dict[str, float],
+) -> list[str]:
+    symbols = []
+    for symbol, row in current_rows.items():
+        if symbol in positions:
+            continue
+        rank = ranks.get(symbol)
+        if rank is None:
+            continue
+        if (
+            scenario.max_rotation_entry_rank_pct is not None
+            and rank > scenario.max_rotation_entry_rank_pct
+        ):
+            continue
+        if (
+            scenario.min_rotation_entry_return_pct is not None
+            and relative_returns[symbol] < scenario.min_rotation_entry_return_pct
+        ):
+            continue
+        if scenario.rotation_entry_requires_drawdown and not _portfolio_entry_passes(
+            scenario, symbol_rows[symbol], row
+        ):
+            continue
+        if not _market_guard_passes(
+            scenario,
+            market_context,
+            _as_datetime(row["close_time"]),
+            for_entry=True,
+        ):
+            continue
+        symbols.append(symbol)
+    return sorted(symbols, key=lambda symbol: ranks[symbol])
+
+
+def _should_rotate_exit(
+    position: dict[str, object],
+    row: dict[str, object] | None,
+    scenario: SpotSwingScenario,
+    fee_rate: float,
+    ranks: dict[str, float],
+) -> bool:
+    if row is None:
+        return False
+    symbol = str(position["symbol"])
+    rank = ranks.get(symbol)
+    if rank is None:
+        return False
+    return _position_lifecycle_return(
+        position, row, fee_rate
+    ) >= scenario.min_rotation_profit_pct and (
+        scenario.min_rotation_exit_rank_pct is None or rank >= scenario.min_rotation_exit_rank_pct
+    )
 
 
 def _portfolio_entry_passes(
