@@ -209,6 +209,56 @@ def test_spot_drawdown_swing_bear_leg_guard_can_abstain(tmp_path: Path) -> None:
     assert payload["scenarios"][0]["trade_count"] == 0
 
 
+def test_spot_drawdown_swing_partial_take_profit_reports_partial_exit(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _write_dataset(tmp_path)
+    payload = build_spot_drawdown_swing_report(
+        SpotDrawdownSwingConfig.from_dict(
+            {
+                "report_name": "unit_spot_swing",
+                "issue_id": "CT-193",
+                "epic_id": "CT-113",
+                "output_json_path": str(tmp_path / "out" / "partial.json"),
+                "output_markdown_path": str(tmp_path / "out" / "partial.md"),
+                "round_trip_cost_pct": 0.002,
+                "timeframe_minutes": 60,
+                "symbols": ["SOLUSDT"],
+                "windows": [{"name": "unit", "dataset_manifest_path": str(manifest_path)}],
+                "scenarios": [
+                    {
+                        "name": "unit_partial",
+                        "description": "unit",
+                        "drawdown_lookback_hours": 24,
+                        "min_drawdown_pct": 0.08,
+                        "min_reclaim_return_pct": 0.001,
+                        "max_rsi": 60,
+                        "min_rsi_rebound": 0.1,
+                        "min_close_location": 0.5,
+                        "min_lower_wick_ratio": 0.0,
+                        "profit_target_pct": 0.05,
+                        "partial_take_profit_pct": 0.02,
+                        "partial_take_profit_fraction": 0.5,
+                        "trailing_stop_from_peak_pct": 0.01,
+                        "min_hold_hours": 1,
+                        "max_hold_hours": 24,
+                        "sell_only_profitable": True,
+                        "portfolio_cash_usd": 250,
+                        "initial_buy_usd": 100,
+                        "dca_buy_usd": 100,
+                        "max_symbol_allocation_usd": 200,
+                        "dca_drop_levels_pct": [0.05],
+                    }
+                ],
+            }
+        )
+    )
+
+    scenario = payload["scenarios"][0]
+    assert scenario["partial_exit_count"] >= 1
+    assert scenario["by_window"][0]["partial_exit_count"] >= 1
+
+
 def _write_dataset(tmp_path: Path) -> Path:
     dataset_dir = tmp_path / "dataset"
     rows = []

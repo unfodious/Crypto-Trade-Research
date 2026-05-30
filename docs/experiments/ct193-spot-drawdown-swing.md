@@ -55,6 +55,7 @@ Artifacts:
 - `configs/ct193-spot-drawdown-swing.json`
 - `configs/ct193-spot-drawdown-swing-spot.json`
 - `configs/ct193-spot-drawdown-swing-spot-bear-guard-selected.json`
+- `configs/ct193-spot-drawdown-swing-spot-partial-trailing-selected.json`
 - `scripts/download_binance_spot_klines.py`
 - `data/generated/ct193_spot_drawdown_swing/report.json`
 - `data/generated/ct193_spot_drawdown_swing/report.md`
@@ -175,6 +176,36 @@ Interpretation:
 - The less strict `7d` basket guard keeps more return but still leaves one open position at
   `-18.95%`, which is not acceptable inventory risk.
 
+### Partial Take-Profit And Trailing Remainder
+
+The next exit-model test added a true partial exit to the portfolio replay:
+
+- sell a configured fraction of the position after the first profit threshold;
+- keep the remainder open for a larger target;
+- close the remainder if it gives back more than a configured trailing distance from peak;
+- stop DCA after a partial exit, so the position becomes a managed winner instead of a new averaging
+  candidate.
+
+Selected true-spot results:
+
+| Scenario | Avg Window Return | 2024H2 | 2025H1 | 2025JulNov | Avg Max DD | Closed | Open | Partial exits | Open Unrealized | Gate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `portfolio_dd8_spot_baseline_guard_1000` | `3.80%` | `4.67%` | `9.21%` | `-2.49%` | `-5.14%` | `31` | `2` | `0` | `-15.38%` | fail |
+| `portfolio_dd8_symbol_30d_partial_trail_1000` | `2.42%` | `4.51%` | `0.49%` | `2.25%` | `-4.49%` | `14` | `0` | `12` | `0.00%` | fail |
+| `portfolio_dd8_basket_14d_partial_trail_1000` | `2.39%` | `2.87%` | `0.49%` | `3.82%` | `-3.72%` | `11` | `0` | `10` | `0.00%` | fail |
+
+Interpretation:
+
+- Partial take-profit plus trailing remainder improves the clean no-open-inventory rows slightly:
+  `+2.42%` versus `+2.36%` for the comparable strict symbol bear-leg row.
+- It does not rescue the return target. The weak `2025H1` window remains around `+0.49%`, which is
+  far below the user's desired month-sized return profile.
+- Applying partial exits to the looser baseline increased average return to `+4.10%` in the sweep,
+  but still left `3` open positions and a negative `2025JulNov`, so it is not a better risk-adjusted
+  candidate.
+- Exit management helps cash realization, but the core bottleneck is now opportunity quality and
+  redeployment, not only how profits are taken.
+
 ## Interpretation
 
 The idea has a real useful part: profitable exits are common. Once a rebound happens, the tested
@@ -201,7 +232,8 @@ The true spot replay did not confirm the futures-proxy pocket strongly enough. T
 to the user's monthly-return objective. The improvement is qualitative: portfolio DCA plus
 broad-market recovery gating is a better research direction than one-shot dip buying, but the
 current rules still buy too early in persistent bear legs. Bear-leg abstention improves risk but
-shrinks the opportunity set too far to solve the return target.
+shrinks the opportunity set too far to solve the return target. Partial take-profit plus trailing
+remainder is a small improvement on the clean rows but does not change that conclusion.
 
 ## Decision
 
@@ -222,5 +254,6 @@ The next CT-193 refinement should keep the `$1000` portfolio cap and improve ent
   rate.
 - do not continue by only tightening bear-leg abstention thresholds; the selected rows are cleaner
   but too low-return;
-- test a different exit/redeployment model, such as partial take-profit plus trailing remainder, or
-  a relative-strength rotation rule that exits profitable laggards into stronger spot candidates.
+- do not continue by only adding nearby partial-take-profit or trailing-stop thresholds;
+- test a relative-strength rotation/redeployment rule that exits profitable laggards into stronger
+  spot candidates, because the current strategy's main weakness is too little high-quality exposure.

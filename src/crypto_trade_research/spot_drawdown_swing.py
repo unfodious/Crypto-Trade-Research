@@ -53,6 +53,9 @@ class SpotSwingScenario:
     min_positive_closes: int = 0
     dca_trend_lookback_hours: int | None = None
     min_dca_trend_return_pct: float | None = None
+    partial_take_profit_pct: float | None = None
+    partial_take_profit_fraction: float = 0.0
+    trailing_stop_from_peak_pct: float | None = None
     sell_only_profitable: bool = False
     portfolio_cash_usd: float | None = None
     initial_buy_usd: float | None = None
@@ -95,6 +98,9 @@ class SpotSwingScenario:
             min_positive_closes=int(payload.get("min_positive_closes", 0)),
             dca_trend_lookback_hours=_optional_int(payload.get("dca_trend_lookback_hours")),
             min_dca_trend_return_pct=_optional_float(payload.get("min_dca_trend_return_pct")),
+            partial_take_profit_pct=_optional_float(payload.get("partial_take_profit_pct")),
+            partial_take_profit_fraction=float(payload.get("partial_take_profit_fraction", 0.0)),
+            trailing_stop_from_peak_pct=_optional_float(payload.get("trailing_stop_from_peak_pct")),
             sell_only_profitable=bool(payload.get("sell_only_profitable", False)),
             portfolio_cash_usd=_optional_float(payload.get("portfolio_cash_usd")),
             initial_buy_usd=_optional_float(payload.get("initial_buy_usd")),
@@ -401,6 +407,9 @@ def _portfolio_scenario_report(
         "trade_count": len(positions),
         "closed_trade_count": len(closed),
         "open_trade_count": len(open_positions),
+        "partial_exit_count": sum(
+            int(position.get("partial_exit_count", 0)) for position in positions
+        ),
         "average_net_return_pct": _mean(
             [_as_float(report["portfolio_return_pct"]) for report in reports]
         ),
@@ -492,9 +501,11 @@ def _portfolio_window_report(
                     _add_lot(position, row, spend, fee_rate)
                     cash -= spend
 
-            if _position_net_return(
-                position, row, fee_rate
-            ) >= scenario.profit_target_pct and _rebound_is_fading_in_row(symbol_rows[symbol], row):
+            if _should_take_partial_profit(position, row, scenario, fee_rate):
+                cash += _take_partial_profit(position, row, scenario, fee_rate)
+                continue
+
+            if _should_exit_position(position, row, symbol_rows[symbol], scenario, fee_rate):
                 cash += _position_value(position, row, fee_rate)
                 completed.append(_close_position(position, row, fee_rate, "profit_fade"))
                 del positions[symbol]
@@ -539,6 +550,9 @@ def _portfolio_window_report(
         "portfolio_return_pct": _return(final_equity, initial_cash),
         "closed_trade_count": len(completed),
         "open_trade_count": len(open_positions),
+        "partial_exit_count": sum(
+            int(position.get("partial_exit_count", 0)) for position in all_positions
+        ),
         "average_net_return_pct": _return(final_equity, initial_cash),
         "average_closed_net_return_pct": _mean(closed_returns),
         "average_open_unrealized_pct": _mean(open_returns),
@@ -743,8 +757,11 @@ def _new_position(
         "entry_time": _format_timestamp(_as_datetime(row["close_time"])),
         "qty": spend * (1 - fee_rate) / _as_float(row["close"]),
         "cost_usd": spend,
+        "realized_cost_usd": 0.0,
+        "realized_value_usd": 0.0,
         "lot_count": 1,
         "dca_count": 0,
+        "partial_exit_count": 0,
         "max_adverse_pct": 0.0,
         "max_favorable_pct": 0.0,
     }
@@ -762,6 +779,38 @@ def _add_lot(
     position["dca_count"] = int(position["dca_count"]) + 1
 
 
+def _should_take_partial_profit(
+    position: dict[str, object],
+    row: dict[str, object],
+    scenario: SpotSwingScenario,
+    fee_rate: float,
+) -> bool:
+    return (
+        scenario.partial_take_profit_pct is not None
+        and scenario.partial_take_profit_fraction > 0
+        and int(position.get("partial_exit_count", 0)) == 0
+        and _position_net_return(position, row, fee_rate) >= scenario.partial_take_profit_pct
+    )
+
+
+def _take_partial_profit(
+    position: dict[str, object],
+    row: dict[str, object],
+    scenario: SpotSwingScenario,
+    fee_rate: float,
+) -> float:
+    fraction = min(max(scenario.partial_take_profit_fraction, 0.0), 1.0)
+    qty_sold = _as_float(position["qty"]) * fraction
+    cost_sold = _as_float(position["cost_usd"]) * fraction
+    sale_value = qty_sold * _as_float(row["close"]) * (1 - fee_rate)
+    position["qty"] = _as_float(position["qty"]) - qty_sold
+    position["cost_usd"] = _as_float(position["cost_usd"]) - cost_sold
+    position["realized_cost_usd"] = _as_float(position.get("realized_cost_usd", 0.0)) + cost_sold
+    position["realized_value_usd"] = _as_float(position.get("realized_value_usd", 0.0)) + sale_value
+    position["partial_exit_count"] = int(position.get("partial_exit_count", 0)) + 1
+    return sale_value
+
+
 def _should_dca(
     position: dict[str, object],
     row: dict[str, object],
@@ -769,6 +818,8 @@ def _should_dca(
 ) -> bool:
     dca_index = int(position["dca_count"])
     if dca_index >= len(scenario.dca_drop_levels_pct):
+        return False
+    if int(position.get("partial_exit_count", 0)):
         return False
     return _position_net_return(position, row, 0.0) <= -abs(scenario.dca_drop_levels_pct[dca_index])
 
@@ -810,6 +861,51 @@ def _position_net_return(
     return _return(_position_value(position, row, fee_rate), _as_float(position["cost_usd"]))
 
 
+def _position_lifecycle_value(
+    position: dict[str, object],
+    row: dict[str, object],
+    fee_rate: float,
+) -> float:
+    return _as_float(position.get("realized_value_usd", 0.0)) + _position_value(
+        position, row, fee_rate
+    )
+
+
+def _position_lifecycle_cost(position: dict[str, object]) -> float:
+    return _as_float(position.get("realized_cost_usd", 0.0)) + _as_float(position["cost_usd"])
+
+
+def _position_lifecycle_return(
+    position: dict[str, object],
+    row: dict[str, object],
+    fee_rate: float,
+) -> float:
+    return _return(
+        _position_lifecycle_value(position, row, fee_rate),
+        _position_lifecycle_cost(position),
+    )
+
+
+def _should_exit_position(
+    position: dict[str, object],
+    row: dict[str, object],
+    rows: list[dict[str, object]],
+    scenario: SpotSwingScenario,
+    fee_rate: float,
+) -> bool:
+    current_return = _position_net_return(position, row, fee_rate)
+    if current_return >= scenario.profit_target_pct and _rebound_is_fading_in_row(rows, row):
+        return True
+    if scenario.trailing_stop_from_peak_pct is None:
+        return False
+    peak_return = _as_float(position["max_favorable_pct"])
+    return (
+        peak_return >= scenario.profit_target_pct
+        and current_return > 0
+        and current_return <= peak_return - scenario.trailing_stop_from_peak_pct
+    )
+
+
 def _close_position(
     position: dict[str, object],
     row: dict[str, object],
@@ -826,9 +922,10 @@ def _close_position(
         ).total_seconds()
         / 3600,
         "lot_count": position["lot_count"],
-        "cost_usd": position["cost_usd"],
-        "exit_value_usd": _position_value(position, row, fee_rate),
-        "net_return_pct": _position_net_return(position, row, fee_rate),
+        "partial_exit_count": position.get("partial_exit_count", 0),
+        "cost_usd": _position_lifecycle_cost(position),
+        "exit_value_usd": _position_lifecycle_value(position, row, fee_rate),
+        "net_return_pct": _position_lifecycle_return(position, row, fee_rate),
         "max_favorable_pct": position["max_favorable_pct"],
         "max_adverse_pct": position["max_adverse_pct"],
         "status": "closed",
