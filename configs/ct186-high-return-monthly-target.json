@@ -1,0 +1,165 @@
+{
+  "report_name": "ct186_high_return_monthly_target",
+  "issue_id": "CT-186",
+  "epic_id": "CT-113",
+  "initial_equity": 1000,
+  "target_monthly_return_pct": 0.30,
+  "max_drawdown_gate_pct": 0.08,
+  "output_json_path": "data/generated/ct186_high_return_monthly_target/report.json",
+  "output_markdown_path": "data/generated/ct186_high_return_monthly_target/report.md",
+  "windows": [
+    {
+      "name": "2024H2",
+      "replay_report_path": "data/generated/ct180_2024h2_oi_high_or_europe_replay/replay_report.json"
+    },
+    {
+      "name": "2025H1",
+      "replay_report_path": "data/generated/ct180_2025h1_oi_high_or_europe_replay/replay_report.json"
+    },
+    {
+      "name": "2025JulNov",
+      "replay_report_path": "data/generated/ct180_2025julnov_oi_high_or_europe_replay/replay_report.json"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "ct184_core4_0_25pct",
+      "description": "CT-184 selected core-4 symbol set at the conservative paper risk, without drawdown throttle.",
+      "risk_per_trade_pct": 0.0025,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SOLUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core3_0_25pct",
+      "description": "CT-183 higher-return core-3 symbol set at the conservative paper risk.",
+      "risk_per_trade_pct": 0.0025,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core3_0_50pct",
+      "description": "Core-3 with 2x the CT-183/CT-184 risk.",
+      "risk_per_trade_pct": 0.005,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core3_1_00pct",
+      "description": "Core-3 with 1% account risk per accepted trade.",
+      "risk_per_trade_pct": 0.01,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core3_2_00pct",
+      "description": "Core-3 aggressive sizing stress at 2% account risk per accepted trade.",
+      "risk_per_trade_pct": 0.02,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core3_3_00pct",
+      "description": "Core-3 aggressive sizing stress at 3% account risk per accepted trade.",
+      "risk_per_trade_pct": 0.03,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core3_4_00pct",
+      "description": "Core-3 aggressive sizing stress at 4% account risk per accepted trade.",
+      "risk_per_trade_pct": 0.04,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core3_5_00pct",
+      "description": "Core-3 extreme sizing stress at 5% account risk per accepted trade.",
+      "risk_per_trade_pct": 0.05,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core4_1_00pct",
+      "description": "Core-4 diversification set at 1% account risk per accepted trade.",
+      "risk_per_trade_pct": 0.01,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SOLUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core4_2_00pct",
+      "description": "Core-4 aggressive sizing stress at 2% account risk per accepted trade.",
+      "risk_per_trade_pct": 0.02,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SOLUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core4_3_00pct",
+      "description": "Core-4 aggressive sizing stress at 3% account risk per accepted trade.",
+      "risk_per_trade_pct": 0.03,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SOLUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core4_4_00pct",
+      "description": "Core-4 aggressive sizing stress at 4% account risk per accepted trade.",
+      "risk_per_trade_pct": 0.04,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SOLUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core4_5_00pct",
+      "description": "Core-4 extreme sizing stress at 5% account risk per accepted trade.",
+      "risk_per_trade_pct": 0.05,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SOLUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core3_rank1_1_00pct",
+      "description": "Core-3 high-rank subset only, at 1% risk.",
+      "risk_per_trade_pct": 0.01,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "max_rank": 1
+    },
+    {
+      "name": "core3_rank1_2_00pct",
+      "description": "Core-3 high-rank subset only, at 2% risk.",
+      "risk_per_trade_pct": 0.02,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "max_rank": 1
+    },
+    {
+      "name": "core3_prob60_1_00pct",
+      "description": "Core-3 stronger probability subset at 1% risk.",
+      "risk_per_trade_pct": 0.01,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "min_probability": 0.60
+    },
+    {
+      "name": "core3_prob60_2_00pct",
+      "description": "Core-3 stronger probability subset at 2% risk.",
+      "risk_per_trade_pct": 0.02,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "min_probability": 0.60
+    },
+    {
+      "name": "core3_expected0_1_00pct",
+      "description": "Core-3 positive expected-R subset at 1% risk.",
+      "risk_per_trade_pct": 0.01,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "min_expected_r": 0.0
+    },
+    {
+      "name": "core3_expected0_2_00pct",
+      "description": "Core-3 positive expected-R subset at 2% risk.",
+      "risk_per_trade_pct": 0.02,
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "min_expected_r": 0.0
+    }
+  ]
+}

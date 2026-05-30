@@ -41,6 +41,7 @@ crypto-trade-build-selected-trade-abstention = "crypto_trade_research.selected_t
 crypto-trade-build-futures-metrics-selected-features = "crypto_trade_research.futures_metrics_selected_features:main"
 crypto-trade-build-sizing-stress = "crypto_trade_research.sizing_stress:main"
 crypto-trade-build-adaptive-sizing = "crypto_trade_research.adaptive_sizing:main"
+crypto-trade-build-monthly-target = "crypto_trade_research.monthly_target:main"
 
 [project.optional-dependencies]
 dev = [
