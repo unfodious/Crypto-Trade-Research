@@ -57,6 +57,14 @@ class SpotSwingScenario:
     dca_buy_usd: float | None = None
     max_symbol_allocation_usd: float | None = None
     dca_drop_levels_pct: tuple[float, ...] = ()
+    max_open_positions: int | None = None
+    market_guard_for_entries: bool = False
+    market_guard_for_dca: bool = False
+    market_guard_lookback_hours: int | None = None
+    min_market_bounce_from_low_pct: float | None = None
+    market_recent_lookback_hours: int | None = None
+    min_market_recent_return_pct: float | None = None
+    min_market_positive_symbol_ratio: float | None = None
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> SpotSwingScenario:
@@ -88,6 +96,20 @@ class SpotSwingScenario:
             max_symbol_allocation_usd=_optional_float(payload.get("max_symbol_allocation_usd")),
             dca_drop_levels_pct=tuple(
                 float(item) for item in payload.get("dca_drop_levels_pct", [])
+            ),
+            max_open_positions=_optional_int(payload.get("max_open_positions")),
+            market_guard_for_entries=bool(payload.get("market_guard_for_entries", False)),
+            market_guard_for_dca=bool(payload.get("market_guard_for_dca", False)),
+            market_guard_lookback_hours=_optional_int(payload.get("market_guard_lookback_hours")),
+            min_market_bounce_from_low_pct=_optional_float(
+                payload.get("min_market_bounce_from_low_pct")
+            ),
+            market_recent_lookback_hours=_optional_int(payload.get("market_recent_lookback_hours")),
+            min_market_recent_return_pct=_optional_float(
+                payload.get("min_market_recent_return_pct")
+            ),
+            min_market_positive_symbol_ratio=_optional_float(
+                payload.get("min_market_positive_symbol_ratio")
             ),
         )
 
@@ -286,6 +308,7 @@ def _with_indicators(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     gains: list[float] = []
     losses: list[float] = []
     for index, row in enumerate(rows):
+        row["_index"] = index
         previous_close = _as_float(rows[index - 1]["close"]) if index else _as_float(row["close"])
         close = _as_float(row["close"])
         change = close - previous_close
@@ -413,12 +436,22 @@ def _portfolio_window_report(
     positions: dict[str, dict[str, object]] = {}
     completed: list[dict[str, object]] = []
     rows_by_time = _rows_by_time(symbol_rows)
+    market_context = _market_context(symbol_rows)
 
     for decision_time in sorted(rows_by_time):
         for symbol, row in rows_by_time[decision_time]:
             position = positions.get(symbol)
             if position is None:
-                if _portfolio_entry_passes(scenario, symbol_rows[symbol], row):
+                if (
+                    _portfolio_entry_passes(scenario, symbol_rows[symbol], row)
+                    and _can_open_position(positions, scenario)
+                    and _market_guard_passes(
+                        scenario,
+                        market_context,
+                        _as_datetime(row["close_time"]),
+                        for_entry=True,
+                    )
+                ):
                     spend = _buy_size(cash, scenario.initial_buy_usd, None, scenario)
                     if spend > 0:
                         positions[symbol] = _new_position(symbol, row, spend, fee_rate)
@@ -426,7 +459,16 @@ def _portfolio_window_report(
                 continue
 
             _update_position_excursions(position, row, fee_rate)
-            if _should_dca(position, row, scenario) and _portfolio_dca_passes(scenario, row):
+            if (
+                _should_dca(position, row, scenario)
+                and _portfolio_dca_passes(scenario, row)
+                and _market_guard_passes(
+                    scenario,
+                    market_context,
+                    _as_datetime(row["close_time"]),
+                    for_entry=False,
+                )
+            ):
                 spend = _buy_size(cash, scenario.dca_buy_usd, position, scenario)
                 if spend > 0:
                     _add_lot(position, row, spend, fee_rate)
@@ -491,12 +533,110 @@ def _rows_by_time(
     return rows_by_time
 
 
+def _market_context(
+    symbol_rows: dict[str, list[dict[str, object]]],
+) -> dict[str, object]:
+    base_prices = {
+        symbol: _as_float(rows[0]["close"]) for symbol, rows in symbol_rows.items() if rows
+    }
+    rows_by_time = _rows_by_time(symbol_rows)
+    series: list[dict[str, object]] = []
+    for decision_time in sorted(rows_by_time):
+        index_levels = []
+        symbol_closes: dict[str, float] = {}
+        for symbol, row in rows_by_time[decision_time]:
+            base_price = base_prices.get(symbol)
+            if base_price:
+                close = _as_float(row["close"])
+                index_levels.append(close / base_price)
+                symbol_closes[symbol] = close
+        if index_levels:
+            series.append(
+                {
+                    "decision_time": decision_time,
+                    "basket_level": _mean(index_levels),
+                    "symbol_closes": symbol_closes,
+                }
+            )
+    return {
+        "series": series,
+        "index_by_time": {row["decision_time"]: index for index, row in enumerate(series)},
+    }
+
+
+def _market_guard_passes(
+    scenario: SpotSwingScenario,
+    market_context: dict[str, object],
+    decision_time: datetime,
+    *,
+    for_entry: bool,
+) -> bool:
+    if for_entry and not scenario.market_guard_for_entries:
+        return True
+    if not for_entry and not scenario.market_guard_for_dca:
+        return True
+
+    index_by_time = market_context["index_by_time"]
+    if not isinstance(index_by_time, dict) or decision_time not in index_by_time:
+        return False
+    series = market_context["series"]
+    if not isinstance(series, list):
+        return False
+    index = int(index_by_time[decision_time])
+    current = dict(series[index])
+    current_level = _as_float(current["basket_level"])
+
+    if scenario.market_guard_lookback_hours is not None:
+        if index < scenario.market_guard_lookback_hours:
+            return False
+        lookback_rows = series[index - scenario.market_guard_lookback_hours : index + 1]
+        lowest_level = min(_as_float(dict(row)["basket_level"]) for row in lookback_rows)
+        market_bounce = _return(current_level, lowest_level)
+        if (
+            scenario.min_market_bounce_from_low_pct is not None
+            and market_bounce < scenario.min_market_bounce_from_low_pct
+        ):
+            return False
+
+    if scenario.market_recent_lookback_hours is not None:
+        if index < scenario.market_recent_lookback_hours:
+            return False
+        previous = dict(series[index - scenario.market_recent_lookback_hours])
+        market_recent_return = _return(current_level, _as_float(previous["basket_level"]))
+        if (
+            scenario.min_market_recent_return_pct is not None
+            and market_recent_return < scenario.min_market_recent_return_pct
+        ):
+            return False
+        if scenario.min_market_positive_symbol_ratio is not None:
+            current_closes = dict(current["symbol_closes"])
+            previous_closes = dict(previous["symbol_closes"])
+            shared_symbols = sorted(set(current_closes) & set(previous_closes))
+            if not shared_symbols:
+                return False
+            positive_count = sum(
+                _as_float(current_closes[symbol]) > _as_float(previous_closes[symbol])
+                for symbol in shared_symbols
+            )
+            if positive_count / len(shared_symbols) < scenario.min_market_positive_symbol_ratio:
+                return False
+
+    return True
+
+
+def _can_open_position(
+    positions: dict[str, dict[str, object]],
+    scenario: SpotSwingScenario,
+) -> bool:
+    return scenario.max_open_positions is None or len(positions) < scenario.max_open_positions
+
+
 def _portfolio_entry_passes(
     scenario: SpotSwingScenario,
     rows: list[dict[str, object]],
     row: dict[str, object],
 ) -> bool:
-    index = rows.index(row)
+    index = int(row["_index"])
     if index < max(scenario.drawdown_lookback_hours, 15):
         return False
     lookback_rows = rows[index - scenario.drawdown_lookback_hours : index + 1]
@@ -645,7 +785,7 @@ def _close_position(
 
 
 def _rebound_is_fading_in_row(rows: list[dict[str, object]], row: dict[str, object]) -> bool:
-    index = rows.index(row)
+    index = int(row["_index"])
     if index <= 0:
         return False
     return _rebound_is_fading(rows, index)

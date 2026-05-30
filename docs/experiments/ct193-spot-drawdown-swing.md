@@ -47,6 +47,8 @@ Rules:
   unrealized PnL.
 - for portfolio-DCA scenarios, start with `$1000` cash, use small first entries, add only at deeper
   drawdown bands, cap allocation per symbol, and mark open inventory to market.
+- for market-guard DCA scenarios, allow entry/add only when the equal-weight basket has bounced
+  from its recent low and most symbols show short-term recovery.
 
 Artifacts:
 
@@ -78,6 +80,9 @@ screen, `dd10_confirmed_reversal_5pct`, had positive mark-to-market but only `16
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | `portfolio_dd8_confirmed_dca_1000` | `5.21%` | `20.13%` | `-4.04%` | `-0.44%` | `61` | `6` | `5.83%` | `-17.96%` | fail |
 | `portfolio_dd10_confirmed_dca_1000` | `5.64%` | `6.49%` | `14.77%` | `-4.35%` | `49` | `5` | `6.42%` | `-13.53%` | fail |
+| `portfolio_dd8_dca_market_guard_1000` | `5.70%` | `3.97%` | `9.24%` | `3.90%` | `29` | `1` | `6.71%` | `-7.21%` | fail |
+| `portfolio_dd8_market_guard_stable_1000` | `4.60%` | `5.24%` | `4.32%` | `4.24%` | `35` | `2` | `6.71%` | `-13.92%` | fail |
+| `portfolio_dd10_market_guard_aggressive_1000` | `7.68%` | `9.98%` | `10.52%` | `2.53%` | `28` | `2` | `6.22%` | `-11.51%` | fail |
 
 Portfolio-DCA settings:
 
@@ -88,6 +93,13 @@ Portfolio-DCA settings:
 - `portfolio_dd10_confirmed_dca_1000`: add `$125` at `-10%` and `-20%` from average cost, max
   `$350` per symbol;
 - sell only when the average position is profitable and rebound momentum fades.
+
+Market-guard additions:
+
+- require the equal-weight basket to bounce at least `3%` from its recent `72h` low;
+- require the basket to be positive over the last `12h`;
+- require at least `60%` of symbols to be rising over the same `12h` window;
+- cap concurrent open symbols to `3-4`, depending on the scenario.
 
 Buy-and-hold context was extremely regime-dependent:
 
@@ -107,8 +119,19 @@ drawdown.
 
 Confirmed-reversal filters helped but made the sample too sparse. Portfolio DCA helped more: it cut
 open unrealized damage from roughly `-32%` to `-13.53%..-17.96%` and produced positive average
-window returns. It still fails because every DCA scenario has open inventory and at least one
-negative window.
+window returns.
+
+The market guard is the first clearly useful refinement. It removed the negative windows from the
+best `dd8` variants and materially reduced open inventory:
+
+- `portfolio_dd8_dca_market_guard_1000`: all windows positive, only `1` open position, but average
+  window return is still only `5.70%` over multi-month windows;
+- `portfolio_dd10_market_guard_aggressive_1000`: higher average return at `7.68%`, all windows
+  positive, but still has `2` open positions and only `28` closed trades.
+
+This is not yet close to the user's monthly-return objective. The improvement is qualitative:
+portfolio DCA plus broad-market recovery gating is a better research direction than one-shot dip
+buying.
 
 ## Decision
 
@@ -120,9 +143,10 @@ Do not claim a working model.
 
 The next CT-193 refinement should keep the `$1000` portfolio cap and improve entry/dca conditions:
 
-- avoid adding in weak broad-market regimes;
-- require BTC/ETH or equal-weight basket recovery before DCA;
-- stop opening new entries when too much cash is already tied up;
-- test smaller initial buys with deeper DCA bands;
+- keep broad-market recovery gating;
+- import true spot candles and rerun with spot fees;
+- compare equal-weight basket guard against BTC/ETH-only guard;
+- test whether open inventory eventually recovers if windows are extended;
+- measure monthly return distribution, not only multi-month window return;
 - measure maximum portfolio drawdown and time stuck in open positions, not just closed-trade win
   rate.
