@@ -1,0 +1,117 @@
+{
+  "report_name": "ct188_timeframe_continuation_scan",
+  "issue_id": "CT-188",
+  "epic_id": "CT-113",
+  "output_json_path": "data/generated/ct188_timeframe_continuation_scan/report.json",
+  "output_markdown_path": "data/generated/ct188_timeframe_continuation_scan/report.md",
+  "target_runner_r": 3,
+  "windows": [
+    {
+      "name": "2024H2",
+      "replay_report_path": "data/generated/ct180_2024h2_oi_high_or_europe_replay/replay_report.json"
+    },
+    {
+      "name": "2025H1",
+      "replay_report_path": "data/generated/ct180_2025h1_oi_high_or_europe_replay/replay_report.json"
+    },
+    {
+      "name": "2025JulNov",
+      "replay_report_path": "data/generated/ct180_2025julnov_oi_high_or_europe_replay/replay_report.json"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "core3_base",
+      "description": "CT-183 core-3 daily-cap baseline.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core3_15m_trend_slope",
+      "description": "Require local 15m trend above MA and positive 15m MA slope.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "feature_filters": [
+        {"feature": "mtf_15m_trend_above_ma_20", "operator": ">=", "value": 1},
+        {"feature": "mtf_15m_ma_slope_sign_20", "operator": ">=", "value": 1}
+      ]
+    },
+    {
+      "name": "core3_15m_trend_slope_riskon",
+      "description": "Require local 15m trend/slope plus 15m breadth/risk-on confirmation.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "feature_filters": [
+        {"feature": "mtf_15m_trend_above_ma_20", "operator": ">=", "value": 1},
+        {"feature": "mtf_15m_ma_slope_sign_20", "operator": ">=", "value": 1},
+        {"feature": "mtf_15m_risk_on_score_20", "operator": ">=", "value": 0.45}
+      ]
+    },
+    {
+      "name": "core3_btc_eth_15m_up",
+      "description": "Require BTC and ETH 15m trend confirmation.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "feature_filters": [
+        {"feature": "mtf_15m_btc_trend_above_ma_20", "operator": ">=", "value": 1},
+        {"feature": "mtf_15m_eth_trend_above_ma_20", "operator": ">=", "value": 1}
+      ]
+    },
+    {
+      "name": "core3_5m_15m_local_trend",
+      "description": "Require local 5m and 15m trend alignment.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "feature_filters": [
+        {"feature": "mtf_5m_trend_above_ma_20", "operator": ">=", "value": 1},
+        {"feature": "mtf_15m_trend_above_ma_20", "operator": ">=", "value": 1}
+      ]
+    },
+    {
+      "name": "core3_pullback_in_15m_trend",
+      "description": "Require 15m trend/slope and a non-extended 1m range position with decent close location.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "feature_filters": [
+        {"feature": "mtf_15m_trend_above_ma_20", "operator": ">=", "value": 1},
+        {"feature": "mtf_15m_ma_slope_sign_20", "operator": ">=", "value": 1},
+        {"feature": "range_position_20", "operator": "<=", "value": 0.7},
+        {"feature": "close_location", "operator": ">=", "value": 0.45}
+      ]
+    },
+    {
+      "name": "core3_breakout_in_15m_trend",
+      "description": "Require 15m trend/slope and 1m breakout-like location near the rolling high.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "feature_filters": [
+        {"feature": "mtf_15m_trend_above_ma_20", "operator": ">=", "value": 1},
+        {"feature": "mtf_15m_ma_slope_sign_20", "operator": ">=", "value": 1},
+        {"feature": "distance_from_rolling_high", "operator": ">=", "value": -0.002},
+        {"feature": "close_location", "operator": ">=", "value": 0.6}
+      ]
+    },
+    {
+      "name": "core3_adx_15m_trend",
+      "description": "Require 15m trend/slope and stronger local ADX.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "feature_filters": [
+        {"feature": "mtf_15m_trend_above_ma_20", "operator": ">=", "value": 1},
+        {"feature": "mtf_15m_ma_slope_sign_20", "operator": ">=", "value": 1},
+        {"feature": "adx_20", "operator": ">=", "value": 20}
+      ]
+    },
+    {
+      "name": "core3_vol_exp_15m_trend",
+      "description": "Require 15m trend/slope and local volatility expansion.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "feature_filters": [
+        {"feature": "mtf_15m_trend_above_ma_20", "operator": ">=", "value": 1},
+        {"feature": "mtf_15m_ma_slope_sign_20", "operator": ">=", "value": 1},
+        {"feature": "volatility_expansion_20", "operator": ">=", "value": 1.2}
+      ]
+    }
+  ]
+}
