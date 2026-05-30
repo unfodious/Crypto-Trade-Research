@@ -1,0 +1,59 @@
+{
+  "report_name": "ct187_payoff_diagnostics",
+  "issue_id": "CT-187",
+  "epic_id": "CT-113",
+  "output_json_path": "data/generated/ct187_payoff_diagnostics/report.json",
+  "output_markdown_path": "data/generated/ct187_payoff_diagnostics/report.md",
+  "runner_thresholds_r": [1, 2, 3, 4, 5],
+  "target_runner_r": 3,
+  "min_clean_runner_share": 0.2,
+  "windows": [
+    {
+      "name": "2024H2",
+      "replay_report_path": "data/generated/ct180_2024h2_oi_high_or_europe_replay/replay_report.json"
+    },
+    {
+      "name": "2025H1",
+      "replay_report_path": "data/generated/ct180_2025h1_oi_high_or_europe_replay/replay_report.json"
+    },
+    {
+      "name": "2025JulNov",
+      "replay_report_path": "data/generated/ct180_2025julnov_oi_high_or_europe_replay/replay_report.json"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "core3_daily_cap_10",
+      "description": "CT-183 higher-return core-3 symbol set with the first 10 accepted signals per UTC day.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core4_daily_cap_10",
+      "description": "CT-184 core-4 symbol set with the first 10 accepted signals per UTC day.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SOLUSDT", "SUIUSDT"]
+    },
+    {
+      "name": "core3_rank1_daily_cap_10",
+      "description": "Core-3 rank-1 subset with the first 10 accepted signals per UTC day.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "max_rank": 1
+    },
+    {
+      "name": "core3_prob60_daily_cap_10",
+      "description": "Core-3 probability >= 0.60 subset with the first 10 accepted signals per UTC day.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "min_probability": 0.6
+    },
+    {
+      "name": "core3_expected0_daily_cap_10",
+      "description": "Core-3 expected R >= 0 subset with the first 10 accepted signals per UTC day.",
+      "max_trades_per_day": 10,
+      "allowed_symbols": ["ADAUSDT", "AVAXUSDT", "SUIUSDT"],
+      "min_expected_r": 0
+    }
+  ]
+}

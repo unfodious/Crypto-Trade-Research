@@ -42,6 +42,7 @@ crypto-trade-build-futures-metrics-selected-features = "crypto_trade_research.fu
 crypto-trade-build-sizing-stress = "crypto_trade_research.sizing_stress:main"
 crypto-trade-build-adaptive-sizing = "crypto_trade_research.adaptive_sizing:main"
 crypto-trade-build-monthly-target = "crypto_trade_research.monthly_target:main"
+crypto-trade-build-payoff-diagnostics = "crypto_trade_research.payoff_diagnostics:main"
 
 [project.optional-dependencies]
 dev = [
