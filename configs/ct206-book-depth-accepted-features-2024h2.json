@@ -1,0 +1,18 @@
+{
+  "book_depth_feature_paths": [
+    "data/generated/ct206_book_depth_features_2024_07/features/book_depth_features.parquet",
+    "data/generated/ct206_book_depth_features_2024_08/features/book_depth_features.parquet",
+    "data/generated/ct206_book_depth_features_2024_09/features/book_depth_features.parquet",
+    "data/generated/ct206_book_depth_features_2024_10/features/book_depth_features.parquet",
+    "data/generated/ct206_book_depth_features_2024_11/features/book_depth_features.parquet",
+    "data/generated/ct206_book_depth_features_2024_12/features/book_depth_features.parquet"
+  ],
+  "max_depth_age_minutes": 5,
+  "windows": [
+    {
+      "name": "ct174_2024h2_ct145_accepted_trades",
+      "selected_trades_path": "data/generated/ct174_2024h2_holdout_base_replay/ct145_no_ton_negative_funding_paper_pack/accepted_trades.parquet",
+      "output_path": "data/generated/ct206_book_depth_accepted_features/ct174_2024h2_ct145_accepted_trades.parquet"
+    }
+  ]
+}

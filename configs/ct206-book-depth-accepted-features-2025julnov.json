@@ -1,0 +1,17 @@
+{
+  "book_depth_feature_paths": [
+    "data/generated/ct206_book_depth_features_2025_07/features/book_depth_features.parquet",
+    "data/generated/ct206_book_depth_features_2025_08/features/book_depth_features.parquet",
+    "data/generated/ct206_book_depth_features_2025_09/features/book_depth_features.parquet",
+    "data/generated/ct206_book_depth_features_2025_10/features/book_depth_features.parquet",
+    "data/generated/ct206_book_depth_features_2025_11/features/book_depth_features.parquet"
+  ],
+  "max_depth_age_minutes": 5,
+  "windows": [
+    {
+      "name": "ct169_2025julnov_ct145_accepted_trades",
+      "selected_trades_path": "data/generated/ct169_older_holdout_replay/ct145_no_ton_negative_funding_paper_pack/accepted_trades.parquet",
+      "output_path": "data/generated/ct206_book_depth_accepted_features/ct169_2025julnov_ct145_accepted_trades.parquet"
+    }
+  ]
+}

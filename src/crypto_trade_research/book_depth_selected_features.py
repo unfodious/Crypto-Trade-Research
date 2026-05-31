@@ -58,14 +58,17 @@ class BookDepthSelectedWindowConfig:
 
 @dataclass(frozen=True, slots=True)
 class BookDepthSelectedFeaturesConfig:
-    book_depth_features_path: Path
+    book_depth_feature_paths: tuple[Path, ...]
     max_depth_age_minutes: int
     windows: tuple[BookDepthSelectedWindowConfig, ...]
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> BookDepthSelectedFeaturesConfig:
+        feature_paths = payload.get("book_depth_feature_paths")
+        if feature_paths is None:
+            feature_paths = (payload["book_depth_features_path"],)
         return cls(
-            book_depth_features_path=Path(str(payload["book_depth_features_path"])),
+            book_depth_feature_paths=tuple(Path(str(path)) for path in feature_paths),
             max_depth_age_minutes=int(payload.get("max_depth_age_minutes", 5)),
             windows=tuple(
                 BookDepthSelectedWindowConfig.from_dict(dict(item)) for item in payload["windows"]
@@ -92,7 +95,7 @@ def build_book_depth_selected_features(
     if config.max_depth_age_minutes <= 0:
         raise BookDepthSelectedFeaturesError("max_depth_age_minutes must be positive")
     book_depth_index = _load_book_depth_index(
-        config.book_depth_features_path,
+        config.book_depth_feature_paths,
         config.max_depth_age_minutes,
     )
     windows = []
@@ -111,27 +114,31 @@ def build_book_depth_selected_features(
             }
         )
     return {
-        "book_depth_features_path": str(config.book_depth_features_path),
+        "book_depth_feature_paths": [str(path) for path in config.book_depth_feature_paths],
         "max_depth_age_minutes": config.max_depth_age_minutes,
         "windows": windows,
     }
 
 
 def _load_book_depth_index(
-    book_depth_features_path: Path,
+    book_depth_feature_paths: tuple[Path, ...],
     max_depth_age_minutes: int,
 ) -> _BookDepthIndex:
-    if not book_depth_features_path.exists():
-        raise BookDepthSelectedFeaturesError(
-            f"missing book-depth features parquet: {book_depth_features_path}"
+    if not book_depth_feature_paths:
+        raise BookDepthSelectedFeaturesError("book_depth_feature_paths must not be empty")
+    rows = []
+    for book_depth_features_path in book_depth_feature_paths:
+        if not book_depth_features_path.exists():
+            raise BookDepthSelectedFeaturesError(
+                f"missing book-depth features parquet: {book_depth_features_path}"
+            )
+        rows.extend(
+            _normalize_feature_row(row)
+            for row in pq.read_table(
+                book_depth_features_path,
+                columns=list(FEATURE_COLUMNS),
+            ).to_pylist()
         )
-    rows = [
-        _normalize_feature_row(row)
-        for row in pq.read_table(
-            book_depth_features_path,
-            columns=list(FEATURE_COLUMNS),
-        ).to_pylist()
-    ]
     rows_by_symbol: dict[str, list[dict[str, object]]] = {}
     for row in rows:
         rows_by_symbol.setdefault(str(row["symbol"]), []).append(row)

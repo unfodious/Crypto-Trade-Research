@@ -50,7 +50,7 @@ def test_build_book_depth_selected_features_uses_point_in_time_lookup(
 
     summary = build_book_depth_selected_features(
         BookDepthSelectedFeaturesConfig(
-            book_depth_features_path=book_depth_path,
+            book_depth_feature_paths=(book_depth_path,),
             max_depth_age_minutes=5,
             windows=(
                 BookDepthSelectedWindowConfig(

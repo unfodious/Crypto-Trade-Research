@@ -127,6 +127,42 @@ class BinanceBookDepthCoverageConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class BinanceBookDepthFeatureCacheConfig:
+    symbols: tuple[str, ...]
+    start_date: date
+    end_date: date
+    output_dir: Path
+    dataset_name: str
+    generator_version: str
+    generated_at: datetime | None = None
+    venue: str = "binance"
+    market_type: str = "um_futures"
+    base_url: str = DATA_VISION_BASE_URL
+    max_workers: int = 8
+    allow_missing_files: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class BinanceBookDepthFeatureCacheManifest:
+    schema_version: str
+    dataset_name: str
+    generator_name: str
+    generator_version: str
+    generated_at: str
+    source_row_count: int
+    feature_row_count: int
+    symbols: tuple[str, ...]
+    min_depth_time: str
+    max_depth_time: str
+    source_file_count: int
+    missing_file_count: int
+    features_path: Path
+    manifest_path: Path
+    features_sha256: str
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class _BookDepthSource:
     symbol: str
     day: date
@@ -217,6 +253,99 @@ def write_binance_book_depth_coverage_report(
         config.output_markdown_path.parent.mkdir(parents=True, exist_ok=True)
         config.output_markdown_path.write_text(_coverage_markdown(report), encoding="utf-8")
     return report
+
+
+def generate_binance_book_depth_feature_cache(
+    config: BinanceBookDepthFeatureCacheConfig,
+    *,
+    fetch_zip: ZipFetcher | None = None,
+) -> BinanceBookDepthFeatureCacheManifest:
+    """Stream Data Vision book-depth files into an aggregated feature parquet cache."""
+
+    _validate_feature_cache_config(config)
+    dataset_dir = config.output_dir / config.dataset_name
+    features_path = dataset_dir / "features" / "book_depth_features.parquet"
+    manifest_path = dataset_dir / "manifest.json"
+    features_path.parent.mkdir(parents=True, exist_ok=True)
+
+    jobs = _source_urls_for(config.symbols, config.start_date, config.end_date, config.base_url)
+    fetcher = fetch_zip or _fetch_url_bytes
+    writer: pq.ParquetWriter | None = None
+    source_row_count = 0
+    feature_row_count = 0
+    source_file_count = 0
+    missing_files: list[str] = []
+    warnings: list[str] = []
+    symbols: set[str] = set()
+    min_depth_time: datetime | None = None
+    max_depth_time: datetime | None = None
+
+    worker_count = min(config.max_workers, len(jobs))
+    try:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {
+                executor.submit(_download_one_file, source, config, fetcher): source
+                for source in jobs
+            }
+            for future in as_completed(futures):
+                source = futures[future]
+                try:
+                    raw_rows = future.result()
+                except FileNotFoundError:
+                    if not config.allow_missing_files:
+                        raise
+                    missing_files.append(source.url)
+                    continue
+                cleaned_rows, file_warnings = _validate_and_sort_book_depth_rows(raw_rows)
+                feature_rows = _feature_rows_from_depth_rows(cleaned_rows, config)
+                if not feature_rows:
+                    continue
+                table = _rows_to_table(feature_rows, BOOK_DEPTH_FEATURE_COLUMNS)
+                if writer is None:
+                    writer = pq.ParquetWriter(features_path, table.schema)
+                writer.write_table(table)
+                source_file_count += 1
+                source_row_count += len(cleaned_rows)
+                feature_row_count += len(feature_rows)
+                warnings.extend(file_warnings)
+                symbols.update(str(row["symbol"]) for row in feature_rows)
+                file_min = min(_as_datetime(row["depth_time"]) for row in feature_rows)
+                file_max = max(_as_datetime(row["depth_time"]) for row in feature_rows)
+                min_depth_time = (
+                    file_min if min_depth_time is None else min(min_depth_time, file_min)
+                )
+                max_depth_time = (
+                    file_max if max_depth_time is None else max(max_depth_time, file_max)
+                )
+    finally:
+        if writer is not None:
+            writer.close()
+
+    if feature_row_count == 0 or min_depth_time is None or max_depth_time is None:
+        raise BinanceBookDepthError("book-depth feature cache source returned no rows")
+    if missing_files:
+        warnings.extend(f"missing book-depth file: {url}" for url in missing_files)
+
+    manifest = BinanceBookDepthFeatureCacheManifest(
+        schema_version=FEATURE_SCHEMA_VERSION,
+        dataset_name=config.dataset_name,
+        generator_name=GENERATOR_NAME,
+        generator_version=config.generator_version,
+        generated_at=_format_timestamp(config.generated_at or datetime.now(UTC)),
+        source_row_count=source_row_count,
+        feature_row_count=feature_row_count,
+        symbols=tuple(sorted(symbols)),
+        min_depth_time=_format_timestamp(min_depth_time),
+        max_depth_time=_format_timestamp(max_depth_time),
+        source_file_count=source_file_count,
+        missing_file_count=len(missing_files),
+        features_path=features_path,
+        manifest_path=manifest_path,
+        features_sha256=_file_sha256(features_path),
+        warnings=tuple(warnings),
+    )
+    _write_feature_cache_manifest(manifest, config)
+    return manifest
 
 
 def _download_book_depth_rows(
@@ -597,6 +726,15 @@ def _validate_dataset_config(config: BinanceBookDepthDatasetConfig) -> None:
         raise BinanceBookDepthError("max_workers must be positive")
 
 
+def _validate_feature_cache_config(config: BinanceBookDepthFeatureCacheConfig) -> None:
+    if not config.symbols:
+        raise BinanceBookDepthError("symbols must not be empty")
+    if config.end_date <= config.start_date:
+        raise BinanceBookDepthError("end_date must be after start_date")
+    if config.max_workers <= 0:
+        raise BinanceBookDepthError("max_workers must be positive")
+
+
 def _validate_coverage_config(config: BinanceBookDepthCoverageConfig) -> None:
     if not config.symbols:
         raise BinanceBookDepthError("symbols must not be empty")
@@ -613,10 +751,14 @@ def _validate_coverage_config(config: BinanceBookDepthCoverageConfig) -> None:
 
 def _write_rows(path: Path, rows: Sequence[dict[str, object]], columns: Sequence[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(_rows_to_table(rows, columns), path)
+
+
+def _rows_to_table(rows: Sequence[dict[str, object]], columns: Sequence[str]) -> pa.Table:
     serializable_rows = [
         {column: _to_arrow_value(row[column]) for column in columns} for row in rows
     ]
-    pq.write_table(pa.Table.from_pylist(serializable_rows), path)
+    return pa.Table.from_pylist(serializable_rows)
 
 
 def _write_manifest(
@@ -633,6 +775,29 @@ def _write_manifest(
         "end_date": config.end_date.isoformat(),
         "end_date_exclusive": True,
         "allow_missing_files": config.allow_missing_files,
+    }
+    manifest.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest.manifest_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_feature_cache_manifest(
+    manifest: BinanceBookDepthFeatureCacheManifest,
+    config: BinanceBookDepthFeatureCacheConfig,
+) -> None:
+    payload = asdict(manifest)
+    for field_name in ("features_path", "manifest_path"):
+        payload[field_name] = str(payload[field_name])
+    payload["source"] = {
+        "format": "binance_data_vision_usdm_daily_book_depth_zip",
+        "base_url": config.base_url,
+        "start_date": config.start_date.isoformat(),
+        "end_date": config.end_date.isoformat(),
+        "end_date_exclusive": True,
+        "allow_missing_files": config.allow_missing_files,
+        "features_only": True,
     }
     manifest.manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest.manifest_path.write_text(
@@ -798,6 +963,24 @@ def _parse_cli_args() -> argparse.Namespace:
     ingest.add_argument("--max-workers", type=int, default=8)
     ingest.add_argument("--allow-missing-files", action="store_true")
 
+    feature_cache = subparsers.add_parser(
+        "feature-cache",
+        help="Stream bookDepth zip files into an aggregated feature parquet cache.",
+    )
+    feature_cache.add_argument("--symbols", required=True, help="Comma-separated USD-M symbols.")
+    feature_cache.add_argument("--start-date", required=True, help="Inclusive ISO start date.")
+    feature_cache.add_argument("--end-date", required=True, help="Exclusive ISO end date.")
+    feature_cache.add_argument("--output-dir", type=Path, required=True)
+    feature_cache.add_argument("--dataset-name", required=True)
+    feature_cache.add_argument("--generator-version", required=True)
+    feature_cache.add_argument(
+        "--generated-at",
+        help="Optional RFC3339 timestamp for deterministic runs.",
+    )
+    feature_cache.add_argument("--base-url", default=DATA_VISION_BASE_URL)
+    feature_cache.add_argument("--max-workers", type=int, default=8)
+    feature_cache.add_argument("--allow-missing-files", action="store_true")
+
     coverage = subparsers.add_parser("coverage", help="HEAD-check bookDepth archive coverage.")
     coverage.add_argument("--symbols", required=True, help="Comma-separated USD-M symbols.")
     coverage.add_argument(
@@ -832,6 +1015,24 @@ def main() -> None:
     generated_at = (
         _parse_timestamp(args.generated_at, "generated_at") if args.generated_at else None
     )
+    if args.command == "feature-cache":
+        manifest = generate_binance_book_depth_feature_cache(
+            BinanceBookDepthFeatureCacheConfig(
+                symbols=_parse_symbols(args.symbols),
+                start_date=_parse_date(args.start_date, "start_date"),
+                end_date=_parse_date(args.end_date, "end_date"),
+                output_dir=args.output_dir,
+                dataset_name=args.dataset_name,
+                generator_version=args.generator_version,
+                generated_at=generated_at,
+                base_url=args.base_url,
+                max_workers=args.max_workers,
+                allow_missing_files=args.allow_missing_files,
+            )
+        )
+        print(manifest.manifest_path)
+        return
+
     manifest = generate_binance_book_depth_dataset(
         BinanceBookDepthDatasetConfig(
             symbols=_parse_symbols(args.symbols),

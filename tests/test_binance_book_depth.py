@@ -13,7 +13,9 @@ from crypto_trade_research.data.binance_book_depth import (
     BinanceBookDepthCoverageConfig,
     BinanceBookDepthDatasetConfig,
     BinanceBookDepthError,
+    BinanceBookDepthFeatureCacheConfig,
     generate_binance_book_depth_dataset,
+    generate_binance_book_depth_feature_cache,
     write_binance_book_depth_coverage_report,
 )
 
@@ -144,6 +146,45 @@ def test_write_binance_book_depth_coverage_report(tmp_path: Path) -> None:
     assert "ETHUSDT" in markdown
 
 
+def test_generate_binance_book_depth_feature_cache_streams_features_only(
+    tmp_path: Path,
+) -> None:
+    manifest = generate_binance_book_depth_feature_cache(
+        BinanceBookDepthFeatureCacheConfig(
+            symbols=("BTCUSDT",),
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 1, 3),
+            output_dir=tmp_path,
+            dataset_name="unit_book_depth_feature_cache",
+            generator_version="unit.v1",
+            generated_at=datetime(2026, 1, 4, tzinfo=UTC),
+            max_workers=2,
+        ),
+        fetch_zip=_fake_fetch_zip(
+            {
+                "BTCUSDT-bookDepth-2026-01-01.zip": [_rows_for_timestamp("2026-01-01 00:00:01")],
+                "BTCUSDT-bookDepth-2026-01-02.zip": [
+                    _rows_for_timestamp("2026-01-02 00:00:01", bid_multiplier=2)
+                ],
+            }
+        ),
+    )
+
+    assert manifest.source_row_count == 20
+    assert manifest.feature_row_count == 2
+    assert manifest.source_file_count == 2
+    assert manifest.missing_file_count == 0
+    assert manifest.min_depth_time == "2026-01-01T00:00:01Z"
+    assert manifest.max_depth_time == "2026-01-02T00:00:01Z"
+
+    rows = pq.read_table(manifest.features_path).to_pylist()
+    assert len(rows) == 2
+    assert {row["bd_band_count"] for row in rows} == {10}
+    assert len(manifest.features_sha256) == 64
+    manifest_payload = json.loads(manifest.manifest_path.read_text(encoding="utf-8"))
+    assert manifest_payload["source"]["features_only"] is True
+
+
 def _rows_for_timestamp(timestamp: str, *, bid_multiplier: int = 1) -> list[str]:
     rows = []
     for band in BANDS:
@@ -156,8 +197,9 @@ def _rows_for_timestamp(timestamp: str, *, bid_multiplier: int = 1) -> list[str]
 
 def _fake_fetch_zip(rows_by_symbol: dict[str, list[list[str]]]):
     def fetch(url: str) -> bytes:
-        for symbol, row_groups in rows_by_symbol.items():
-            if f"/{symbol}/" in url:
+        file_name = Path(url).name
+        for key, row_groups in rows_by_symbol.items():
+            if f"/{key}/" in url or key == file_name:
                 return _zip_csv(
                     f"{Path(url).stem}.csv",
                     [row for rows in row_groups for row in rows],
