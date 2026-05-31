@@ -611,6 +611,56 @@ def test_spot_drawdown_swing_exits_failed_breakout_only_near_breakeven() -> None
     assert _position_exit_reason(position, losing_row, rows, scenario, 0.0) is None
 
 
+def test_spot_drawdown_swing_supports_controlled_loss_exits() -> None:
+    now = datetime(2026, 1, 1, 16, tzinfo=UTC)
+    rows = [
+        _row("SOLUSDT", now - timedelta(hours=12), 100, 101, 99, 100, 0),
+        _row("SOLUSDT", now, 100, 101, 89, 90, 12),
+    ]
+    base_config = {
+        "name": "unit_controlled_loss",
+        "description": "unit",
+        "drawdown_lookback_hours": 2,
+        "min_drawdown_pct": 0.01,
+        "min_reclaim_return_pct": -1.0,
+        "max_rsi": 100,
+        "min_rsi_rebound": -100,
+        "min_close_location": 0.0,
+        "min_lower_wick_ratio": 0.0,
+        "profit_target_pct": 0.05,
+        "min_hold_hours": 1,
+        "max_hold_hours": 24,
+    }
+    position = {
+        "symbol": "SOLUSDT",
+        "entry_time": _timestamp(rows[0]),
+        "qty": 1.0,
+        "cost_usd": 100.0,
+        "realized_cost_usd": 0.0,
+        "realized_value_usd": 0.0,
+        "lot_count": 1,
+        "dca_count": 0,
+        "partial_exit_count": 0,
+        "max_adverse_pct": -0.1,
+        "max_favorable_pct": 0.0,
+    }
+
+    stop_scenario = SpotSwingScenario.from_dict({**base_config, "emergency_stop_loss_pct": 0.08})
+    assert (
+        _position_exit_reason(position, rows[-1], rows, stop_scenario, 0.0) == "emergency_stop_loss"
+    )
+
+    timeout_scenario = SpotSwingScenario.from_dict(
+        {
+            **base_config,
+            "emergency_stop_loss_pct": 0.20,
+            "loss_timeout_hours": 12,
+            "loss_timeout_exit_max_net_return_pct": -0.05,
+        }
+    )
+    assert _position_exit_reason(position, rows[-1], rows, timeout_scenario, 0.0) == "loss_timeout"
+
+
 def test_spot_drawdown_swing_dca_requires_prior_followthrough() -> None:
     scenario = SpotSwingScenario.from_dict(
         {

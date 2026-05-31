@@ -88,6 +88,9 @@ class SpotSwingScenario:
     max_breakout_range_pct: float | None = None
     stale_exit_hold_hours: int | None = None
     stale_exit_min_net_return_pct: float = 0.0
+    emergency_stop_loss_pct: float | None = None
+    loss_timeout_hours: int | None = None
+    loss_timeout_exit_max_net_return_pct: float = 0.0
     failed_breakout_hold_hours: int | None = None
     min_failed_breakout_followthrough_pct: float = 0.0
     failed_breakout_exit_min_net_return_pct: float = 0.0
@@ -164,6 +167,11 @@ class SpotSwingScenario:
             max_breakout_range_pct=_optional_float(payload.get("max_breakout_range_pct")),
             stale_exit_hold_hours=_optional_int(payload.get("stale_exit_hold_hours")),
             stale_exit_min_net_return_pct=float(payload.get("stale_exit_min_net_return_pct", 0.0)),
+            emergency_stop_loss_pct=_optional_float(payload.get("emergency_stop_loss_pct")),
+            loss_timeout_hours=_optional_int(payload.get("loss_timeout_hours")),
+            loss_timeout_exit_max_net_return_pct=float(
+                payload.get("loss_timeout_exit_max_net_return_pct", 0.0)
+            ),
             failed_breakout_hold_hours=_optional_int(payload.get("failed_breakout_hold_hours")),
             min_failed_breakout_followthrough_pct=float(
                 payload.get("min_failed_breakout_followthrough_pct", 0.0)
@@ -588,6 +596,11 @@ def _portfolio_scenario_report(
         "failed_breakout_exit_count": sum(
             1 for position in closed if position.get("exit_reason") == "failed_breakout_breakeven"
         ),
+        "controlled_loss_exit_count": sum(
+            1
+            for position in closed
+            if position.get("exit_reason") in {"emergency_stop_loss", "loss_timeout"}
+        ),
         "average_net_return_pct": _mean(
             [_as_float(report["portfolio_return_pct"]) for report in reports]
         ),
@@ -798,6 +811,11 @@ def _portfolio_window_report(
             for position in completed
             if position.get("exit_reason") == "failed_breakout_breakeven"
         ),
+        "controlled_loss_exit_count": sum(
+            1
+            for position in completed
+            if position.get("exit_reason") in {"emergency_stop_loss", "loss_timeout"}
+        ),
         "average_net_return_pct": _return(final_equity, initial_cash),
         "average_closed_net_return_pct": _mean(closed_returns),
         "average_open_unrealized_pct": _mean(open_returns),
@@ -964,7 +982,12 @@ def _apply_failed_breakout_cooldown(
 ) -> None:
     if scenario.failed_breakout_cooldown_hours is None:
         return
-    if exit_reason not in {"failed_breakout_breakeven", "stale_breakeven"}:
+    if exit_reason not in {
+        "emergency_stop_loss",
+        "failed_breakout_breakeven",
+        "loss_timeout",
+        "stale_breakeven",
+    }:
         return
     cooldown_until_time[symbol] = _as_datetime(row["close_time"]) + timedelta(
         hours=scenario.failed_breakout_cooldown_hours
@@ -1393,6 +1416,9 @@ def _position_exit_reason(
     fee_rate: float,
 ) -> str | None:
     current_return = _position_net_return(position, row, fee_rate)
+    controlled_loss_reason = _controlled_loss_exit_reason(position, row, scenario, fee_rate)
+    if controlled_loss_reason is not None:
+        return controlled_loss_reason
     if current_return >= scenario.profit_target_pct and _rebound_is_fading_in_row(rows, row):
         return "profit_fade"
     stale_reason = _stale_position_exit_reason(position, row, scenario, fee_rate)
@@ -1407,6 +1433,26 @@ def _position_exit_reason(
         and current_return <= peak_return - scenario.trailing_stop_from_peak_pct
     ):
         return "trailing_stop"
+    return None
+
+
+def _controlled_loss_exit_reason(
+    position: dict[str, object],
+    row: dict[str, object],
+    scenario: SpotSwingScenario,
+    fee_rate: float,
+) -> str | None:
+    lifecycle_return = _position_lifecycle_return(position, row, fee_rate)
+    if scenario.emergency_stop_loss_pct is not None and lifecycle_return <= -abs(
+        scenario.emergency_stop_loss_pct
+    ):
+        return "emergency_stop_loss"
+    if (
+        scenario.loss_timeout_hours is not None
+        and _position_holding_hours(position, row) >= scenario.loss_timeout_hours
+        and lifecycle_return <= scenario.loss_timeout_exit_max_net_return_pct
+    ):
+        return "loss_timeout"
     return None
 
 
