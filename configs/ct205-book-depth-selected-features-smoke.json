@@ -1,0 +1,11 @@
+{
+  "book_depth_features_path": "data/generated/ct205_book_depth_join_sample/features/book_depth_features.parquet",
+  "max_depth_age_minutes": 5,
+  "windows": [
+    {
+      "name": "ct172_h1_2025_ct145_selected_trades_20250203_smoke",
+      "selected_trades_path": "data/generated/ct172_pre_july_2025_holdout_replay/ct145_no_ton_negative_funding_paper_pack/selected_trades.parquet",
+      "output_path": "data/generated/ct205_book_depth_selected_features/ct172_h1_2025_ct145_selected_trades.parquet"
+    }
+  ]
+}
