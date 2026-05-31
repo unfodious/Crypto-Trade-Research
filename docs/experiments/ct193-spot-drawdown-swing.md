@@ -317,10 +317,10 @@ Artifacts:
 
 | lookahead | scenario | avg return | 2024H1 | 2024H2 | 2025H1 | 2025JulNov | worst DD | closed | open | gate |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| no lookahead | `portfolio_dd8_spot_baseline_guard_1000` | `6.16%` | `8.43%` | `4.67%` | `8.27%` | `3.26%` | `-11.28%` | `46` | `1` | `False` |
-| no lookahead | `portfolio_dd8_symbol_30d_momentum_rotation_1000` | `3.12%` | `2.08%` | `6.96%` | `1.17%` | `2.25%` | `-11.59%` | `23` | `0` | `False` |
-| no lookahead | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `3.06%` | `3.32%` | `3.23%` | `1.30%` | `4.41%` | `-8.99%` | `24` | `0` | `False` |
-| no lookahead | `portfolio_dd8_symbol_30d_partial_trail_1000` | `2.36%` | `2.18%` | `4.51%` | `0.49%` | `2.25%` | `-11.59%` | `17` | `0` | `False` |
+| no lookahead | `portfolio_dd8_spot_baseline_guard_1000` | `5.16%` | `9.24%` | `4.67%` | `9.21%` | `-2.49%` | `-4.86%` | `49` | `2` | `False` |
+| no lookahead | `portfolio_dd8_symbol_30d_momentum_rotation_1000` | `3.12%` | `2.08%` | `6.96%` | `1.17%` | `2.25%` | `-4.92%` | `23` | `0` | `False` |
+| no lookahead | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `3.32%` | `4.35%` | `3.23%` | `1.30%` | `4.41%` | `-3.58%` | `25` | `0` | `False` |
+| no lookahead | `portfolio_dd8_symbol_30d_partial_trail_1000` | `2.36%` | `2.18%` | `4.51%` | `0.49%` | `2.25%` | `-4.32%` | `17` | `0` | `False` |
 | 24h | `portfolio_dd8_spot_baseline_guard_1000` | `2.34%` | `4.60%` | `2.87%` | `1.28%` | `0.63%` | `-1.21%` | `23` | `0` | `False` |
 | 24h | `portfolio_dd8_symbol_30d_momentum_rotation_1000` | `0.61%` | `0.00%` | `2.13%` | `0.00%` | `0.32%` | `-0.71%` | `6` | `0` | `False` |
 | 24h | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `0.42%` | `0.51%` | `0.84%` | `0.00%` | `0.32%` | `-0.40%` | `6` | `0` | `False` |
@@ -340,8 +340,8 @@ Artifacts:
 
 Interpretation:
 
-- no-lookahead gives the best sample size (`46` closed in the best row) and best average return (`6.16%`),
-  but it still leaves one open position and breaches the max drawdown gate (`-11.28%` / `-11.59%` rows).
+- no-lookahead gives the best sample size (`49` closed in the best row) and best average return (`5.16%`),
+  but it still leaves two open positions and has a negative `2025JulNov` window.
 - a `120h` lookahead drastically reduces worst-case drawdown to better than `-1.7%` while keeping
   returns in positive territory, but it lowers volume and drops the best row to `4.37%`, below the `5%`
   target.
@@ -365,24 +365,25 @@ Artifacts:
 
 | scenario | avg return | 2024H1 | 2024H2 | 2025H1 | 2025JulNov | avg max PnL DD | closed | open |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `portfolio_dd8_spot_baseline_guard_1000` (15m) | -0.39% | -6.40% | 1.65% | 2.09% | 1.10% | -3.97% | 20 | 1 |
-| `portfolio_dd8_symbol_30d_partial_trail_1000` (15m) | 0.41% | 0.51% | 0.70% | 0.00% | 0.42% | -0.54% | 4 | 0 |
-| `portfolio_dd8_symbol_30d_momentum_rotation_1000` (15m) | 1.13% | 1.83% | 2.29% | 0.00% | 0.42% | -0.75% | 10 | 0 |
-| `portfolio_dd8_basket_14d_momentum_rotation_1000` (15m) | 0.67% | 1.90% | 0.37% | 0.00% | 0.42% | -0.86% | 6 | 0 |
+| `portfolio_dd8_spot_baseline_guard_1000` (15m) | -2.99% | -16.79% | 1.65% | 2.09% | 1.10% | -6.51% | 18 | 2 |
+| `portfolio_dd8_symbol_30d_partial_trail_1000` (15m) | -2.52% | -11.20% | 0.70% | 0.00% | 0.42% | -3.79% | 4 | 2 |
+| `portfolio_dd8_symbol_30d_momentum_rotation_1000` (15m) | -2.03% | -10.83% | 2.29% | 0.00% | 0.42% | -3.76% | 9 | 2 |
+| `portfolio_dd8_basket_14d_momentum_rotation_1000` (15m) | -1.49% | -6.76% | 0.37% | 0.00% | 0.42% | -2.89% | 5 | 1 |
 | `portfolio_dd8_spot_baseline_guard_1000` (30m) | 2.69% | 2.05% | 1.93% | 3.63% | 3.14% | -0.88% | 25 | 0 |
 | `portfolio_dd8_symbol_30d_partial_trail_1000` (30m) | 0.94% | 0.98% | 1.34% | 0.36% | 1.08% | -0.60% | 9 | 0 |
 | `portfolio_dd8_symbol_30d_momentum_rotation_1000` (30m) | 1.18% | 0.98% | 1.33% | 1.33% | 1.08% | -1.21% | 11 | 0 |
 | `portfolio_dd8_basket_14d_momentum_rotation_1000` (30m) | 0.93% | 2.39% | 1.86% | 0.00% | -0.52% | -1.04% | 13 | 1 |
-| `portfolio_dd8_spot_baseline_guard_1000` (4h) | -0.52% | 5.31% | 0.04% | -4.73% | -2.71% | -8.14% | 34 | 6 |
-| `portfolio_dd8_symbol_30d_partial_trail_1000` (4h) | 0.80% | 0.37% | 2.84% | 0.00% | 0.00% | -0.27% | 6 | 0 |
-| `portfolio_dd8_symbol_30d_momentum_rotation_1000` (4h) | -0.76% | 0.37% | -3.39% | 0.00% | 0.00% | -1.54% | 7 | 2 |
-| `portfolio_dd8_basket_14d_momentum_rotation_1000` (4h) | 2.03% | 2.09% | 4.71% | 0.00% | 1.31% | -0.89% | 22 | 1 |
+| `portfolio_dd8_spot_baseline_guard_1000` (4h) | -5.14% | -13.62% | 1.17% | -5.41% | -2.71% | -11.92% | 31 | 9 |
+| `portfolio_dd8_symbol_30d_partial_trail_1000` (4h) | -0.71% | 0.54% | -2.64% | -0.74% | 0.00% | -3.06% | 7 | 4 |
+| `portfolio_dd8_symbol_30d_momentum_rotation_1000` (4h) | -1.77% | 1.25% | -5.50% | -2.82% | 0.00% | -4.65% | 10 | 6 |
+| `portfolio_dd8_basket_14d_momentum_rotation_1000` (4h) | -2.36% | -5.01% | 0.40% | -6.15% | 1.31% | -6.31% | 23 | 8 |
 
 Interpretation:
 
 - `30m` is the cleanest cadence so far: no open positions in top rows and lower adverse portfolio drawdown than `4h`.
 - The best result remains below the `+5%` avg-window target across all rows (`2.69%` top in `30m` baseline).
-- `4h` still has mixed behavior: better per-trade returns in some windows but unresolved inventory and weak `2025H1` for baseline.
+- `4h` becomes clearly worse once no-lookahead is enforced: all selected rows have negative average
+  returns and unresolved inventory.
 - No candidate from this cadence sweep passes the CT-113 working-model gate.
 
 

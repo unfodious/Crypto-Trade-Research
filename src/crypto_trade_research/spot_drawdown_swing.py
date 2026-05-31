@@ -66,6 +66,10 @@ class SpotSwingScenario:
     entry_rank_lookback_hours: int | None = None
     max_entry_rank_pct: float | None = None
     min_entry_rank_return_pct: float | None = None
+    breakout_lookback_hours: int | None = None
+    min_breakout_close_pct: float = 0.0
+    min_breakout_volume_ratio: float | None = None
+    max_breakout_range_pct: float | None = None
     entry_end_buffer_hours: int | None = None
     sell_only_profitable: bool = False
     portfolio_cash_usd: float | None = None
@@ -126,6 +130,10 @@ class SpotSwingScenario:
             entry_rank_lookback_hours=_optional_int(payload.get("entry_rank_lookback_hours")),
             max_entry_rank_pct=_optional_float(payload.get("max_entry_rank_pct")),
             min_entry_rank_return_pct=_optional_float(payload.get("min_entry_rank_return_pct")),
+            breakout_lookback_hours=_optional_int(payload.get("breakout_lookback_hours")),
+            min_breakout_close_pct=float(payload.get("min_breakout_close_pct", 0.0)),
+            min_breakout_volume_ratio=_optional_float(payload.get("min_breakout_volume_ratio")),
+            max_breakout_range_pct=_optional_float(payload.get("max_breakout_range_pct")),
             entry_end_buffer_hours=_optional_int(payload.get("entry_end_buffer_hours")),
             sell_only_profitable=bool(payload.get("sell_only_profitable", False)),
             portfolio_cash_usd=_optional_float(payload.get("portfolio_cash_usd")),
@@ -942,6 +950,7 @@ def _portfolio_entry_passes(
         _hours_since_low(lookback_rows),
         _recent_return(rows, index, scenario),
         _positive_close_count(rows, index, scenario.min_positive_closes),
+        _breakout_confirmation_passes(rows, index, scenario),
     )
 
 
@@ -1218,6 +1227,7 @@ def _scenario_trades(
             hours_since_low,
             recent_return,
             positive_closes,
+            _breakout_confirmation_passes(rows, index, scenario),
         ):
             index += 1
             continue
@@ -1236,11 +1246,9 @@ def _entry_can_reach_profit(
     rows: list[dict[str, object]],
     row: dict[str, object],
 ) -> bool:
-    lookahead_hours = (
-        scenario.entry_profit_lookahead_hours
-        if scenario.entry_profit_lookahead_hours is not None
-        else len(rows) - 1 - int(row["_index"])
-    )
+    if scenario.entry_profit_lookahead_hours is None:
+        return True
+    lookahead_hours = scenario.entry_profit_lookahead_hours
     if lookahead_hours <= scenario.min_hold_hours:
         return False
     entry_index = int(row["_index"])
@@ -1266,6 +1274,7 @@ def _entry_passes(
     hours_since_low: int,
     recent_return: float | None,
     positive_closes: int,
+    breakout_confirmed: bool,
 ) -> bool:
     rsi = row.get("rsi_14")
     rsi_delta = row.get("rsi_delta")
@@ -1294,7 +1303,44 @@ def _entry_passes(
         and _as_float(rsi_delta) >= scenario.min_rsi_rebound
         and _as_float(row["close_location"]) >= scenario.min_close_location
         and _as_float(row["lower_wick_ratio"]) >= scenario.min_lower_wick_ratio
+        and breakout_confirmed
     )
+
+
+def _breakout_confirmation_passes(
+    rows: list[dict[str, object]],
+    index: int,
+    scenario: SpotSwingScenario,
+) -> bool:
+    if scenario.breakout_lookback_hours is None:
+        return True
+    lookback = scenario.breakout_lookback_hours
+    if lookback <= 0:
+        return True
+    if index < lookback:
+        return False
+
+    previous_rows = rows[index - lookback : index]
+    if not previous_rows:
+        return False
+    breakout_level = max(_as_float(row["high"]) for row in previous_rows)
+    current_close = _as_float(rows[index]["close"])
+    if current_close < breakout_level * (1 + scenario.min_breakout_close_pct):
+        return False
+
+    if scenario.max_breakout_range_pct is not None:
+        previous_high = max(_as_float(row["high"]) for row in previous_rows)
+        previous_low = min(_as_float(row["low"]) for row in previous_rows)
+        if _return(previous_high, previous_low) > scenario.max_breakout_range_pct:
+            return False
+
+    if scenario.min_breakout_volume_ratio is not None:
+        average_volume = _mean([_as_float(row["volume"]) for row in previous_rows])
+        volume_ratio = _as_float(rows[index]["volume"]) / average_volume if average_volume else 0.0
+        if volume_ratio < scenario.min_breakout_volume_ratio:
+            return False
+
+    return True
 
 
 def _hours_since_low(rows: list[dict[str, object]]) -> int:

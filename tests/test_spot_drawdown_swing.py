@@ -8,6 +8,7 @@ import pyarrow.parquet as pq
 from crypto_trade_research.spot_drawdown_swing import (
     SpotDrawdownSwingConfig,
     SpotSwingScenario,
+    _breakout_confirmation_passes,
     _entry_can_reach_profit,
     _entry_rank_passes,
     _rotate_positions,
@@ -453,6 +454,28 @@ def test_spot_drawdown_swing_entry_profit_lookahead_filter() -> None:
         }
     )
     scenario = config.scenarios[0]
+    no_lookahead_scenario = SpotSwingScenario.from_dict(
+        {
+            "name": "unit_no_lookahead",
+            "description": "unit",
+            "drawdown_lookback_hours": 1,
+            "min_drawdown_pct": 0.01,
+            "min_reclaim_return_pct": -1.0,
+            "max_rsi": 100,
+            "min_rsi_rebound": -100,
+            "min_close_location": 0.0,
+            "min_lower_wick_ratio": 0.0,
+            "profit_target_pct": 0.05,
+            "min_hold_hours": 1,
+            "max_hold_hours": 24,
+        }
+    )
+    assert _entry_can_reach_profit(
+        config=config,
+        scenario=no_lookahead_scenario,
+        rows=rows,
+        row=rows[0],
+    )
     assert not _entry_can_reach_profit(
         scenario=scenario,
         rows=rows,
@@ -484,6 +507,48 @@ def test_spot_drawdown_swing_entry_profit_lookahead_filter() -> None:
         rows=optimistic_rows,
         row=rows[0],
     )
+
+
+def test_spot_drawdown_swing_breakout_confirmation_requires_range_and_volume() -> None:
+    now = datetime(2026, 1, 1, 16, tzinfo=UTC)
+    rows = [
+        _row("SOLUSDT", now - timedelta(hours=4), 100, 101, 99, 100, 0),
+        _row("SOLUSDT", now - timedelta(hours=3), 100, 102, 99, 101, 1),
+        _row("SOLUSDT", now - timedelta(hours=2), 101, 102, 100, 101, 2),
+        _row("SOLUSDT", now - timedelta(hours=1), 101, 102, 100, 101.5, 3),
+        _row("SOLUSDT", now, 102, 106, 101, 103.5, 4),
+    ]
+    rows[-1]["volume"] = 1800.0
+    scenario = SpotSwingScenario.from_dict(
+        {
+            "name": "unit_confirmed_breakout",
+            "description": "unit",
+            "drawdown_lookback_hours": 4,
+            "min_drawdown_pct": 0.01,
+            "min_reclaim_return_pct": -1.0,
+            "max_rsi": 100,
+            "min_rsi_rebound": -100,
+            "min_close_location": 0.0,
+            "min_lower_wick_ratio": 0.0,
+            "profit_target_pct": 0.05,
+            "min_hold_hours": 1,
+            "max_hold_hours": 24,
+            "breakout_lookback_hours": 4,
+            "min_breakout_close_pct": 0.005,
+            "min_breakout_volume_ratio": 1.5,
+            "max_breakout_range_pct": 0.04,
+        }
+    )
+
+    assert _breakout_confirmation_passes(rows, 4, scenario)
+
+    low_volume_rows = [dict(row) for row in rows]
+    low_volume_rows[-1]["volume"] = 1000.0
+    assert not _breakout_confirmation_passes(low_volume_rows, 4, scenario)
+
+    wide_range_rows = [dict(row) for row in rows]
+    wide_range_rows[0]["low"] = 90.0
+    assert not _breakout_confirmation_passes(wide_range_rows, 4, scenario)
 
 
 def _write_dataset(tmp_path: Path) -> Path:

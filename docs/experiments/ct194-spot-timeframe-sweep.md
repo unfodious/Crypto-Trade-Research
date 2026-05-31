@@ -65,9 +65,9 @@ No-lookahead best rows:
 
 | timeframe | best scenario | avg return | 2024H1 | 2024H2 | 2025H1 | 2025JulNov | avg max PnL DD | closed | open | gate |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| `15m` | `portfolio_dd8_symbol_30d_momentum_rotation_1000` | `1.13%` | `1.83%` | `2.29%` | `0.00%` | `0.42%` | `-0.75%` | `10` | `0` | fail |
+| `15m` | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `-1.49%` | `-6.76%` | `0.37%` | `0.00%` | `0.42%` | `-2.89%` | `5` | `1` | fail |
 | `30m` | `portfolio_dd8_spot_baseline_guard_1000` | `2.69%` | `2.05%` | `1.93%` | `3.63%` | `3.14%` | `-0.88%` | `25` | `0` | fail |
-| `4h` | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `2.03%` | `2.09%` | `4.71%` | `0.00%` | `1.31%` | `-0.89%` | `22` | `1` | fail |
+| `4h` | `portfolio_dd8_symbol_30d_partial_trail_1000` | `-0.71%` | `0.54%` | `-2.64%` | `-0.74%` | `0.00%` | `-3.06%` | `7` | `4` | fail |
 
 We then ran a diagnostic oracle timing gate with `entry_profit_lookahead_hours` in
 `{24, 48, 72, 120}`. This gate uses future candles and is not tradable; it only answers whether
@@ -83,7 +83,8 @@ Follow-up decision:
 
 - `30m` remains the cleanest selected cadence, but its best row is still far below the `+5%`
   average-window gate and far below the user's desired month-sized return profile.
-- `15m` is too sparse, and `4h` keeps some unresolved inventory or inactive windows.
+- `15m` and `4h` become negative once no-lookahead is enforced; both also retain unresolved inventory
+  in their best rows.
 - Even the future-informed oracle timing gate fails, so CT-194 should not continue with nearby
   timing-threshold tuning inside this same spot drawdown/rotation rule family.
 
