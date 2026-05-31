@@ -109,6 +109,10 @@ def test_spot_drawdown_swing_portfolio_dca_reports_cash_cap(tmp_path: Path) -> N
     assert scenario["by_window"][0]["initial_cash_usd"] == 250
     assert "monthly_returns" in scenario["by_window"][0]
     assert "max_portfolio_drawdown_pct" in scenario["by_window"][0]
+    assert scenario["average_capital_utilization_pct"] > 0
+    assert scenario["average_idle_cash_pct"] < 1
+    assert scenario["by_window"][0]["max_capital_utilization_pct"] > 0
+    assert "average_open_position_count" in scenario["by_window"][0]["monthly_returns"][0]
     assert scenario["trade_count"] >= 1
 
 

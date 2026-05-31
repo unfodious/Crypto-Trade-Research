@@ -608,6 +608,18 @@ def _portfolio_scenario_report(
         "profit_factor": _profit_factor(
             [_as_float(position["net_return_pct"]) for position in closed]
         ),
+        "average_capital_utilization_pct": _mean(
+            [_as_float(report["average_capital_utilization_pct"]) for report in reports]
+        ),
+        "average_idle_cash_pct": _mean(
+            [_as_float(report["average_idle_cash_pct"]) for report in reports]
+        ),
+        "average_max_capital_utilization_pct": _mean(
+            [_as_float(report["max_capital_utilization_pct"]) for report in reports]
+        ),
+        "average_open_position_count": _mean(
+            [_as_float(report["average_open_position_count"]) for report in reports]
+        ),
         "average_holding_hours": _mean(
             [_as_float(position["holding_hours"]) for position in positions]
         ),
@@ -723,15 +735,23 @@ def _portfolio_window_report(
             fee_rate,
         )
 
+        invested_market_value = sum(
+            _position_value(position, current_rows[symbol], fee_rate)
+            for symbol, position in positions.items()
+            if symbol in current_rows
+        )
+        equity_usd = cash + invested_market_value
         equity_curve.append(
             {
                 "decision_time": decision_time,
-                "equity_usd": cash
-                + sum(
-                    _position_value(position, current_rows[symbol], fee_rate)
-                    for symbol, position in positions.items()
-                    if symbol in current_rows
+                "equity_usd": equity_usd,
+                "cash_usd": cash,
+                "invested_market_value_usd": invested_market_value,
+                "capital_utilization_pct": (
+                    invested_market_value / equity_usd if equity_usd > 0 else 0.0
                 ),
+                "idle_cash_pct": cash / equity_usd if equity_usd > 0 else 0.0,
+                "open_position_count": len(positions),
             }
         )
 
@@ -789,6 +809,7 @@ def _portfolio_window_report(
         ),
         "profit_factor": _profit_factor(closed_returns),
         "max_portfolio_drawdown_pct": _max_equity_drawdown(equity_curve),
+        **_capital_utilization_metrics(equity_curve),
         "monthly_returns": _monthly_returns(equity_curve),
         "positions": all_positions,
     }
@@ -1842,18 +1863,35 @@ def _max_equity_drawdown(equity_curve: list[dict[str, object]]) -> float:
 
 
 def _monthly_returns(equity_curve: list[dict[str, object]]) -> list[dict[str, object]]:
-    by_month: dict[str, list[float]] = defaultdict(list)
+    by_month: dict[str, list[dict[str, object]]] = defaultdict(list)
     for point in equity_curve:
         decision_time = _as_datetime(point["decision_time"])
-        by_month[decision_time.strftime("%Y-%m")].append(_as_float(point["equity_usd"]))
+        by_month[decision_time.strftime("%Y-%m")].append(point)
     return [
         {
             "month": month,
-            "return_pct": _return(values[-1], values[0]),
+            "return_pct": _return(
+                _as_float(points[-1]["equity_usd"]),
+                _as_float(points[0]["equity_usd"]),
+            ),
+            **_capital_utilization_metrics(points),
         }
-        for month, values in sorted(by_month.items())
-        if values
+        for month, points in sorted(by_month.items())
+        if points
     ]
+
+
+def _capital_utilization_metrics(equity_curve: list[dict[str, object]]) -> dict[str, object]:
+    utilization = [_as_float(point.get("capital_utilization_pct", 0.0)) for point in equity_curve]
+    idle_cash = [_as_float(point.get("idle_cash_pct", 0.0)) for point in equity_curve]
+    open_counts = [_as_float(point.get("open_position_count", 0.0)) for point in equity_curve]
+    return {
+        "average_capital_utilization_pct": _mean(utilization),
+        "average_idle_cash_pct": _mean(idle_cash),
+        "max_capital_utilization_pct": max(utilization) if utilization else 0.0,
+        "average_open_position_count": _mean(open_counts),
+        "max_open_position_count": int(max(open_counts)) if open_counts else 0,
+    }
 
 
 def _passes_initial_gate(
@@ -1901,9 +1939,12 @@ def _markdown_report(payload: dict[str, object]) -> str:
         "",
         (
             "| Scenario | Trades | Closed | Open | Avg MTM | Avg closed | Open unreal. | "
-            "Max DD | Win rate | PF | Gate |"
+            "Max DD | Util | Idle | Win rate | PF | Gate |"
         ),
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        (
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
+            "---: | ---: | --- |"
+        ),
     ]
     for scenario in payload["scenarios"]:
         item = dict(scenario)
@@ -1924,6 +1965,8 @@ def _markdown_report(payload: dict[str, object]) -> str:
                             item["average_max_adverse_pct"],
                         )
                     ),
+                    _pct(item.get("average_capital_utilization_pct", 0.0)),
+                    _pct(item.get("average_idle_cash_pct", 0.0)),
                     _pct(item["win_rate"]),
                     _number(item["profit_factor"]),
                     "pass" if item["passes_initial_gate"] else "fail",
