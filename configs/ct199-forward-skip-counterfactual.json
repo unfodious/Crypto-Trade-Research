@@ -1,0 +1,27 @@
+{
+  "report_name": "ct199_forward_skip_counterfactual",
+  "issue_id": "CT-199",
+  "epic_id": "CT-113",
+  "output_json_path": "data/generated/ct199_forward_skip_counterfactual/report.json",
+  "output_markdown_path": "data/generated/ct199_forward_skip_counterfactual/report.md",
+  "streams": [
+    {
+      "name": "ct145_no_ton_negative_funding_forward_paper",
+      "issue_id": "CT-146",
+      "forward_signals_path": "data/generated/ct145_no_ton_negative_funding_forward_paper/forward_signals.json",
+      "pack_manifest_path": "data/generated/ct145_no_ton_negative_funding_paper_pack/pack_manifest.json"
+    },
+    {
+      "name": "ct156_high_beta_dot_shadow_forward_paper",
+      "issue_id": "CT-157",
+      "forward_signals_path": "data/generated/ct156_high_beta_dot_shadow_forward_paper/forward_signals.json",
+      "pack_manifest_path": "data/generated/ct156_high_beta_dot_shadow_paper_pack/pack_manifest.json"
+    },
+    {
+      "name": "ct184_adaptive_sizing_shadow_forward_paper",
+      "issue_id": "CT-184",
+      "forward_signals_path": "data/generated/ct184_adaptive_sizing_shadow_forward_paper/forward_signals.json",
+      "pack_manifest_path": "data/generated/ct184_adaptive_sizing_shadow_paper_pack/pack_manifest.json"
+    }
+  ]
+}
