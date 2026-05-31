@@ -26,6 +26,10 @@ class Candle:
     low: float
     close: float
     volume: float
+    quote_volume: float
+    number_of_trades: int
+    taker_buy_base_volume: float
+    taker_buy_quote_volume: float
 
 
 def build_spot_klines_dataset(
@@ -129,9 +133,21 @@ def _read_monthly_zip(symbol: str, path: Path, start: datetime, end: datetime) -
                         low=float(fields[3]),
                         close=float(fields[4]),
                         volume=float(fields[5]),
+                        quote_volume=_optional_float_field(fields, 7),
+                        number_of_trades=_optional_int_field(fields, 8),
+                        taker_buy_base_volume=_optional_float_field(fields, 9),
+                        taker_buy_quote_volume=_optional_float_field(fields, 10),
                     )
                 )
     return rows
+
+
+def _optional_float_field(fields: list[str], index: int) -> float:
+    return float(fields[index]) if len(fields) > index and fields[index] else 0.0
+
+
+def _optional_int_field(fields: list[str], index: int) -> int:
+    return int(fields[index]) if len(fields) > index and fields[index] else 0
 
 
 def _binance_timestamp(value: str) -> datetime:

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 
 from crypto_trade_research.spot_drawdown_swing import (
     SpotDrawdownSwingConfig,
@@ -15,6 +16,8 @@ from crypto_trade_research.spot_drawdown_swing import (
     _position_exit_reason,
     _rotate_positions,
     _should_dca,
+    _trade_flow_passes,
+    _with_indicators,
     build_spot_drawdown_swing_report,
 )
 
@@ -659,6 +662,61 @@ def test_spot_drawdown_swing_failed_breakout_cooldown_blocks_reentry() -> None:
         "SOLUSDT",
         later_row,
     )
+
+
+def test_spot_drawdown_swing_trade_flow_features_gate_entries() -> None:
+    now = datetime(2026, 1, 2, tzinfo=UTC)
+    rows = []
+    for index in range(30):
+        rows.append(
+            {
+                "symbol": "SOLUSDT",
+                "open_time": now + timedelta(hours=index),
+                "close_time": now + timedelta(hours=index + 1),
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.0 + index * 0.1,
+                "volume": 1000.0 + (index % 3) * 10,
+                "number_of_trades": 100 + (index % 3),
+                "taker_buy_base_volume": (1000.0 + (index % 3) * 10) * 0.5,
+                "taker_buy_quote_volume": 50000.0,
+            }
+        )
+    rows[-1]["number_of_trades"] = 180
+    rows[-1]["volume"] = 1500.0
+    rows[-1]["taker_buy_base_volume"] = 1050.0
+    rows = _with_indicators(rows)
+    scenario = SpotSwingScenario.from_dict(
+        {
+            "name": "unit_trade_flow",
+            "description": "unit",
+            "drawdown_lookback_hours": 2,
+            "min_drawdown_pct": 0.01,
+            "min_reclaim_return_pct": -1.0,
+            "max_rsi": 100,
+            "min_rsi_rebound": -100,
+            "min_close_location": 0.0,
+            "min_lower_wick_ratio": 0.0,
+            "profit_target_pct": 0.05,
+            "min_hold_hours": 1,
+            "max_hold_hours": 24,
+            "min_taker_buy_base_ratio": 0.65,
+            "min_taker_flow_imbalance": 0.30,
+            "min_taker_buy_ratio_lift": 0.10,
+            "min_trade_count_zscore": 2.0,
+            "min_volume_zscore": 2.0,
+        }
+    )
+
+    assert rows[-1]["taker_buy_base_ratio"] == 0.7
+    assert rows[-1]["taker_flow_imbalance"] == pytest.approx(0.4)
+    assert _trade_flow_passes(rows[-1], scenario)
+
+    weak_row = dict(rows[-1])
+    weak_row["taker_buy_base_ratio"] = 0.55
+    weak_row["taker_flow_imbalance"] = 0.1
+    assert not _trade_flow_passes(weak_row, scenario)
 
 
 def _write_dataset(tmp_path: Path) -> Path:

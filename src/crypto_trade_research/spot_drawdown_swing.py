@@ -14,6 +14,22 @@ from typing import Any
 import pyarrow.parquet as pq
 
 SCHEMA_VERSION = "research.spot-drawdown-swing.v1"
+BASE_MARKET_BAR_COLUMNS = (
+    "symbol",
+    "open_time",
+    "close_time",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+)
+OPTIONAL_MARKET_BAR_COLUMNS = (
+    "quote_volume",
+    "number_of_trades",
+    "taker_buy_base_volume",
+    "taker_buy_quote_volume",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +93,11 @@ class SpotSwingScenario:
     failed_breakout_exit_min_net_return_pct: float = 0.0
     failed_breakout_cooldown_hours: int | None = None
     min_favorable_before_dca_pct: float | None = None
+    min_taker_buy_base_ratio: float | None = None
+    min_taker_flow_imbalance: float | None = None
+    min_taker_buy_ratio_lift: float | None = None
+    min_trade_count_zscore: float | None = None
+    min_volume_zscore: float | None = None
     entry_end_buffer_hours: int | None = None
     sell_only_profitable: bool = False
     portfolio_cash_usd: float | None = None
@@ -156,6 +177,11 @@ class SpotSwingScenario:
             min_favorable_before_dca_pct=_optional_float(
                 payload.get("min_favorable_before_dca_pct")
             ),
+            min_taker_buy_base_ratio=_optional_float(payload.get("min_taker_buy_base_ratio")),
+            min_taker_flow_imbalance=_optional_float(payload.get("min_taker_flow_imbalance")),
+            min_taker_buy_ratio_lift=_optional_float(payload.get("min_taker_buy_ratio_lift")),
+            min_trade_count_zscore=_optional_float(payload.get("min_trade_count_zscore")),
+            min_volume_zscore=_optional_float(payload.get("min_volume_zscore")),
             entry_end_buffer_hours=_optional_int(payload.get("entry_end_buffer_hours")),
             sell_only_profitable=bool(payload.get("sell_only_profitable", False)),
             portfolio_cash_usd=_optional_float(payload.get("portfolio_cash_usd")),
@@ -278,28 +304,15 @@ def _load_window_bars(
     if fast_rows is not None:
         return {symbol: _with_indicators(rows) for symbol, rows in fast_rows.items() if rows}
 
-    table = pq.read_table(
-        cleaned_path,
-        columns=["symbol", "open_time", "close_time", "open", "high", "low", "close", "volume"],
-    ).to_pydict()
+    columns = _market_bar_columns(cleaned_path)
+    table = pq.read_table(cleaned_path, columns=columns).to_pydict()
     by_symbol: dict[str, list[dict[str, object]]] = {symbol: [] for symbol in symbols}
     symbol_set = set(symbols)
     for index, symbol_value in enumerate(table["symbol"]):
         symbol = str(symbol_value)
         if symbol not in symbol_set:
             continue
-        by_symbol[symbol].append(
-            {
-                "symbol": symbol,
-                "open_time": table["open_time"][index],
-                "close_time": table["close_time"][index],
-                "open": table["open"][index],
-                "high": table["high"][index],
-                "low": table["low"][index],
-                "close": table["close"][index],
-                "volume": table["volume"][index],
-            }
-        )
+        by_symbol[symbol].append({column: table[column][index] for column in columns})
     return {
         symbol: _with_indicators(_aggregate_bars(symbol_rows, timeframe_minutes))
         for symbol, symbol_rows in by_symbol.items()
@@ -317,11 +330,13 @@ def _try_load_aggregated_bars_with_polars(
     except ModuleNotFoundError:
         return None
 
+    columns = _market_bar_columns(cleaned_path)
+    optional_columns = [column for column in OPTIONAL_MARKET_BAR_COLUMNS if column in columns]
     frame_seconds = timeframe_minutes * 60
     rows = (
         pl.scan_parquet(str(cleaned_path))
         .filter(pl.col("symbol").is_in(list(symbols)))
-        .select(["symbol", "open_time", "close_time", "open", "high", "low", "close", "volume"])
+        .select(columns)
         .with_columns(
             (
                 (((pl.col("close_time").dt.epoch("s") - 1) // frame_seconds) + 1) * frame_seconds
@@ -338,6 +353,7 @@ def _try_load_aggregated_bars_with_polars(
                 pl.col("low").min().alias("low"),
                 pl.col("close").last().alias("close"),
                 pl.col("volume").sum().alias("volume"),
+                *[pl.col(column).sum().alias(column) for column in optional_columns],
             ]
         )
         .sort(["symbol", "close_time"])
@@ -348,6 +364,14 @@ def _try_load_aggregated_bars_with_polars(
     for row in rows:
         by_symbol[str(row["symbol"])].append(row)
     return by_symbol
+
+
+def _market_bar_columns(cleaned_path: Path) -> list[str]:
+    available = set(pq.read_schema(cleaned_path).names)
+    return [
+        *BASE_MARKET_BAR_COLUMNS,
+        *[column for column in OPTIONAL_MARKET_BAR_COLUMNS if column in available],
+    ]
 
 
 def _aggregate_bars(
@@ -363,18 +387,20 @@ def _aggregate_bars(
             continue
         first = current[0]
         last = current[-1]
-        output.append(
-            {
-                "symbol": first["symbol"],
-                "open_time": first["open_time"],
-                "close_time": last["close_time"],
-                "open": _as_float(first["open"]),
-                "high": max(_as_float(item["high"]) for item in current),
-                "low": min(_as_float(item["low"]) for item in current),
-                "close": _as_float(last["close"]),
-                "volume": sum(_as_float(item["volume"]) for item in current),
-            }
-        )
+        aggregated = {
+            "symbol": first["symbol"],
+            "open_time": first["open_time"],
+            "close_time": last["close_time"],
+            "open": _as_float(first["open"]),
+            "high": max(_as_float(item["high"]) for item in current),
+            "low": min(_as_float(item["low"]) for item in current),
+            "close": _as_float(last["close"]),
+            "volume": sum(_as_float(item["volume"]) for item in current),
+        }
+        for column in OPTIONAL_MARKET_BAR_COLUMNS:
+            if column in first:
+                aggregated[column] = sum(_as_float(item.get(column, 0.0)) for item in current)
+        output.append(aggregated)
         current = []
     return output
 
@@ -411,8 +437,68 @@ def _with_indicators(rows: list[dict[str, object]]) -> list[dict[str, object]]:
             if bar_range
             else 0.0
         )
+        taker_buy_base_ratio = _taker_buy_base_ratio(row)
+        row["taker_buy_base_ratio"] = taker_buy_base_ratio
+        row["taker_flow_imbalance"] = (
+            (2 * taker_buy_base_ratio) - 1 if taker_buy_base_ratio is not None else None
+        )
+        row["taker_buy_ratio_lift_12"] = _ratio_lift(rows, index, "taker_buy_base_ratio", 12)
+        row["trade_count_zscore_24"] = _rolling_zscore(
+            rows,
+            index,
+            "number_of_trades",
+            24,
+        )
+        row["volume_zscore_24"] = _rolling_zscore(rows, index, "volume", 24)
         row["ema_9"] = _ema(rows, index, 9)
     return rows
+
+
+def _taker_buy_base_ratio(row: dict[str, object]) -> float | None:
+    if "taker_buy_base_volume" not in row:
+        return None
+    volume = _as_float(row["volume"])
+    if volume <= 0:
+        return None
+    return _as_float(row["taker_buy_base_volume"]) / volume
+
+
+def _ratio_lift(
+    rows: list[dict[str, object]],
+    index: int,
+    field: str,
+    window: int,
+) -> float | None:
+    current = rows[index].get(field)
+    if current is None or index < 1:
+        return None
+    previous = [
+        _as_float(rows[previous_index][field])
+        for previous_index in range(max(0, index - window), index)
+        if rows[previous_index].get(field) is not None
+    ]
+    if not previous:
+        return None
+    return _as_float(current) - _mean(previous)
+
+
+def _rolling_zscore(
+    rows: list[dict[str, object]],
+    index: int,
+    field: str,
+    window: int,
+) -> float | None:
+    if field not in rows[index] or index < window:
+        return None
+    previous = [
+        _as_float(rows[previous_index][field]) for previous_index in range(index - window, index)
+    ]
+    current = _as_float(rows[index][field])
+    mean = _mean(previous)
+    variance = _mean([(value - mean) ** 2 for value in previous])
+    if variance <= 0:
+        return None
+    return (current - mean) / math.sqrt(variance)
 
 
 def _scenario_report(
@@ -1030,7 +1116,7 @@ def _portfolio_entry_passes(
         _recent_return(rows, index, scenario),
         _positive_close_count(rows, index, scenario.min_positive_closes),
         _breakout_confirmation_passes(rows, index, scenario),
-    )
+    ) and _trade_flow_passes(row, scenario)
 
 
 def _portfolio_dca_passes(
@@ -1050,6 +1136,45 @@ def _portfolio_dca_passes(
         scenario.require_close_above_ema
         and (ema_9 is None or _as_float(row["close"]) <= _as_float(ema_9))
     )
+
+
+def _trade_flow_passes(row: dict[str, object], scenario: SpotSwingScenario) -> bool:
+    if not _optional_feature_at_least(
+        row,
+        "taker_buy_base_ratio",
+        scenario.min_taker_buy_base_ratio,
+    ):
+        return False
+    if not _optional_feature_at_least(
+        row,
+        "taker_flow_imbalance",
+        scenario.min_taker_flow_imbalance,
+    ):
+        return False
+    if not _optional_feature_at_least(
+        row,
+        "taker_buy_ratio_lift_12",
+        scenario.min_taker_buy_ratio_lift,
+    ):
+        return False
+    if not _optional_feature_at_least(
+        row,
+        "trade_count_zscore_24",
+        scenario.min_trade_count_zscore,
+    ):
+        return False
+    return _optional_feature_at_least(row, "volume_zscore_24", scenario.min_volume_zscore)
+
+
+def _optional_feature_at_least(
+    row: dict[str, object],
+    field: str,
+    minimum: float | None,
+) -> bool:
+    if minimum is None:
+        return True
+    value = row.get(field)
+    return value is not None and _as_float(value) >= minimum
 
 
 def _buy_size(
@@ -1345,7 +1470,7 @@ def _scenario_trades(
             recent_return,
             positive_closes,
             _breakout_confirmation_passes(rows, index, scenario),
-        ):
+        ) or not _trade_flow_passes(row, scenario):
             index += 1
             continue
         if not _entry_can_reach_profit(config, scenario, rows, row):

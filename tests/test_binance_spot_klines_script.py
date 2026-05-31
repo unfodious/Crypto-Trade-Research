@@ -5,6 +5,8 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pyarrow.parquet as pq
+
 
 def test_binance_spot_klines_timestamp_normalizes_millis_and_micros() -> None:
     script_path = Path("scripts/download_binance_spot_klines.py")
@@ -49,6 +51,10 @@ def test_build_spot_klines_dataset_supports_custom_period(tmp_path: Path) -> Non
                         "1.1",
                         "100.0",
                         "1735693200000",
+                        "110.0",
+                        "42",
+                        "65.0",
+                        "71.5",
                     ]
                 ),
             )
@@ -70,3 +76,9 @@ def test_build_spot_klines_dataset_supports_custom_period(tmp_path: Path) -> Non
     assert manifest["period"] == "30m"
     assert manifest["source"] == "binance-data-vision-spot-monthly-klines-30m"
     assert manifest["row_count"] == 1
+    table = pq.read_table(manifest["cleaned_path"])
+    row = table.to_pylist()[0]
+    assert row["quote_volume"] == 110.0
+    assert row["number_of_trades"] == 42
+    assert row["taker_buy_base_volume"] == 65.0
+    assert row["taker_buy_quote_volume"] == 71.5
