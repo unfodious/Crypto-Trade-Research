@@ -1,0 +1,15 @@
+{
+  "report_name": "ct198_spot_aggtrade_flow_broad_30m",
+  "issue_id": "CT-198",
+  "epic_id": "CT-113",
+  "source_spot_config_path": "configs/ct197-spot-taker-flow-pressure-broad-30m.json",
+  "output_json_path": "data/generated/ct198_spot_aggtrade_flow_broad_30m/report.json",
+  "output_markdown_path": "data/generated/ct198_spot_aggtrade_flow_broad_30m/report.md",
+  "cache_dir": "data/generated/binance_spot_daily_aggtrades_cache_ct198",
+  "scenario_names": [
+    "portfolio_dd6_broad_breakout6_sized125_guard_1000",
+    "portfolio_dd6_broad_breakout6_sized150_guard_1000",
+    "ct196_broad_momentum_rank30_open4_failed12_stale72_sized125_1000"
+  ],
+  "lookback_minutes": 30
+}

@@ -293,6 +293,32 @@ def build_spot_drawdown_swing_report(config: SpotDrawdownSwingConfig) -> dict[st
     return payload
 
 
+def build_spot_drawdown_swing_positions(
+    config: SpotDrawdownSwingConfig,
+    *,
+    scenario_names: set[str] | None = None,
+) -> list[dict[str, object]]:
+    """Return position-level replay rows for downstream diagnostics."""
+
+    window_bars = {
+        window.name: _load_window_bars(window, config.symbols, config.timeframe_minutes)
+        for window in config.windows
+    }
+    positions: list[dict[str, object]] = []
+    for scenario in config.scenarios:
+        if scenario_names is not None and scenario.name not in scenario_names:
+            continue
+        if scenario.portfolio_cash_usd is None:
+            continue
+        for window_name, symbol_rows in window_bars.items():
+            report = _portfolio_window_report(config, scenario, window_name, symbol_rows)
+            for position in report["positions"]:  # type: ignore[index]
+                row = dict(position)
+                row["scenario"] = scenario.name
+                positions.append(row)
+    return positions
+
+
 def _load_window_bars(
     window: SpotSwingWindow,
     symbols: tuple[str, ...],
