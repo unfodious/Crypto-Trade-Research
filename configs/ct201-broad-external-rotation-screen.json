@@ -1,0 +1,146 @@
+{
+  "report_name": "ct201_broad_external_rotation_screen",
+  "issue_id": "CT-201",
+  "epic_id": "CT-113",
+  "spot_config_path": "configs/ct194_spot_drawdown_swing_broad_rotation_30m.json",
+  "scenario_names": [
+    "portfolio_dd8_broad_spot_baseline_guard_1000",
+    "portfolio_dd8_broad_symbol_30d_partial_trail_1000",
+    "portfolio_dd8_broad_symbol_30d_momentum_rotation_1000",
+    "portfolio_dd8_broad_basket_14d_momentum_rotation_1000",
+    "portfolio_dd8_broad_symbol_30d_entry_rank_168h_top30_partial_trail_1000",
+    "portfolio_dd8_broad_symbol_30d_entry_rank_72h_top30_partial_trail_1000",
+    "portfolio_dd8_broad_symbol_30d_entry_rank_168h_top30_momentum_rotation_1000",
+    "portfolio_dd8_broad_basket_14d_entry_rank_72h_top30_momentum_rotation_1000"
+  ],
+  "metrics_path": "data/generated/ct178_data_vision_futures_metrics_dataset/clean/futures_metrics.parquet",
+  "max_metrics_age_minutes": 10,
+  "output_json_path": "data/generated/ct201_broad_external_rotation_screen/report.json",
+  "output_markdown_path": "data/generated/ct201_broad_external_rotation_screen/report.md",
+  "rules": [
+    {
+      "name": "no_external_screen",
+      "description": "All selected broad spot positions, including spot symbols without futures metrics coverage.",
+      "require_metrics_match": false,
+      "filter_groups": []
+    },
+    {
+      "name": "metrics_matched_base",
+      "description": "Only selected broad spot positions with a point-in-time futures metrics row available within the max-age guard.",
+      "require_metrics_match": true,
+      "filter_groups": []
+    },
+    {
+      "name": "skip_oi_expansion_1h_gt_1p5",
+      "description": "Skip entries when same-symbol open-interest notional expanded more than 1.5% over the previous hour.",
+      "require_metrics_match": true,
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.015
+          }
+        ]
+      ]
+    },
+    {
+      "name": "skip_oi_expansion_1h_gt_3p0",
+      "description": "Skip entries when same-symbol open-interest notional expanded more than 3.0% over the previous hour.",
+      "require_metrics_match": true,
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.03
+          }
+        ]
+      ]
+    },
+    {
+      "name": "skip_oi_expansion_4h_gt_5p0",
+      "description": "Skip entries when same-symbol open-interest notional expanded more than 5.0% over the previous four hours.",
+      "require_metrics_match": true,
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_4h",
+            "operator": ">",
+            "value": 0.05
+          }
+        ]
+      ]
+    },
+    {
+      "name": "skip_europe_session",
+      "description": "Skip Europe-session entries as a coarse session fragility check.",
+      "require_metrics_match": true,
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_session_europe",
+            "operator": "==",
+            "value": 1
+          }
+        ]
+      ]
+    },
+    {
+      "name": "skip_oi_expansion_or_europe",
+      "description": "Skip entries if either 1h OI expansion is high or the entry is in Europe session.",
+      "require_metrics_match": true,
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.015
+          }
+        ],
+        [
+          {
+            "feature": "fm_session_europe",
+            "operator": "==",
+            "value": 1
+          }
+        ]
+      ]
+    },
+    {
+      "name": "skip_top_crowding_spread_gt_0p25",
+      "description": "Skip entries when top-trader long/short crowding is more than 0.25 above the global ratio.",
+      "require_metrics_match": true,
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_top_vs_global_ratio_spread",
+            "operator": ">",
+            "value": 0.25
+          }
+        ]
+      ]
+    },
+    {
+      "name": "skip_oi_expansion_or_top_crowding",
+      "description": "Skip entries if 1h OI expansion is high or top-trader crowding is materially above the global ratio.",
+      "require_metrics_match": true,
+      "filter_groups": [
+        [
+          {
+            "feature": "fm_oi_value_change_1h",
+            "operator": ">",
+            "value": 0.015
+          }
+        ],
+        [
+          {
+            "feature": "fm_top_vs_global_ratio_spread",
+            "operator": ">",
+            "value": 0.25
+          }
+        ]
+      ]
+    }
+  ]
+}
