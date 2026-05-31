@@ -33,6 +33,7 @@ crypto-trade-build-evidence-readiness --config configs/ct164-evidence-readiness.
 - `data/generated/ct162_external_forward_features/external_forward_features_run.json`
 - CT-145/CT-146 forward paper run and monitoring artifacts
 - CT-156/CT-157 shadow forward paper run and monitoring artifacts
+- CT-184 adaptive-sizing shadow forward paper run and monitoring artifacts
 
 ## Gates
 
@@ -91,6 +92,19 @@ Droplet smoke on 2026-05-27:
 Interpretation: the external feature pipeline is now populated enough for the feature-data gate, but
 the forward-paper exposure gate is still blocked. Do not run an external-feature validation matrix
 until CT-145/CT-156 produce enough forward signals/trades and days.
+
+## 2026-05-31 Droplet Audit Update
+
+The droplet audit found that CT-184 was running as a systemd timer but was not included in the
+CT-164 readiness aggregate. The readiness config now includes:
+
+- `ct145_no_ton_negative_funding_forward_paper`
+- `ct156_high_beta_dot_shadow_forward_paper`
+- `ct184_adaptive_sizing_shadow_forward_paper`
+
+Current interpretation is unchanged: the external feature feed is healthy enough for collection, but
+the forward-paper gate is still blocked by zero closed paper trades. No working-model claim and no
+live-trading approval.
 
 ## Monitoring
 

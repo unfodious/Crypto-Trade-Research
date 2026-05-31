@@ -24,6 +24,12 @@
       "issue_id": "CT-157",
       "forward_run_path": "data/generated/ct156_high_beta_dot_shadow_forward_paper/forward_run.json",
       "monitoring_report_path": "data/generated/ct156_high_beta_dot_shadow_forward_paper/monitoring_report.json"
+    },
+    {
+      "name": "ct184_adaptive_sizing_shadow_forward_paper",
+      "issue_id": "CT-184",
+      "forward_run_path": "data/generated/ct184_adaptive_sizing_shadow_forward_paper/forward_run.json",
+      "monitoring_report_path": "data/generated/ct184_adaptive_sizing_shadow_forward_paper/monitoring_report.json"
     }
   ],
   "notes": "Research-only readiness gate before running an external-feature validation matrix. Does not approve live trading."

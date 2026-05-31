@@ -58,6 +58,16 @@ def test_build_evidence_readiness_report_passes_when_forward_evidence_is_suffici
     assert all(gate["passed"] for gate in report["gates"])
 
 
+def test_ct164_committed_config_includes_adaptive_sizing_shadow_stream() -> None:
+    config = EvidenceReadinessConfig.from_path(Path("configs/ct164-evidence-readiness.json"))
+
+    stream_names = {stream.name for stream in config.forward_paper_streams}
+
+    assert "ct145_no_ton_negative_funding_forward_paper" in stream_names
+    assert "ct156_high_beta_dot_shadow_forward_paper" in stream_names
+    assert "ct184_adaptive_sizing_shadow_forward_paper" in stream_names
+
+
 def _config(
     tmp_path: Path,
     *,
