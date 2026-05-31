@@ -289,11 +289,15 @@ Interpretation:
 
 ### Entry-Profit Lookahead Sweep (2024H1+)
 
-To reduce low-quality early entries, we added a timing gate:
+To diagnose whether poor timing is the main blocker, we added an oracle timing gate:
 
 - a candidate must be able to hit `profit_target_pct + round_trip_cost_pct` within the next
   `entry_profit_lookahead_hours`;
 - if no such future high exists before that horizon, the candidate is skipped.
+
+This is not a tradable rule because it uses future candles. It is a diagnostic upper-bound test:
+if even a future-informed timing gate cannot approach the target, then more ordinary point-in-time
+timing filters are unlikely to rescue this exact rule family.
 
 The same five-symbol true-spot 2024H1/2024H2/2025H1/2025JulNov setup was rerun with
 `entry_profit_lookahead_hours` in `{none, 24, 48, 72, 120}`.
@@ -380,6 +384,48 @@ Interpretation:
 - The best result remains below the `+5%` avg-window target across all rows (`2.69%` top in `30m` baseline).
 - `4h` still has mixed behavior: better per-trade returns in some windows but unresolved inventory and weak `2025H1` for baseline.
 - No candidate from this cadence sweep passes the CT-113 working-model gate.
+
+
+### 5-Symbol Timed Lookahead Sweep (15m/30m/4h)
+
+We then repeated the oracle entry-profit timing gate for the same `15m`, `30m`, and `4h` datasets
+using `entry_profit_lookahead_hours` in `{24, 48, 72, 120}`.
+
+Artifacts:
+
+- `configs/ct193-spot-momentum-rotation-selected-2024-2025-15m-lookahead{24,48,72,120}-5sym.json`
+- `configs/ct193-spot-momentum-rotation-selected-2024-2025-30m-lookahead{24,48,72,120}-5sym.json`
+- `configs/ct193-spot-momentum-rotation-selected-2024-2025-4h-lookahead{24,48,72,120}-5sym.json`
+- `data/generated/ct193_spot_momentum_rotation_selected_{15m,30m,4h}_lookahead{24,48,72,120}_5sym/report.json`
+
+Best row per timeframe/lookahead:
+
+| timeframe | lookahead | best scenario | avg return | 2024H1 | 2024H2 | 2025H1 | 2025JulNov | avg max PnL DD | closed | open | gate |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `15m` | `24h` | `portfolio_dd8_symbol_30d_partial_trail_1000` | `0.10%` | `0.00%` | `0.00%` | `0.00%` | `0.42%` | `-0.09%` | `1` | `0` | fail |
+| `15m` | `48h` | `portfolio_dd8_symbol_30d_momentum_rotation_1000` | `0.59%` | `0.00%` | `1.93%` | `0.00%` | `0.42%` | `-0.27%` | `6` | `0` | fail |
+| `15m` | `72h` | `portfolio_dd8_symbol_30d_momentum_rotation_1000` | `0.59%` | `0.00%` | `1.93%` | `0.00%` | `0.42%` | `-0.27%` | `6` | `0` | fail |
+| `15m` | `120h` | `portfolio_dd8_symbol_30d_momentum_rotation_1000` | `0.59%` | `0.00%` | `1.93%` | `0.00%` | `0.42%` | `-0.27%` | `6` | `0` | fail |
+| `30m` | `24h` | `portfolio_dd8_spot_baseline_guard_1000` | `2.15%` | `1.71%` | `1.50%` | `3.31%` | `2.08%` | `-0.75%` | `19` | `0` | fail |
+| `30m` | `48h` | `portfolio_dd8_spot_baseline_guard_1000` | `2.23%` | `1.71%` | `1.50%` | `3.63%` | `2.08%` | `-0.75%` | `20` | `0` | fail |
+| `30m` | `72h` | `portfolio_dd8_spot_baseline_guard_1000` | `2.31%` | `1.71%` | `1.50%` | `3.63%` | `2.39%` | `-0.80%` | `21` | `0` | fail |
+| `30m` | `120h` | `portfolio_dd8_spot_baseline_guard_1000` | `2.60%` | `1.71%` | `1.93%` | `3.63%` | `3.14%` | `-0.86%` | `24` | `0` | fail |
+| `4h` | `24h` | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `1.66%` | `2.61%` | `4.03%` | `0.00%` | `0.00%` | `-0.48%` | `14` | `0` | fail |
+| `4h` | `48h` | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `1.70%` | `2.09%` | `4.71%` | `0.00%` | `0.00%` | `-0.57%` | `19` | `1` | fail |
+| `4h` | `72h` | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `1.70%` | `2.09%` | `4.71%` | `0.00%` | `0.00%` | `-0.57%` | `19` | `1` | fail |
+| `4h` | `120h` | `portfolio_dd8_basket_14d_momentum_rotation_1000` | `2.03%` | `2.09%` | `4.71%` | `0.00%` | `1.31%` | `-0.89%` | `22` | `1` | fail |
+
+Interpretation:
+
+- The oracle timing gate does not rescue the rule family. The best diagnostic row is `30m/120h`
+  baseline at `+2.60%` average window return with `24` closed trades and `0` open positions.
+- This is still slightly worse than the `30m` no-lookahead baseline at `+2.69%`, and both are far
+  below the `+5%` average-window gate, let alone the user's desired month-sized return profile.
+- `15m` becomes too sparse or negative. Its clean positive rows have only `1-6` closed trades.
+- `4h` keeps finding some 2024H2 upside, but `2025H1` remains effectively inactive or negative and
+  the stronger basket rows still carry open inventory at longer lookaheads.
+- Since the future-informed diagnostic fails, the next useful branch should change the idea, not
+  keep tuning nearby entry timing thresholds inside this same spot drawdown/rotation family.
 
 
 
