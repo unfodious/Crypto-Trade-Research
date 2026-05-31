@@ -7,7 +7,7 @@ import json
 import math
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -70,6 +70,13 @@ class SpotSwingScenario:
     min_breakout_close_pct: float = 0.0
     min_breakout_volume_ratio: float | None = None
     max_breakout_range_pct: float | None = None
+    stale_exit_hold_hours: int | None = None
+    stale_exit_min_net_return_pct: float = 0.0
+    failed_breakout_hold_hours: int | None = None
+    min_failed_breakout_followthrough_pct: float = 0.0
+    failed_breakout_exit_min_net_return_pct: float = 0.0
+    failed_breakout_cooldown_hours: int | None = None
+    min_favorable_before_dca_pct: float | None = None
     entry_end_buffer_hours: int | None = None
     sell_only_profitable: bool = False
     portfolio_cash_usd: float | None = None
@@ -134,6 +141,21 @@ class SpotSwingScenario:
             min_breakout_close_pct=float(payload.get("min_breakout_close_pct", 0.0)),
             min_breakout_volume_ratio=_optional_float(payload.get("min_breakout_volume_ratio")),
             max_breakout_range_pct=_optional_float(payload.get("max_breakout_range_pct")),
+            stale_exit_hold_hours=_optional_int(payload.get("stale_exit_hold_hours")),
+            stale_exit_min_net_return_pct=float(payload.get("stale_exit_min_net_return_pct", 0.0)),
+            failed_breakout_hold_hours=_optional_int(payload.get("failed_breakout_hold_hours")),
+            min_failed_breakout_followthrough_pct=float(
+                payload.get("min_failed_breakout_followthrough_pct", 0.0)
+            ),
+            failed_breakout_exit_min_net_return_pct=float(
+                payload.get("failed_breakout_exit_min_net_return_pct", 0.0)
+            ),
+            failed_breakout_cooldown_hours=_optional_int(
+                payload.get("failed_breakout_cooldown_hours")
+            ),
+            min_favorable_before_dca_pct=_optional_float(
+                payload.get("min_favorable_before_dca_pct")
+            ),
             entry_end_buffer_hours=_optional_int(payload.get("entry_end_buffer_hours")),
             sell_only_profitable=bool(payload.get("sell_only_profitable", False)),
             portfolio_cash_usd=_optional_float(payload.get("portfolio_cash_usd")),
@@ -444,8 +466,15 @@ def _portfolio_scenario_report(
         "partial_exit_count": sum(
             int(position.get("partial_exit_count", 0)) for position in positions
         ),
+        "exit_reason_counts": _exit_reason_counts(closed),
         "rotation_exit_count": sum(
             1 for position in closed if position.get("exit_reason") == "rotation_redeploy"
+        ),
+        "stale_exit_count": sum(
+            1 for position in closed if position.get("exit_reason") == "stale_breakeven"
+        ),
+        "failed_breakout_exit_count": sum(
+            1 for position in closed if position.get("exit_reason") == "failed_breakout_breakeven"
         ),
         "average_net_return_pct": _mean(
             [_as_float(report["portfolio_return_pct"]) for report in reports]
@@ -497,6 +526,7 @@ def _portfolio_window_report(
     cash = initial_cash
     positions: dict[str, dict[str, object]] = {}
     completed: list[dict[str, object]] = []
+    cooldown_until_time: dict[str, datetime] = {}
     equity_curve: list[dict[str, object]] = []
     rows_by_time = _rows_by_time(symbol_rows)
     market_context = _market_context(symbol_rows)
@@ -507,7 +537,8 @@ def _portfolio_window_report(
             position = positions.get(symbol)
             if position is None:
                 if (
-                    _entry_within_window(row, symbol_rows[symbol], scenario)
+                    _cooldown_passes(cooldown_until_time, symbol, row)
+                    and _entry_within_window(row, symbol_rows[symbol], scenario)
                     and _portfolio_entry_passes(scenario, symbol_rows[symbol], row)
                     and _entry_can_reach_profit(
                         config,
@@ -550,10 +581,24 @@ def _portfolio_window_report(
                 cash += _take_partial_profit(position, row, scenario, fee_rate)
                 continue
 
-            if _should_exit_position(position, row, symbol_rows[symbol], scenario, fee_rate):
+            exit_reason = _position_exit_reason(
+                position,
+                row,
+                symbol_rows[symbol],
+                scenario,
+                fee_rate,
+            )
+            if exit_reason is not None:
                 cash += _position_value(position, row, fee_rate)
-                completed.append(_close_position(position, row, fee_rate, "profit_fade"))
+                completed.append(_close_position(position, row, fee_rate, exit_reason))
                 del positions[symbol]
+                _apply_failed_breakout_cooldown(
+                    cooldown_until_time,
+                    symbol,
+                    row,
+                    scenario,
+                    exit_reason,
+                )
 
         cash = _rotate_positions(
             cash,
@@ -609,8 +654,17 @@ def _portfolio_window_report(
         "partial_exit_count": sum(
             int(position.get("partial_exit_count", 0)) for position in all_positions
         ),
+        "exit_reason_counts": _exit_reason_counts(completed),
         "rotation_exit_count": sum(
             1 for position in completed if position.get("exit_reason") == "rotation_redeploy"
+        ),
+        "stale_exit_count": sum(
+            1 for position in completed if position.get("exit_reason") == "stale_breakeven"
+        ),
+        "failed_breakout_exit_count": sum(
+            1
+            for position in completed
+            if position.get("exit_reason") == "failed_breakout_breakeven"
         ),
         "average_net_return_pct": _return(final_equity, initial_cash),
         "average_closed_net_return_pct": _mean(closed_returns),
@@ -757,6 +811,31 @@ def _can_open_position(
     scenario: SpotSwingScenario,
 ) -> bool:
     return scenario.max_open_positions is None or len(positions) < scenario.max_open_positions
+
+
+def _cooldown_passes(
+    cooldown_until_time: dict[str, datetime],
+    symbol: str,
+    row: dict[str, object],
+) -> bool:
+    cooldown_until = cooldown_until_time.get(symbol)
+    return cooldown_until is None or _as_datetime(row["close_time"]) > cooldown_until
+
+
+def _apply_failed_breakout_cooldown(
+    cooldown_until_time: dict[str, datetime],
+    symbol: str,
+    row: dict[str, object],
+    scenario: SpotSwingScenario,
+    exit_reason: str,
+) -> None:
+    if scenario.failed_breakout_cooldown_hours is None:
+        return
+    if exit_reason not in {"failed_breakout_breakeven", "stale_breakeven"}:
+        return
+    cooldown_until_time[symbol] = _as_datetime(row["close_time"]) + timedelta(
+        hours=scenario.failed_breakout_cooldown_hours
+    )
 
 
 def _entry_rank_passes(
@@ -1064,6 +1143,11 @@ def _should_dca(
         return False
     if int(position.get("partial_exit_count", 0)):
         return False
+    if (
+        scenario.min_favorable_before_dca_pct is not None
+        and _as_float(position["max_favorable_pct"]) < scenario.min_favorable_before_dca_pct
+    ):
+        return False
     return _position_net_return(position, row, 0.0) <= -abs(scenario.dca_drop_levels_pct[dca_index])
 
 
@@ -1129,24 +1213,60 @@ def _position_lifecycle_return(
     )
 
 
-def _should_exit_position(
+def _position_exit_reason(
     position: dict[str, object],
     row: dict[str, object],
     rows: list[dict[str, object]],
     scenario: SpotSwingScenario,
     fee_rate: float,
-) -> bool:
+) -> str | None:
     current_return = _position_net_return(position, row, fee_rate)
     if current_return >= scenario.profit_target_pct and _rebound_is_fading_in_row(rows, row):
-        return True
+        return "profit_fade"
+    stale_reason = _stale_position_exit_reason(position, row, scenario, fee_rate)
+    if stale_reason is not None:
+        return stale_reason
     if scenario.trailing_stop_from_peak_pct is None:
-        return False
+        return None
     peak_return = _as_float(position["max_favorable_pct"])
-    return (
+    if (
         peak_return >= scenario.profit_target_pct
         and current_return > 0
         and current_return <= peak_return - scenario.trailing_stop_from_peak_pct
-    )
+    ):
+        return "trailing_stop"
+    return None
+
+
+def _stale_position_exit_reason(
+    position: dict[str, object],
+    row: dict[str, object],
+    scenario: SpotSwingScenario,
+    fee_rate: float,
+) -> str | None:
+    holding_hours = _position_holding_hours(position, row)
+    lifecycle_return = _position_lifecycle_return(position, row, fee_rate)
+    if (
+        scenario.failed_breakout_hold_hours is not None
+        and holding_hours >= scenario.failed_breakout_hold_hours
+        and _as_float(position["max_favorable_pct"])
+        < scenario.min_failed_breakout_followthrough_pct
+        and lifecycle_return >= scenario.failed_breakout_exit_min_net_return_pct
+    ):
+        return "failed_breakout_breakeven"
+    if (
+        scenario.stale_exit_hold_hours is not None
+        and holding_hours >= scenario.stale_exit_hold_hours
+        and lifecycle_return >= scenario.stale_exit_min_net_return_pct
+    ):
+        return "stale_breakeven"
+    return None
+
+
+def _position_holding_hours(position: dict[str, object], row: dict[str, object]) -> float:
+    return (
+        _as_datetime(row["close_time"]) - _as_datetime(position["entry_time"])
+    ).total_seconds() / 3600
 
 
 def _close_position(
@@ -1160,10 +1280,7 @@ def _close_position(
         "symbol": position["symbol"],
         "entry_time": position["entry_time"],
         "exit_time": _format_timestamp(_as_datetime(row["close_time"])),
-        "holding_hours": (
-            _as_datetime(row["close_time"]) - _as_datetime(position["entry_time"])
-        ).total_seconds()
-        / 3600,
+        "holding_hours": _position_holding_hours(position, row),
         "lot_count": position["lot_count"],
         "partial_exit_count": position.get("partial_exit_count", 0),
         "cost_usd": _position_lifecycle_cost(position),
@@ -1523,6 +1640,15 @@ def _group_metrics(trades: list[dict[str, object]], key: str) -> list[dict[str, 
     return [{"name": name, **_trade_metrics(rows)} for name, rows in sorted(grouped.items())]
 
 
+def _exit_reason_counts(trades: list[dict[str, object]]) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for trade in trades:
+        reason = trade.get("exit_reason")
+        if reason is not None:
+            counts[str(reason)] += 1
+    return dict(sorted(counts.items()))
+
+
 def _trade_metrics(trades: list[dict[str, object]]) -> dict[str, object]:
     returns = [_as_float(trade["net_return_pct"]) for trade in trades]
     closed = [trade for trade in trades if trade.get("status", "closed") == "closed"]
@@ -1543,6 +1669,7 @@ def _trade_metrics(trades: list[dict[str, object]]) -> dict[str, object]:
         "profit_factor": _profit_factor(returns),
         "average_holding_hours": _mean([_as_float(trade["holding_hours"]) for trade in trades]),
         "average_max_adverse_pct": _mean([_as_float(trade["max_adverse_pct"]) for trade in trades]),
+        "exit_reason_counts": _exit_reason_counts(closed),
     }
 
 

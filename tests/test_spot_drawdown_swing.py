@@ -9,9 +9,12 @@ from crypto_trade_research.spot_drawdown_swing import (
     SpotDrawdownSwingConfig,
     SpotSwingScenario,
     _breakout_confirmation_passes,
+    _cooldown_passes,
     _entry_can_reach_profit,
     _entry_rank_passes,
+    _position_exit_reason,
     _rotate_positions,
+    _should_dca,
     build_spot_drawdown_swing_report,
 )
 
@@ -551,6 +554,113 @@ def test_spot_drawdown_swing_breakout_confirmation_requires_range_and_volume() -
     assert not _breakout_confirmation_passes(wide_range_rows, 4, scenario)
 
 
+def test_spot_drawdown_swing_exits_failed_breakout_only_near_breakeven() -> None:
+    now = datetime(2026, 1, 1, 16, tzinfo=UTC)
+    rows = [
+        _row("SOLUSDT", now - timedelta(hours=2), 100, 101, 99, 100, 0),
+        _row("SOLUSDT", now - timedelta(hours=1), 100, 101, 99, 100.4, 1),
+        _row("SOLUSDT", now, 100.4, 100.5, 99.8, 100.2, 2),
+    ]
+    scenario = SpotSwingScenario.from_dict(
+        {
+            "name": "unit_failed_breakout_exit",
+            "description": "unit",
+            "drawdown_lookback_hours": 2,
+            "min_drawdown_pct": 0.01,
+            "min_reclaim_return_pct": -1.0,
+            "max_rsi": 100,
+            "min_rsi_rebound": -100,
+            "min_close_location": 0.0,
+            "min_lower_wick_ratio": 0.0,
+            "profit_target_pct": 0.05,
+            "min_hold_hours": 1,
+            "max_hold_hours": 24,
+            "failed_breakout_hold_hours": 2,
+            "min_failed_breakout_followthrough_pct": 0.01,
+            "failed_breakout_exit_min_net_return_pct": 0.0,
+        }
+    )
+    position = {
+        "symbol": "SOLUSDT",
+        "entry_time": _timestamp(rows[0]),
+        "qty": 1.0,
+        "cost_usd": 100.0,
+        "realized_cost_usd": 0.0,
+        "realized_value_usd": 0.0,
+        "lot_count": 1,
+        "dca_count": 0,
+        "partial_exit_count": 0,
+        "max_adverse_pct": -0.002,
+        "max_favorable_pct": 0.005,
+    }
+
+    assert (
+        _position_exit_reason(position, rows[-1], rows, scenario, 0.0)
+        == "failed_breakout_breakeven"
+    )
+
+    losing_row = dict(rows[-1])
+    losing_row["close"] = 99.9
+    assert _position_exit_reason(position, losing_row, rows, scenario, 0.0) is None
+
+
+def test_spot_drawdown_swing_dca_requires_prior_followthrough() -> None:
+    scenario = SpotSwingScenario.from_dict(
+        {
+            "name": "unit_dca_followthrough",
+            "description": "unit",
+            "drawdown_lookback_hours": 2,
+            "min_drawdown_pct": 0.01,
+            "min_reclaim_return_pct": -1.0,
+            "max_rsi": 100,
+            "min_rsi_rebound": -100,
+            "min_close_location": 0.0,
+            "min_lower_wick_ratio": 0.0,
+            "profit_target_pct": 0.05,
+            "min_hold_hours": 1,
+            "max_hold_hours": 24,
+            "dca_drop_levels_pct": [0.05],
+            "min_favorable_before_dca_pct": 0.02,
+        }
+    )
+    row = _row("SOLUSDT", datetime(2026, 1, 1, 16, tzinfo=UTC), 94, 95, 93, 94, 3)
+    position = {
+        "symbol": "SOLUSDT",
+        "entry_time": "2026-01-01T12:00:00Z",
+        "qty": 1.0,
+        "cost_usd": 100.0,
+        "realized_cost_usd": 0.0,
+        "realized_value_usd": 0.0,
+        "lot_count": 1,
+        "dca_count": 0,
+        "partial_exit_count": 0,
+        "max_adverse_pct": -0.07,
+        "max_favorable_pct": 0.01,
+    }
+
+    assert not _should_dca(position, row, scenario)
+
+    position["max_favorable_pct"] = 0.025
+    assert _should_dca(position, row, scenario)
+
+
+def test_spot_drawdown_swing_failed_breakout_cooldown_blocks_reentry() -> None:
+    row = _row("SOLUSDT", datetime(2026, 1, 1, 16, tzinfo=UTC), 100, 101, 99, 100, 10)
+    assert not _cooldown_passes(
+        {"SOLUSDT": datetime(2026, 1, 1, 18, tzinfo=UTC)},
+        "SOLUSDT",
+        row,
+    )
+
+    later_row = dict(row)
+    later_row["close_time"] = datetime(2026, 1, 1, 19, tzinfo=UTC)
+    assert _cooldown_passes(
+        {"SOLUSDT": datetime(2026, 1, 1, 18, tzinfo=UTC)},
+        "SOLUSDT",
+        later_row,
+    )
+
+
 def _write_dataset(tmp_path: Path) -> Path:
     dataset_dir = tmp_path / "dataset"
     rows = []
@@ -589,6 +699,10 @@ def _write_dataset(tmp_path: Path) -> Path:
     manifest_path = dataset_dir / "manifest.json"
     manifest_path.write_text(json.dumps({"cleaned_path": str(clean_path)}), encoding="utf-8")
     return manifest_path
+
+
+def _timestamp(row: dict[str, object]) -> str:
+    return row["close_time"].isoformat().replace("+00:00", "Z")  # type: ignore[union-attr]
 
 
 def _row(
