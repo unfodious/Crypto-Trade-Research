@@ -47,6 +47,7 @@ crypto-trade-build-timeframe-continuation-scan = "crypto_trade_research.timefram
 crypto-trade-build-forward-skip-counterfactual = "crypto_trade_research.forward_skip_counterfactual:main"
 crypto-trade-build-spot-drawdown-swing = "crypto_trade_research.spot_drawdown_swing:main"
 crypto-trade-build-spot-aggtrade-flow = "crypto_trade_research.spot_aggtrade_flow:main"
+crypto-trade-build-external-rotation-screen = "crypto_trade_research.external_rotation_screen:main"
 
 [project.optional-dependencies]
 dev = [
