@@ -3,7 +3,9 @@
 The mandatory test here is `test_future_bars_cannot_change_past_features`: it
 corrupts every bar after a cut point and asserts that not one feature value at
 or before the cut point moves. Any centred window, any full-series scaler, any
-forward-looking merge would fail it.
+forward-looking merge would fail it. It runs over every grid the study joins -
+4h, 1d, BTC context, and the three non-price panels (funding, open interest,
+book depth) - because a feature without a leakage assertion is not done.
 """
 
 from __future__ import annotations
@@ -12,6 +14,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from crypto_trade_research.edge_study import altdata as ad
+from crypto_trade_research.edge_study import cross_section as cs
 from crypto_trade_research.edge_study import features as feat
 from crypto_trade_research.edge_study import indicators as ind
 from crypto_trade_research.edge_study import labels as lab
@@ -42,20 +46,91 @@ def synthetic_bars(periods: int, freq: str, seed: int = 3) -> pd.DataFrame:
     )
 
 
+def synthetic_alt_panels(
+    pair: str = "TESTUSDT",
+    days: int = 160,
+    seed: int = 21,
+) -> ad.AltPanels:
+    """Funding / metrics / depth panels on their own clocks, with `known_at`.
+
+    Shapes and column names match what `altdata` writes from the real archives,
+    so a test that corrupts these is corrupting exactly what the study reads.
+    """
+    rng = np.random.default_rng(seed)
+    funding_time = pd.date_range("2024-07-01", periods=days * 3, freq="8h", tz="UTC")
+    funding = pd.DataFrame(
+        {
+            "funding_time": funding_time,
+            "funding_rate": rng.normal(0.0001, 0.0002, size=len(funding_time)),
+        }
+    )
+    funding["known_at"] = funding["funding_time"] + ad.FUNDING_LAG
+
+    metrics_time = pd.date_range("2024-07-01", periods=days * 288, freq="5min", tz="UTC")
+    count = len(metrics_time)
+    open_interest = 1e6 * np.exp(np.cumsum(rng.normal(0.0, 0.0005, size=count)))
+    metrics = pd.DataFrame(
+        {
+            "metrics_time": metrics_time,
+            "sum_open_interest": open_interest,
+            "sum_open_interest_value": open_interest * 100.0,
+            "count_toptrader_long_short_ratio": rng.uniform(0.5, 3.0, size=count),
+            "sum_toptrader_long_short_ratio": rng.uniform(0.5, 3.0, size=count),
+            "count_long_short_ratio": rng.uniform(0.5, 3.0, size=count),
+            "sum_taker_long_short_vol_ratio": rng.uniform(0.3, 2.0, size=count),
+        }
+    )
+    metrics["known_at"] = metrics["metrics_time"] + ad.METRICS_LAG
+
+    depth_time = metrics_time
+    depth = pd.DataFrame({"depth_time": depth_time})
+    for level in ad.DEPTH_LEVELS:
+        scale = 1e5 * level
+        depth[f"bid_notional_{level}pct"] = scale * rng.uniform(0.8, 1.2, size=count)
+        depth[f"ask_notional_{level}pct"] = scale * rng.uniform(0.8, 1.2, size=count)
+    depth["known_at"] = depth["depth_time"] + ad.DEPTH_LAG
+
+    return ad.AltPanels(pair=pair, funding=funding, metrics=metrics, depth=depth)
+
+
+def _corrupt_after(frame: pd.DataFrame, cut: pd.Timestamp, factor: float = 3.5) -> pd.DataFrame:
+    """Multiply every numeric value stamped after `cut` by `factor`."""
+    corrupted = frame.copy()
+    mask = corrupted["known_at"] > cut
+    numeric = [
+        column
+        for column in corrupted.columns
+        if column not in {"known_at"}
+        and not pd.api.types.is_datetime64_any_dtype(corrupted[column])
+    ]
+    corrupted.loc[mask, numeric] = corrupted.loc[mask, numeric] * factor
+    return corrupted
+
+
 def _numeric(frame: pd.DataFrame) -> pd.DataFrame:
     columns = [c for c in feat.FEATURE_COLUMNS if c in frame.columns]
     return frame[columns].astype(float)
 
 
 def test_future_bars_cannot_change_past_features():
+    """The load-bearing test: corrupt the future on EVERY grid, past must not move.
+
+    Grids corrupted simultaneously: 4h bars, 1d bars, BTC 1d context, and the
+    funding, open-interest and book-depth panels. If any new feature reached
+    forward - a centred window, a full-series statistic, a `merge_asof` with
+    `direction="forward"`, a publication lag applied in the wrong direction -
+    one of the 55 columns would move here.
+    """
     bars_4h = synthetic_bars(900, "4h")
     bars_1d = synthetic_bars(160, "1D", seed=11)
     btc_1d = synthetic_bars(160, "1D", seed=13)
+    panels = synthetic_alt_panels(days=160)
 
-    original = feat.build_features(bars_4h, bars_1d, btc_1d)
-    # The cut is the same instant on both grids: 600 4h bars == 100 days.
+    original = feat.build_features(bars_4h, bars_1d, btc_1d, panels)
+    # The cut is the same instant on every grid: 600 4h bars == 100 days.
     cut = 600
     daily_cut = cut // 6
+    cut_time = original["decision_time"].iloc[cut - 1]
 
     corrupted_4h = bars_4h.copy()
     corrupted_4h.iloc[cut:] *= 3.5
@@ -63,12 +138,182 @@ def test_future_bars_cannot_change_past_features():
     corrupted_1d.iloc[daily_cut:] *= 3.5
     corrupted_btc = btc_1d.copy()
     corrupted_btc.iloc[daily_cut:] *= 3.5
+    corrupted_panels = ad.AltPanels(
+        pair=panels.pair,
+        funding=_corrupt_after(panels.funding, cut_time),
+        metrics=_corrupt_after(panels.metrics, cut_time),
+        depth=_corrupt_after(panels.depth, cut_time),
+    )
 
-    shifted = feat.build_features(corrupted_4h, corrupted_1d, corrupted_btc)
+    shifted = feat.build_features(corrupted_4h, corrupted_1d, corrupted_btc, corrupted_panels)
+
+    # The alt columns must actually be populated, or this test asserts nothing.
+    assert original[list(feat.ALT_FEATURE_COLUMNS)].notna().any().all()
 
     left = _numeric(original.iloc[:cut])
     right = _numeric(shifted.iloc[:cut])
     pd.testing.assert_frame_equal(left, right, check_exact=False, atol=1e-12)
+
+
+def test_truncating_alt_panels_does_not_change_earlier_features():
+    """The same claim from the other side, for the non-price grids."""
+    bars_4h = synthetic_bars(700, "4h")
+    bars_1d = synthetic_bars(120, "1D", seed=11)
+    panels = synthetic_alt_panels(days=120)
+    full = feat.build_features(bars_4h, bars_1d, None, panels)
+
+    horizon = full["decision_time"].iloc[399]
+    truncated_panels = ad.AltPanels(
+        pair=panels.pair,
+        funding=panels.funding[panels.funding["known_at"] <= horizon],
+        metrics=panels.metrics[panels.metrics["known_at"] <= horizon],
+        depth=panels.depth[panels.depth["known_at"] <= horizon],
+    )
+    truncated = feat.build_features(bars_4h, bars_1d, None, truncated_panels)
+    alt = list(feat.ALT_FEATURE_COLUMNS)
+    pd.testing.assert_frame_equal(
+        full[alt].iloc[:400].astype(float),
+        truncated[alt].iloc[:400].astype(float),
+        check_exact=False,
+        atol=1e-12,
+    )
+
+
+def test_alt_panel_values_are_invisible_before_their_known_at():
+    """A row stamped at `known_at` may not influence any earlier decision row.
+
+    Spiking one panel row and checking that only decision rows at or after its
+    `known_at` change is the direct statement of the publication-lag contract:
+    funding at its settlement, OI at snapshot + 5m, depth at snapshot + 1m.
+    """
+    bars_4h = synthetic_bars(600, "4h")
+    bars_1d = synthetic_bars(100, "1D", seed=11)
+    panels = synthetic_alt_panels(days=100)
+    base = feat.build_features(bars_4h, bars_1d, None, panels)
+
+    cases = [
+        ("funding", "funding_rate", ad.FUNDING_LAG, feat.ALT_FEATURE_COLUMNS[:4]),
+        ("metrics", "sum_open_interest", ad.METRICS_LAG, ("oi_change_4h", "oi_change_1d")),
+        ("depth", "bid_notional_1pct", ad.DEPTH_LAG, ("depth_imbalance_1pct",)),
+    ]
+    for panel_name, column, lag, watched in cases:
+        panel = getattr(panels, panel_name).copy()
+        position = len(panel) // 2
+        native_time = panel["known_at"].iloc[position] - lag
+        panel.loc[panel.index[position], column] = panel[column].iloc[position] * 50.0
+        spiked = feat.build_features(
+            bars_4h,
+            bars_1d,
+            None,
+            ad.AltPanels(
+                pair=panels.pair,
+                funding=panel if panel_name == "funding" else panels.funding,
+                metrics=panel if panel_name == "metrics" else panels.metrics,
+                depth=panel if panel_name == "depth" else panels.depth,
+            ),
+        )
+        watched_columns = list(watched)
+        changed = (base[watched_columns] - spiked[watched_columns]).abs().max(axis=1).fillna(
+            0.0
+        ) > 1e-12
+        if not changed.any():
+            continue
+        first_changed = base.loc[changed, "decision_time"].min()
+        assert first_changed >= native_time + lag, (
+            f"{panel_name}.{column} moved a feature at {first_changed}, "
+            f"before its known_at {native_time + lag}"
+        )
+
+
+def test_liquidations_are_declared_as_a_proxy_not_a_feed():
+    """The proxy must stay named as a proxy and must stay derived, not fetched.
+
+    Binance retired the historical `liquidationSnapshot` archive; the only
+    in-repo liquidation source is a live websocket recorder. If someone later
+    wires a real feed in, this test should be deleted deliberately rather than
+    a proxy quietly being presented as liquidation data.
+    """
+    assert ad.LIQUIDATION_PROXY_FEATURES == ("liq_pressure_long", "liq_pressure_short")
+    assert all(name.startswith("liq_pressure") for name in ad.LIQUIDATION_PROXY_FEATURES)
+    assert "proxy" in ad.__doc__.lower()
+    assert not hasattr(ad, "fetch_liquidations")
+
+
+def test_cross_sectional_ranks_use_only_same_instant_rows():
+    """A within-bar rank must be a function of that bar's rows and nothing else."""
+    times = pd.to_datetime(["2024-07-01T04:00Z"] * 4 + ["2024-07-01T08:00Z"] * 4)
+    frame = pd.DataFrame(
+        {
+            "decision_time": times,
+            "pair": ["A", "B", "C", "D"] * 2,
+            "rsi": [10.0, 20.0, 30.0, 40.0, 5.0, 6.0, 7.0, 8.0],
+        }
+    )
+    ranked = cs.cross_sectional_ranks(frame, ["rsi"])
+    first = ranked[ranked["decision_time"] == times[0]]["cs_rsi"].to_numpy()
+    second = ranked[ranked["decision_time"] == times[4]]["cs_rsi"].to_numpy()
+    # Identical orderings at two instants with wildly different levels must give
+    # identical ranks: the market factor is gone, only the ordering survives.
+    assert np.allclose(first, second)
+
+    moved = frame.copy()
+    moved.loc[7, "rsi"] = 1000.0  # change the LATER bar only
+    removed = cs.cross_sectional_ranks(moved, ["rsi"])
+    assert np.allclose(removed[removed["decision_time"] == times[0]]["cs_rsi"].to_numpy(), first)
+
+
+def test_relative_label_compares_only_pairs_quoted_at_the_same_instant():
+    times = pd.to_datetime(["2024-07-01T04:00Z"] * 6 + ["2024-07-01T08:00Z"] * 6)
+    longs = pd.DataFrame(
+        {
+            "decision_time": times,
+            "pair": [f"P{i}" for i in range(6)] * 2,
+            "gross_r": [-1.0, -1.0, -1.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 6.0, 6.0, 6.0],
+            "mfe_r": 0.0,
+            "win": 0,
+        }
+    )
+    labelled = cs.relative_labels(longs, min_pairs=6)
+    first = labelled[labelled["decision_time"] == times[0]]
+    second = labelled[labelled["decision_time"] == times[6]]
+    # A +2.0 R pair wins in the first bar and a +5.0 R pair loses in the second:
+    # the label is relative, so an absolute return cannot decide it.
+    assert first.sort_values("pair")["win"].tolist() == [0, 0, 0, 1, 1, 1]
+    assert second.sort_values("pair")["win"].tolist() == [0, 0, 0, 1, 1, 1]
+
+
+def test_relative_label_breaks_stop_out_ties_on_mfe():
+    """All six pairs stop out; the label must still split them, not collapse.
+
+    A plain "above the median realized R" label gives every row 0 here, which
+    is exactly the degeneracy MFE tie-breaking exists to remove.
+    """
+    times = pd.to_datetime(["2024-07-01T04:00Z"] * 6)
+    longs = pd.DataFrame(
+        {
+            "decision_time": times,
+            "pair": [f"P{i}" for i in range(6)],
+            "gross_r": [-1.0] * 6,
+            "mfe_r": [0.1, 0.2, 0.3, 1.0, 1.1, 1.2],
+            "win": 0,
+        }
+    )
+    labelled = cs.relative_labels(longs, min_pairs=6)
+    assert labelled.sort_values("pair")["win"].tolist() == [0, 0, 0, 1, 1, 1]
+
+
+def test_thin_cross_sections_are_dropped():
+    times = pd.to_datetime(["2024-07-01T04:00Z"] * 3)
+    longs = pd.DataFrame(
+        {
+            "decision_time": times,
+            "pair": list("ABC"),
+            "gross_r": [1.0, 2.0, 3.0],
+            "mfe_r": 0.0,
+            "win": 0,
+        }
+    )
+    assert cs.relative_labels(longs, min_pairs=6).empty
 
 
 def test_truncating_the_series_does_not_change_earlier_features():

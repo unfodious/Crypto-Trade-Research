@@ -10,6 +10,10 @@ Leakage contract (asserted by `tests/test_edge_study_leakage.py`):
    and no scaler or statistic fitted over the whole series.
 4. Cross-sectional context (BTC regime) is joined on the same decision grid and
    likewise uses only closed BTC bars.
+5. Non-price context (funding, open interest, book depth) is joined by
+   `altdata.attach_alt_features` on each source's own `known_at` time, again
+   with a backward `merge_asof`. See `altdata` for the per-source publication
+   lags and for why liquidations are a proxy rather than a feed.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from crypto_trade_research.edge_study import altdata as alt_data
 from crypto_trade_research.edge_study import indicators as ind
 
 DONCHIAN_WINDOW = 20
@@ -113,8 +118,14 @@ def build_features(
     bars_4h: pd.DataFrame,
     bars_1d: pd.DataFrame,
     btc_1d: pd.DataFrame | None = None,
+    alt: alt_data.AltPanels | None = None,
 ) -> pd.DataFrame:
-    """Return a 4h feature frame indexed by bar open time, with `decision_time`."""
+    """Return a 4h feature frame indexed by bar open time, with `decision_time`.
+
+    `alt` carries the pair's non-price panels. When it is None every non-price
+    column is still present and all-NaN, so the frame's shape does not depend on
+    whether an archive happened to exist.
+    """
     frame = base_frame(bars_4h, "4h")
     daily = base_frame(bars_1d, "1D")
 
@@ -150,10 +161,10 @@ def build_features(
 
     merged["hour_of_day"] = merged.index.hour
     merged["day_of_week"] = merged.index.dayofweek
-    return merged
+    return alt_data.attach_alt_features(merged, alt)
 
 
-FEATURE_COLUMNS = [
+PRICE_FEATURE_COLUMNS = [
     "atr_pct",
     "atr_pct_z",
     "rsi",
@@ -194,3 +205,29 @@ FEATURE_COLUMNS = [
     "hour_of_day",
     "day_of_week",
 ]
+
+#: Non-price inputs. Kept as a separate list so the study can be run on the
+#: price set alone, the non-price set alone, or both - an ablation, not a
+#: feature dump. 16 columns on top of 39 is already generous against the six to
+#: eight independent regimes this window contains.
+ALT_FEATURE_COLUMNS = list(alt_data.ALT_FEATURE_COLUMNS)
+
+ALL_FEATURE_COLUMNS = [*PRICE_FEATURE_COLUMNS, *ALT_FEATURE_COLUMNS]
+
+#: Default feature set. `tests/test_edge_study_leakage.py` asserts its causality
+#: column by column, so anything added here inherits the leakage guarantee.
+FEATURE_COLUMNS = ALL_FEATURE_COLUMNS
+
+FEATURE_SETS = {
+    "all": ALL_FEATURE_COLUMNS,
+    "price": PRICE_FEATURE_COLUMNS,
+    "alt": ALT_FEATURE_COLUMNS,
+}
+
+
+def feature_columns(name: str) -> list[str]:
+    """Named feature set, for the study's `--feature-set` switch."""
+    try:
+        return list(FEATURE_SETS[name])
+    except KeyError as error:
+        raise ValueError(f"unknown feature set {name!r}: {sorted(FEATURE_SETS)}") from error

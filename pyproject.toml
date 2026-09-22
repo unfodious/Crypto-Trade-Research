@@ -51,6 +51,9 @@ crypto-trade-build-spot-drawdown-swing = "crypto_trade_research.spot_drawdown_sw
 crypto-trade-build-spot-aggtrade-flow = "crypto_trade_research.spot_aggtrade_flow:main"
 crypto-trade-build-external-rotation-screen = "crypto_trade_research.external_rotation_screen:main"
 crypto-trade-run-edge-study = "crypto_trade_research.edge_study.run_study:main"
+crypto-trade-run-cross-section = "crypto_trade_research.edge_study.run_cross_section:main"
+crypto-trade-fetch-altdata = "crypto_trade_research.edge_study.altdata:main"
+crypto-trade-run-dca-study = "crypto_trade_research.dca_study.run_study:main"
 
 [project.optional-dependencies]
 dev = [

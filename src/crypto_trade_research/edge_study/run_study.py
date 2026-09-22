@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from crypto_trade_research.edge_study import altdata as alt_data
 from crypto_trade_research.edge_study import backtest as bt
 from crypto_trade_research.edge_study import data as market
 from crypto_trade_research.edge_study import features as feat
@@ -47,6 +48,15 @@ DEFAULT_START = "2024-07-01"
 DEFAULT_END = "2026-05-24"
 
 
+def _panels(
+    pair: str, start: str, end: str, alt_cache_dir: Path | None
+) -> alt_data.AltPanels | None:
+    """Non-price panels for one pair, or None when alt data is switched off."""
+    if alt_cache_dir is None:
+        return None
+    return alt_data.load_panels(pair, start, end, alt_cache_dir)
+
+
 def build_dataset(
     universe: tuple[str, ...],
     archive: Path,
@@ -54,6 +64,7 @@ def build_dataset(
     end: str,
     config: lab.BarrierConfig,
     cache_dir: Path | None,
+    alt_cache_dir: Path | None = None,
 ) -> tuple[pd.DataFrame, dict[str, pd.DataFrame], dict[str, int]]:
     """Load, feature, generate setups and label every pair."""
     btc = market.load_pair("BTCUSDT", archive, start, end, cache_dir=cache_dir)
@@ -71,7 +82,9 @@ def build_dataset(
         bars_by_pair[pair] = bars_4h
         sizes[pair] = len(bars_4h)
 
-        features = feat.build_features(bars_4h, pair_data.bars["1D"], btc.bars["1D"])
+        features = feat.build_features(
+            bars_4h, pair_data.bars["1D"], btc.bars["1D"], _panels(pair, start, end, alt_cache_dir)
+        )
         candidates = setup_rules.generate_setups(features, config)
         if candidates.empty:
             continue
@@ -175,6 +188,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--archive", type=Path, default=market.DEFAULT_ARCHIVE)
     parser.add_argument("--output-dir", type=Path, default=Path("reports/edge-study"))
     parser.add_argument("--cache-dir", type=Path, default=Path("data/generated/edge-study-cache"))
+    parser.add_argument("--alt-cache-dir", type=Path, default=Path("data/generated/altdata-cache"))
+    parser.add_argument(
+        "--no-alt-data",
+        action="store_true",
+        help="Run on price-derived features only (the 2026-09-22 baseline).",
+    )
+    parser.add_argument(
+        "--feature-set",
+        default="all",
+        choices=sorted(feat.FEATURE_SETS),
+        help="Which feature block the filter may use: all, price, or alt.",
+    )
     parser.add_argument("--start", default=DEFAULT_START)
     parser.add_argument("--end", default=DEFAULT_END)
     parser.add_argument("--pairs", default=",".join(DEFAULT_UNIVERSE))
@@ -189,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Fractions of candidates the filter is allowed to keep.",
     )
     parser.add_argument("--random-seeds", type=int, default=5)
+    parser.add_argument("--report-name", default="edge_study_report.json")
     arguments = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -201,12 +227,20 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = arguments.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    alt_cache_dir = None if arguments.no_alt_data else arguments.alt_cache_dir
     samples, bars_by_pair, bar_counts = build_dataset(
-        universe, arguments.archive, arguments.start, arguments.end, barrier, arguments.cache_dir
+        universe,
+        arguments.archive,
+        arguments.start,
+        arguments.end,
+        barrier,
+        arguments.cache_dir,
+        alt_cache_dir,
     )
+    requested = feat.feature_columns(arguments.feature_set)
     feature_columns = [
         column
-        for column in feat.FEATURE_COLUMNS
+        for column in requested
         if column in samples.columns and samples[column].notna().any()
     ]
     usable = samples.dropna(subset=feature_columns).reset_index(drop=True)
@@ -217,6 +251,9 @@ def main(argv: list[str] | None = None) -> int:
         "universe": list(universe),
         "bars_4h_per_pair": bar_counts,
         "barrier": asdict(barrier),
+        "feature_set": arguments.feature_set,
+        "alt_data": not arguments.no_alt_data,
+        "feature_columns": feature_columns,
         "costs": asdict(CostModel()),
         "sample_sizes": {
             "setups_labelled": int(len(samples)),
@@ -305,7 +342,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     report["evaluations"] = evaluations
-    report_path = output_dir / "edge_study_report.json"
+    report_path = output_dir / arguments.report_name
     report_path.write_text(json.dumps(report, indent=2, default=str))
     LOGGER.info("wrote %s", report_path)
     print(json.dumps(report["sample_sizes"], indent=2, default=str))
